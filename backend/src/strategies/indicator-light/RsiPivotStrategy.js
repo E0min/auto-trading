@@ -11,11 +11,11 @@
  * All price values are Strings; arithmetic via mathUtils.
  */
 
-const StrategyBase = require('../services/strategyBase');
+const StrategyBase = require('../../services/strategyBase');
 const {
   SIGNAL_ACTIONS,
   MARKET_REGIMES,
-} = require('../utils/constants');
+} = require('../../utils/constants');
 const {
   add,
   subtract,
@@ -24,8 +24,8 @@ const {
   isGreaterThan,
   isLessThan,
   toFixed,
-} = require('../utils/mathUtils');
-const { createLogger } = require('../utils/logger');
+} = require('../../utils/mathUtils');
+const { createLogger } = require('../../utils/logger');
 
 class RsiPivotStrategy extends StrategyBase {
   // -------------------------------------------------------------------------
@@ -573,7 +573,7 @@ class RsiPivotStrategy extends StrategyBase {
 // Register with the strategy registry
 // ---------------------------------------------------------------------------
 
-const registry = require('../services/strategyRegistry');
+const registry = require('../../services/strategyRegistry');
 registry.register('RsiPivotStrategy', RsiPivotStrategy);
 
 module.exports = RsiPivotStrategy;

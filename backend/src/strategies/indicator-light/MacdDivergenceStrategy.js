@@ -16,11 +16,11 @@
  * All price values are Strings; arithmetic via mathUtils.
  */
 
-const StrategyBase = require('../services/strategyBase');
+const StrategyBase = require('../../services/strategyBase');
 const {
   SIGNAL_ACTIONS,
   MARKET_REGIMES,
-} = require('../utils/constants');
+} = require('../../utils/constants');
 const {
   add,
   subtract,
@@ -30,7 +30,7 @@ const {
   isLessThan,
   toFixed,
   abs,
-} = require('../utils/mathUtils');
+} = require('../../utils/mathUtils');
 const {
   rsi,
   atr,
@@ -38,8 +38,8 @@ const {
   emaFromArray,
   findPivots,
   detectDivergence,
-} = require('../utils/indicators');
-const { createLogger } = require('../utils/logger');
+} = require('../../utils/indicators');
+const { createLogger } = require('../../utils/logger');
 
 class MacdDivergenceStrategy extends StrategyBase {
   // -------------------------------------------------------------------------
@@ -675,7 +675,7 @@ class MacdDivergenceStrategy extends StrategyBase {
 // Register with the strategy registry
 // ---------------------------------------------------------------------------
 
-const registry = require('../services/strategyRegistry');
+const registry = require('../../services/strategyRegistry');
 registry.register('MacdDivergenceStrategy', MacdDivergenceStrategy);
 
 module.exports = MacdDivergenceStrategy;

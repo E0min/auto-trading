@@ -13,7 +13,7 @@
  * unrealised loss exceeds 3 % of equity.
  */
 
-const StrategyBase = require('../services/strategyBase');
+const StrategyBase = require('../../services/strategyBase');
 const {
   add,
   subtract,
@@ -24,9 +24,9 @@ const {
   toFixed,
   abs,
   max,
-} = require('../utils/mathUtils');
-const { SIGNAL_ACTIONS, MARKET_REGIMES } = require('../utils/constants');
-const { createLogger } = require('../utils/logger');
+} = require('../../utils/mathUtils');
+const { SIGNAL_ACTIONS, MARKET_REGIMES } = require('../../utils/constants');
+const { createLogger } = require('../../utils/logger');
 
 const log = createLogger('GridStrategy');
 
@@ -574,7 +574,7 @@ class GridStrategy extends StrategyBase {
 // ---------------------------------------------------------------------------
 // Self-register with the strategy registry
 // ---------------------------------------------------------------------------
-const registry = require('../services/strategyRegistry');
+const registry = require('../../services/strategyRegistry');
 registry.register('GridStrategy', GridStrategy);
 
 module.exports = GridStrategy;

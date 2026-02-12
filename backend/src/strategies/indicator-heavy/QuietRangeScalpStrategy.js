@@ -22,11 +22,11 @@
  * 레버리지: 2x, 최대 포지션 비중 3%
  */
 
-const StrategyBase = require('../services/strategyBase');
+const StrategyBase = require('../../services/strategyBase');
 const {
   SIGNAL_ACTIONS,
   MARKET_REGIMES,
-} = require('../utils/constants');
+} = require('../../utils/constants');
 const {
   add,
   subtract,
@@ -36,8 +36,8 @@ const {
   isLessThan,
   toFixed,
   min,
-} = require('../utils/mathUtils');
-const { createLogger } = require('../utils/logger');
+} = require('../../utils/mathUtils');
+const { createLogger } = require('../../utils/logger');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -483,7 +483,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
 // Self-registration
 // ---------------------------------------------------------------------------
 
-const registry = require('../services/strategyRegistry');
+const registry = require('../../services/strategyRegistry');
 registry.register('QuietRangeScalpStrategy', QuietRangeScalpStrategy);
 
 module.exports = QuietRangeScalpStrategy;

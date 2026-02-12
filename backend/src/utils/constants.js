@@ -91,6 +91,7 @@ const DEFAULT_RISK_PARAMS = Object.freeze({
   maxTotalExposurePercent: '30',
   maxDailyLossPercent: '3',
   maxDrawdownPercent: '10',
+  maxRiskPerTradePercent: '2',   // 2% rule — max loss per single trade as % of equity
   consecutiveLossLimit: 5,
   cooldownMinutes: 30,
 });

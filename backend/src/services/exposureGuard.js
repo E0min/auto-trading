@@ -7,7 +7,9 @@ const {
   divide,
   add,
   isGreaterThan,
+  isLessThan,
   abs,
+  min,
 } = require('../utils/mathUtils');
 const { createLogger } = require('../utils/logger');
 
@@ -17,9 +19,11 @@ const log = createLogger('ExposureGuard');
  * Exposure Guard — limits individual position size and total portfolio
  * exposure as a percentage of account equity.
  *
- * If an order exceeds the single-position limit the quantity is automatically
- * reduced (approved with adjustedQty).  If total exposure would exceed the
- * portfolio-wide limit the order is outright rejected.
+ * Three-tier validation:
+ *  1. Risk-per-trade (2% rule) — if order includes `riskPerUnit` (e.g. ATR-based
+ *     stop distance), caps qty so max loss ≤ maxRiskPerTradePercent of equity.
+ *  2. Single-position size — caps order value to maxPositionSizePercent of equity.
+ *  3. Total exposure — rejects if portfolio exposure would exceed limit.
  *
  * Emits:
  *  - RISK_EVENTS.EXPOSURE_ADJUSTED  when an order's quantity is reduced
@@ -33,12 +37,14 @@ class ExposureGuard extends EventEmitter {
   constructor({
     maxPositionSizePercent = DEFAULT_RISK_PARAMS.maxPositionSizePercent,
     maxTotalExposurePercent = DEFAULT_RISK_PARAMS.maxTotalExposurePercent,
+    maxRiskPerTradePercent = DEFAULT_RISK_PARAMS.maxRiskPerTradePercent || '2',
   } = {}) {
     super();
 
     this.params = {
       maxPositionSizePercent,
       maxTotalExposurePercent,
+      maxRiskPerTradePercent,
     };
 
     log.info('ExposureGuard initialised', { params: this.params });
@@ -53,6 +59,9 @@ class ExposureGuard extends EventEmitter {
    * @param {string} order.qty        — desired quantity (string)
    * @param {string} [order.price]    — limit price (string); omit for market orders
    * @param {string} [order.category]
+   * @param {string} [order.riskPerUnit] — stop-loss distance per unit (e.g. ATR×2).
+   *   When provided, the 2% risk-per-trade rule is applied:
+   *   maxQty = (equity × maxRiskPerTradePercent / 100) / riskPerUnit
    *
    * @param {object} accountState
    * @param {string} accountState.equity            — total equity (string)
@@ -67,9 +76,35 @@ class ExposureGuard extends EventEmitter {
   validateOrder(order, accountState) {
     const equity = accountState.equity;
     const effectivePrice = order.price || '1';
+    let qty = order.qty;
+
+    // ---- 0. Risk-per-trade check (2% rule) ----
+    // If the order carries riskPerUnit (ATR-based stop distance), enforce
+    // that the maximum potential loss does not exceed maxRiskPerTradePercent
+    // of equity. This overrides the requested qty if it's too large.
+    if (order.riskPerUnit && isGreaterThan(order.riskPerUnit, '0')) {
+      const maxRiskAmount = multiply(equity, divide(this.params.maxRiskPerTradePercent, '100'));
+      const riskBasedMaxQty = divide(maxRiskAmount, order.riskPerUnit);
+
+      if (isGreaterThan(qty, riskBasedMaxQty)) {
+        const payload = {
+          symbol: order.symbol,
+          originalQty: qty,
+          adjustedQty: riskBasedMaxQty,
+          riskPerUnit: order.riskPerUnit,
+          maxRiskAmount,
+          maxRiskPerTradePercent: this.params.maxRiskPerTradePercent,
+        };
+
+        log.warn('Order quantity reduced by 2% risk-per-trade rule', payload);
+        this.emit(RISK_EVENTS.EXPOSURE_ADJUSTED, payload);
+
+        qty = riskBasedMaxQty;
+      }
+    }
 
     // ---- 1. Single-position size check ----
-    const orderValue = multiply(order.qty, effectivePrice);
+    const orderValue = multiply(qty, effectivePrice);
     // positionSizePercent = (orderValue / equity) * 100
     const positionSizePercent = multiply(divide(orderValue, equity), '100');
 
@@ -79,41 +114,36 @@ class ExposureGuard extends EventEmitter {
         equity,
         divide(this.params.maxPositionSizePercent, '100'),
       );
-      const adjustedQty = divide(maxAllowedValue, effectivePrice);
+      qty = divide(maxAllowedValue, effectivePrice);
 
       const payload = {
         symbol: order.symbol,
         originalQty: order.qty,
-        adjustedQty,
+        adjustedQty: qty,
         positionSizePercent,
         maxPositionSizePercent: this.params.maxPositionSizePercent,
       };
 
       log.warn('Order quantity reduced to comply with position-size limit', payload);
       this.emit(RISK_EVENTS.EXPOSURE_ADJUSTED, payload);
-
-      return {
-        approved: true,
-        adjustedQty,
-        reason: 'qty_reduced_position_limit',
-      };
     }
 
     // ---- 2. Total exposure check ----
     // Sum existing position notional values
+    const finalOrderValue = multiply(qty, effectivePrice);
     let totalExistingExposure = '0';
     for (const pos of accountState.positions) {
       const posValue = abs(multiply(pos.qty, pos.markPrice));
       totalExistingExposure = add(totalExistingExposure, posValue);
     }
 
-    const totalExposure = add(totalExistingExposure, orderValue);
+    const totalExposure = add(totalExistingExposure, finalOrderValue);
     const totalExposurePercent = multiply(divide(totalExposure, equity), '100');
 
     if (isGreaterThan(totalExposurePercent, this.params.maxTotalExposurePercent)) {
       log.warn('Order rejected — total exposure would exceed limit', {
         symbol: order.symbol,
-        orderValue,
+        orderValue: finalOrderValue,
         totalExposurePercent,
         maxTotalExposurePercent: this.params.maxTotalExposurePercent,
       });
@@ -125,11 +155,17 @@ class ExposureGuard extends EventEmitter {
     }
 
     // ---- All clear ----
+    const finalSizePercent = multiply(divide(finalOrderValue, equity), '100');
     log.debug('Order passed exposure checks', {
       symbol: order.symbol,
-      positionSizePercent,
+      positionSizePercent: finalSizePercent,
       totalExposurePercent,
     });
+
+    // Return adjustedQty if any check reduced the qty
+    if (qty !== order.qty) {
+      return { approved: true, adjustedQty: qty, reason: 'qty_adjusted_by_risk_limits' };
+    }
 
     return { approved: true };
   }

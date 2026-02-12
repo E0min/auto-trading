@@ -9,6 +9,14 @@ import type {
   EquityPoint,
   HealthReport,
 } from '@/types';
+import type {
+  BacktestConfig,
+  BacktestResult,
+  BacktestSummary,
+  BacktestEquityPoint,
+  BacktestTrade,
+  BacktestStrategyItem,
+} from '@/types/backtest';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -95,4 +103,25 @@ export const healthApi = {
     const res = await fetch(`${API_BASE}/api/health/ping`);
     return res.json() as Promise<{ pong: boolean; timestamp: string }>;
   },
+};
+
+// Backtest
+export const backtestApi = {
+  run: (config: BacktestConfig) =>
+    request<{ id: string }>('/api/backtest/run', { method: 'POST', body: JSON.stringify(config) }),
+  list: () => request<BacktestSummary[]>('/api/backtest'),
+  getResult: (id: string) => request<BacktestResult>(`/api/backtest/${id}`),
+  getEquityCurve: (id: string, maxPoints?: number) => {
+    const qs = maxPoints ? `?maxPoints=${maxPoints}` : '';
+    return request<BacktestEquityPoint[]>(`/api/backtest/${id}/equity-curve${qs}`);
+  },
+  getTrades: (id: string, params?: { limit?: number; skip?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.skip) query.set('skip', String(params.skip));
+    const qs = query.toString();
+    return request<BacktestTrade[]>(`/api/backtest/${id}/trades${qs ? `?${qs}` : ''}`);
+  },
+  delete: (id: string) => request<{ message: string }>(`/api/backtest/${id}`, { method: 'DELETE' }),
+  getStrategies: () => request<BacktestStrategyItem[]>('/api/backtest/strategies'),
 };

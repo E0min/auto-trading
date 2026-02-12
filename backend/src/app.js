@@ -32,11 +32,16 @@ const scannerService = require('./services/scannerService');
 const trackerService = require('./services/trackerService');
 const traderService = require('./services/traderService');
 
+// --- Backtest imports ---
+const DataFetcher = require('./backtest/dataFetcher');
+const backtestStore = require('./backtest/backtestStore');
+
 // --- Route factory imports ---
 const createBotRoutes = require('./api/botRoutes');
 const createTradeRoutes = require('./api/tradeRoutes');
 const createAnalyticsRoutes = require('./api/analyticsRoutes');
 const createHealthRoutes = require('./api/healthRoutes');
+const createBacktestRoutes = require('./api/backtestRoutes');
 
 const log = createLogger('App');
 
@@ -123,6 +128,9 @@ async function bootstrap() {
   trackerService.init({ performanceTracker, tradeJournal });
   traderService.init({ orderManager });
 
+  // 3b. Backtest services
+  const dataFetcher = new DataFetcher({ exchangeClient });
+
   // 4. Create Express app
   const app = express();
 
@@ -143,6 +151,7 @@ async function bootstrap() {
   app.use('/api/trades', createTradeRoutes({ traderService, positionManager }));
   app.use('/api/analytics', createAnalyticsRoutes({ trackerService }));
   app.use('/api/health', createHealthRoutes({ healthCheck }));
+  app.use('/api/backtest', createBacktestRoutes({ dataFetcher, backtestStore }));
 
   // 7. Create HTTP server + Socket.io
   const server = http.createServer(app);

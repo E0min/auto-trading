@@ -28,8 +28,8 @@
  * Position: 4% of equity, Leverage: 3x
  */
 
-const StrategyBase = require('../services/strategyBase');
-const { SIGNAL_ACTIONS, MARKET_REGIMES } = require('../utils/constants');
+const StrategyBase = require('../../services/strategyBase');
+const { SIGNAL_ACTIONS, MARKET_REGIMES } = require('../../utils/constants');
 const {
   add,
   subtract,
@@ -39,7 +39,7 @@ const {
   isLessThan,
   toFixed,
   abs,
-} = require('../utils/mathUtils');
+} = require('../../utils/mathUtils');
 const {
   bollingerBands,
   keltnerChannel,
@@ -47,8 +47,8 @@ const {
   sma,
   emaFromArray,
   emaStep,
-} = require('../utils/indicators');
-const { createLogger } = require('../utils/logger');
+} = require('../../utils/indicators');
+const { createLogger } = require('../../utils/logger');
 
 const log = createLogger('BreakoutStrategy');
 
@@ -733,7 +733,7 @@ class BreakoutStrategy extends StrategyBase {
 // Self-registration
 // ---------------------------------------------------------------------------
 
-const registry = require('../services/strategyRegistry');
+const registry = require('../../services/strategyRegistry');
 registry.register('BreakoutStrategy', BreakoutStrategy);
 
 module.exports = BreakoutStrategy;

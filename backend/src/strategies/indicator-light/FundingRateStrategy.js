@@ -16,7 +16,7 @@
  *  - Partial exit on funding-rate normalisation
  */
 
-const StrategyBase = require('../services/strategyBase');
+const StrategyBase = require('../../services/strategyBase');
 const {
   add,
   subtract,
@@ -26,9 +26,9 @@ const {
   isLessThan,
   toFixed,
   isZero,
-} = require('../utils/mathUtils');
-const { SIGNAL_ACTIONS, MARKET_REGIMES } = require('../utils/constants');
-const { createLogger } = require('../utils/logger');
+} = require('../../utils/mathUtils');
+const { SIGNAL_ACTIONS, MARKET_REGIMES } = require('../../utils/constants');
+const { createLogger } = require('../../utils/logger');
 
 const log = createLogger('FundingRateStrategy');
 
@@ -759,7 +759,7 @@ class FundingRateStrategy extends StrategyBase {
 // Registry self-registration
 // ---------------------------------------------------------------------------
 
-const registry = require('../services/strategyRegistry');
+const registry = require('../../services/strategyRegistry');
 registry.register('FundingRateStrategy', FundingRateStrategy);
 
 module.exports = FundingRateStrategy;

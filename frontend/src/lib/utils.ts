@@ -168,6 +168,11 @@ export function translateStrategyName(name: string): string {
     MacdDivergenceStrategy: 'MACD 다이버전스',
     BreakoutStrategy: 'BB Squeeze 돌파',
     QuietRangeScalpStrategy: 'QUIET 장세 스캘핑',
+    TurtleBreakoutStrategy: '터틀 Donchian 돌파',
+    CandlePatternStrategy: '캔들 패턴 가격행동',
+    SupportResistanceStrategy: '지지저항 돌파',
+    SwingStructureStrategy: '스윙 구조 추세',
+    FibonacciRetracementStrategy: '피보나치 되돌림',
   };
   return map[name] || name;
 }

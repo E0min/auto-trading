@@ -17,8 +17,8 @@
  * Position sizing and leverage vary by regime.
  */
 
-const StrategyBase = require('../services/strategyBase');
-const { SIGNAL_ACTIONS, MARKET_REGIMES } = require('../utils/constants');
+const StrategyBase = require('../../services/strategyBase');
+const { SIGNAL_ACTIONS, MARKET_REGIMES } = require('../../utils/constants');
 const {
   add,
   subtract,
@@ -30,9 +30,9 @@ const {
   abs,
   max,
   min,
-} = require('../utils/mathUtils');
-const { emaFromArray, emaStep, rsi, bollingerBands, atr, adx } = require('../utils/indicators');
-const { createLogger } = require('../utils/logger');
+} = require('../../utils/mathUtils');
+const { emaFromArray, emaStep, rsi, bollingerBands, atr, adx } = require('../../utils/indicators');
+const { createLogger } = require('../../utils/logger');
 
 const log = createLogger('AdaptiveRegimeStrategy');
 
@@ -708,7 +708,7 @@ class AdaptiveRegimeStrategy extends StrategyBase {
 // ---------------------------------------------------------------------------
 // Register with the global strategy registry
 // ---------------------------------------------------------------------------
-const registry = require('../services/strategyRegistry');
+const registry = require('../../services/strategyRegistry');
 registry.register('AdaptiveRegimeStrategy', AdaptiveRegimeStrategy);
 
 module.exports = AdaptiveRegimeStrategy;

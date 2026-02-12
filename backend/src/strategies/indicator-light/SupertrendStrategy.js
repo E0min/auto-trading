@@ -12,7 +12,7 @@
  * - TP +3%, SL -2%
  */
 
-const StrategyBase = require('../services/strategyBase');
+const StrategyBase = require('../../services/strategyBase');
 const {
   add,
   subtract,
@@ -22,9 +22,9 @@ const {
   isLessThan,
   toFixed,
   abs,
-} = require('../utils/mathUtils');
-const { SIGNAL_ACTIONS, MARKET_REGIMES } = require('../utils/constants');
-const { createLogger } = require('../utils/logger');
+} = require('../../utils/mathUtils');
+const { SIGNAL_ACTIONS, MARKET_REGIMES } = require('../../utils/constants');
+const { createLogger } = require('../../utils/logger');
 
 const log = createLogger('SupertrendStrategy');
 
@@ -849,7 +849,7 @@ class SupertrendStrategy extends StrategyBase {
 // ---------------------------------------------------------------------------
 // Registry registration
 // ---------------------------------------------------------------------------
-const registry = require('../services/strategyRegistry');
+const registry = require('../../services/strategyRegistry');
 registry.register('SupertrendStrategy', SupertrendStrategy);
 
 module.exports = SupertrendStrategy;

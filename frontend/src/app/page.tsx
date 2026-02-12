@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useRef } from 'react';
+import Link from 'next/link';
 import { useBotStatus } from '@/hooks/useBotStatus';
 import { useSocket } from '@/hooks/useSocket';
 import { usePositions } from '@/hooks/usePositions';
@@ -87,9 +88,17 @@ export default function Dashboard() {
     <div className="min-h-screen p-4 md:p-6 max-w-[1600px] mx-auto">
       {/* Header */}
       <header className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold text-zinc-100">
-          Bitget 자동매매
-        </h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-xl font-bold text-zinc-100">
+            Bitget 자동매매
+          </h1>
+          <Link
+            href="/backtest"
+            className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors border border-zinc-700 rounded-lg px-3 py-1.5"
+          >
+            백테스트
+          </Link>
+        </div>
         <SystemHealth
           health={health}
           latency={latency}

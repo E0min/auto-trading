@@ -32,11 +32,11 @@
  * Leverage: 3x, max position: 5% of equity
  */
 
-const StrategyBase = require('../services/strategyBase');
+const StrategyBase = require('../../services/strategyBase');
 const {
   SIGNAL_ACTIONS,
   MARKET_REGIMES,
-} = require('../utils/constants');
+} = require('../../utils/constants');
 const {
   add,
   subtract,
@@ -45,8 +45,8 @@ const {
   isGreaterThan,
   isLessThan,
   toFixed,
-} = require('../utils/mathUtils');
-const { createLogger } = require('../utils/logger');
+} = require('../../utils/mathUtils');
+const { createLogger } = require('../../utils/logger');
 
 // ---------------------------------------------------------------------------
 // Helpers — pure functions, all String-based
@@ -821,7 +821,7 @@ class BollingerReversionStrategy extends StrategyBase {
 // Self-registration
 // ---------------------------------------------------------------------------
 
-const registry = require('../services/strategyRegistry');
+const registry = require('../../services/strategyRegistry');
 registry.register('BollingerReversionStrategy', BollingerReversionStrategy);
 
 module.exports = BollingerReversionStrategy;

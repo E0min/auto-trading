@@ -20,17 +20,26 @@ const { MomentumStrategy, MeanReversionStrategy } = require('../services/sampleS
 registry.register('MomentumStrategy', MomentumStrategy);
 registry.register('MeanReversionStrategy', MeanReversionStrategy);
 
-// ---- Import new strategy modules (each self-registers on require) ----
-require('./RsiPivotStrategy');
-require('./SupertrendStrategy');
-require('./GridStrategy');
-require('./BollingerReversionStrategy');
-require('./MaTrendStrategy');
-require('./FundingRateStrategy');
-require('./AdaptiveRegimeStrategy');
-require('./VwapReversionStrategy');
-require('./MacdDivergenceStrategy');
-require('./BreakoutStrategy');
-require('./QuietRangeScalpStrategy');
+// ---- price-action (순수 가격행동) ----
+require('./price-action/TurtleBreakoutStrategy');
+require('./price-action/CandlePatternStrategy');
+require('./price-action/SupportResistanceStrategy');
+require('./price-action/SwingStructureStrategy');
+require('./price-action/FibonacciRetracementStrategy');
+
+// ---- indicator-light (1~2 지표) ----
+require('./indicator-light/GridStrategy');
+require('./indicator-light/MaTrendStrategy');
+require('./indicator-light/FundingRateStrategy');
+require('./indicator-light/RsiPivotStrategy');
+require('./indicator-light/SupertrendStrategy');
+require('./indicator-light/BollingerReversionStrategy');
+require('./indicator-light/VwapReversionStrategy');
+require('./indicator-light/MacdDivergenceStrategy');
+
+// ---- indicator-heavy (3+ 지표) ----
+require('./indicator-heavy/QuietRangeScalpStrategy');
+require('./indicator-heavy/BreakoutStrategy');
+require('./indicator-heavy/AdaptiveRegimeStrategy');
 
 module.exports = registry;

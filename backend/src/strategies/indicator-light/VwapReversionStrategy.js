@@ -32,11 +32,11 @@
  * VWAP session resets every 96 candles (~1 day of 15-min candles).
  */
 
-const StrategyBase = require('../services/strategyBase');
+const StrategyBase = require('../../services/strategyBase');
 const {
   SIGNAL_ACTIONS,
   MARKET_REGIMES,
-} = require('../utils/constants');
+} = require('../../utils/constants');
 const {
   add,
   subtract,
@@ -46,9 +46,9 @@ const {
   isLessThan,
   toFixed,
   abs,
-} = require('../utils/mathUtils');
-const { rsi, atr, sma, vwap } = require('../utils/indicators');
-const { createLogger } = require('../utils/logger');
+} = require('../../utils/mathUtils');
+const { rsi, atr, sma, vwap } = require('../../utils/indicators');
+const { createLogger } = require('../../utils/logger');
 
 const log = createLogger('VwapReversionStrategy');
 
@@ -623,7 +623,7 @@ class VwapReversionStrategy extends StrategyBase {
 // Self-registration
 // ---------------------------------------------------------------------------
 
-const registry = require('../services/strategyRegistry');
+const registry = require('../../services/strategyRegistry');
 registry.register('VwapReversionStrategy', VwapReversionStrategy);
 
 module.exports = VwapReversionStrategy;
