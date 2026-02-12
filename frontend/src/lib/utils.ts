@@ -163,6 +163,11 @@ export function translateStrategyName(name: string): string {
     BollingerReversionStrategy: '볼린저 밴드 회귀',
     MaTrendStrategy: '멀티 이평선 추세',
     FundingRateStrategy: '펀딩비 역발상',
+    AdaptiveRegimeStrategy: '장세 적응형 멀티전략',
+    VwapReversionStrategy: 'VWAP 회귀',
+    MacdDivergenceStrategy: 'MACD 다이버전스',
+    BreakoutStrategy: 'BB Squeeze 돌파',
+    QuietRangeScalpStrategy: 'QUIET 장세 스캘핑',
   };
   return map[name] || name;
 }

@@ -27,5 +27,10 @@ require('./GridStrategy');
 require('./BollingerReversionStrategy');
 require('./MaTrendStrategy');
 require('./FundingRateStrategy');
+require('./AdaptiveRegimeStrategy');
+require('./VwapReversionStrategy');
+require('./MacdDivergenceStrategy');
+require('./BreakoutStrategy');
+require('./QuietRangeScalpStrategy');
 
 module.exports = registry;
