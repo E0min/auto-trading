@@ -24,6 +24,8 @@ const {
   divide,
   isGreaterThan,
   isLessThan,
+  isGreaterThanOrEqual,
+  isLessThanOrEqual,
   toFixed,
   isZero,
 } = require('../../utils/mathUtils');
@@ -205,7 +207,7 @@ class FundingRateStrategy extends StrategyBase {
     // --- Long entry evaluation ------------------------------------------------
     if (
       direction === 'negative' &&
-      this._isLessThanOrEqual(latestFunding, this._longFundingThreshold) &&
+      isLessThanOrEqual(latestFunding, this._longFundingThreshold) &&
       oiChange !== null &&
       isGreaterThan(oiChange, this._oiChangeThreshold) &&
       this._isPriceNearSMA(currentPrice, sma20) &&
@@ -251,7 +253,7 @@ class FundingRateStrategy extends StrategyBase {
     // --- Short entry evaluation -----------------------------------------------
     if (
       direction === 'positive' &&
-      this._isGreaterThanOrEqual(latestFunding, this._shortFundingThreshold) &&
+      isGreaterThanOrEqual(latestFunding, this._shortFundingThreshold) &&
       oiChange !== null &&
       isGreaterThan(oiChange, this._oiChangeThreshold) &&
       this._isPriceNearSMA(currentPrice, sma20) &&
@@ -290,6 +292,31 @@ class FundingRateStrategy extends StrategyBase {
         confidence,
         price: currentPrice,
       });
+    }
+  }
+
+  /**
+   * Called when an order fill is received.
+   * Updates position tracking when an open or close signal is filled.
+   *
+   * @param {object} fill
+   */
+  onFill(fill) {
+    if (!this._active) return;
+    if (!fill) return;
+    const action = fill.action || (fill.signal && fill.signal.action);
+
+    if (action === SIGNAL_ACTIONS.OPEN_LONG) {
+      this._positionSide = 'long';
+      if (fill.price !== undefined) this._entryPrice = String(fill.price);
+      log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+    } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
+      this._positionSide = 'short';
+      if (fill.price !== undefined) this._entryPrice = String(fill.price);
+      log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+    } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
+      log.trade('Position closed via fill', { side: this._positionSide, symbol: this._symbol });
+      this._resetPosition();
     }
   }
 
@@ -363,7 +390,7 @@ class FundingRateStrategy extends StrategyBase {
     if (!this._partialExitDone && this._fundingRateHistory.length > 0) {
       const latestRate = this._fundingRateHistory[this._fundingRateHistory.length - 1].rate;
 
-      if (side === 'long' && this._isGreaterThanOrEqual(latestRate, '0')) {
+      if (side === 'long' && isGreaterThanOrEqual(latestRate, '0')) {
         // Funding has normalised for a long (was negative, now >= 0)
         this._emitPartialClose(
           SIGNAL_ACTIONS.CLOSE_LONG,
@@ -372,7 +399,7 @@ class FundingRateStrategy extends StrategyBase {
         return;
       }
 
-      if (side === 'short' && this._isLessThanOrEqual(latestRate, '0')) {
+      if (side === 'short' && isLessThanOrEqual(latestRate, '0')) {
         // Funding has normalised for a short (was positive, now <= 0)
         this._emitPartialClose(
           SIGNAL_ACTIONS.CLOSE_SHORT,
@@ -395,7 +422,7 @@ class FundingRateStrategy extends StrategyBase {
       symbol: this._symbol,
       category: this._category,
       suggestedPrice: this._latestPrice,
-      confidence: '100',
+      confidence: '1.0000',
       leverage: '3',
       marketContext: {
         strategy: 'FundingRateStrategy',
@@ -434,7 +461,7 @@ class FundingRateStrategy extends StrategyBase {
       category: this._category,
       suggestedPrice: this._latestPrice,
       suggestedQty: '50%',
-      confidence: '80',
+      confidence: '0.8000',
       leverage: '3',
       marketContext: {
         strategy: 'FundingRateStrategy',
@@ -633,8 +660,8 @@ class FundingRateStrategy extends StrategyBase {
     const lowerBound = multiply(sma, '0.97');
     const upperBound = multiply(sma, '1.03');
     return (
-      this._isGreaterThanOrEqual(price, lowerBound) &&
-      this._isLessThanOrEqual(price, upperBound)
+      isGreaterThanOrEqual(price, lowerBound) &&
+      isLessThanOrEqual(price, upperBound)
     );
   }
 
@@ -647,6 +674,7 @@ class FundingRateStrategy extends StrategyBase {
    */
   _isLongRegime() {
     return (
+      this._marketRegime === null ||
       this._marketRegime === MARKET_REGIMES.TRENDING_DOWN ||
       this._marketRegime === MARKET_REGIMES.VOLATILE
     );
@@ -661,6 +689,7 @@ class FundingRateStrategy extends StrategyBase {
    */
   _isShortRegime() {
     return (
+      this._marketRegime === null ||
       this._marketRegime === MARKET_REGIMES.TRENDING_UP ||
       this._marketRegime === MARKET_REGIMES.VOLATILE
     );
@@ -680,24 +709,24 @@ class FundingRateStrategy extends StrategyBase {
    * @private
    */
   _calculateLongConfidence(fundingRate, oiChange) {
-    let confidence = 50;
+    let confidence = 0.50;
 
     // Extreme negative funding (<= -0.03) bonus
-    if (this._isLessThanOrEqual(fundingRate, '-0.03')) {
-      confidence += 20;
+    if (isLessThanOrEqual(fundingRate, '-0.03')) {
+      confidence += 0.20;
     }
 
     // High OI change (> 10%) bonus
     if (isGreaterThan(oiChange, '10')) {
-      confidence += 10;
+      confidence += 0.10;
     }
 
     // Volatile regime bonus
     if (this._marketRegime === MARKET_REGIMES.VOLATILE) {
-      confidence += 10;
+      confidence += 0.10;
     }
 
-    return String(Math.min(confidence, 100));
+    return toFixed(String(Math.min(confidence, 0.95)), 4);
   }
 
   /**
@@ -710,49 +739,26 @@ class FundingRateStrategy extends StrategyBase {
    * @private
    */
   _calculateShortConfidence(fundingRate, oiChange) {
-    let confidence = 50;
+    let confidence = 0.50;
 
     // Extreme positive funding (>= +0.06) bonus
-    if (this._isGreaterThanOrEqual(fundingRate, '0.06')) {
-      confidence += 20;
+    if (isGreaterThanOrEqual(fundingRate, '0.06')) {
+      confidence += 0.20;
     }
 
     // High OI change (> 10%) bonus
     if (isGreaterThan(oiChange, '10')) {
-      confidence += 10;
+      confidence += 0.10;
     }
 
     // Volatile regime bonus
     if (this._marketRegime === MARKET_REGIMES.VOLATILE) {
-      confidence += 10;
+      confidence += 0.10;
     }
 
-    return String(Math.min(confidence, 100));
+    return toFixed(String(Math.min(confidence, 0.95)), 4);
   }
 
-  // ---------------------------------------------------------------------------
-  // Comparison helpers (inclusive of equality)
-  // ---------------------------------------------------------------------------
-
-  /**
-   * @param {string} a
-   * @param {string} b
-   * @returns {boolean} a >= b
-   * @private
-   */
-  _isGreaterThanOrEqual(a, b) {
-    return isGreaterThan(a, b) || toFixed(a, 8) === toFixed(b, 8);
-  }
-
-  /**
-   * @param {string} a
-   * @param {string} b
-   * @returns {boolean} a <= b
-   * @private
-   */
-  _isLessThanOrEqual(a, b) {
-    return isLessThan(a, b) || toFixed(a, 8) === toFixed(b, 8);
-  }
 }
 
 // ---------------------------------------------------------------------------

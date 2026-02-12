@@ -124,13 +124,16 @@ class TurtleBreakoutStrategy extends StrategyBase {
 
   /**
    * Compute Donchian Channel (N-bar high / low) from kline history.
+   * Uses the PREVIOUS N bars (excludes the current/latest bar) so that
+   * breakout detection compares the current close against prior range.
    * @param {number} period
    * @returns {{ upper: string, lower: string, mid: string }|null}
    */
   _donchian(period) {
-    if (this.klineHistory.length < period) return null;
+    // Need at least period + 1 bars (period previous + 1 current)
+    if (this.klineHistory.length < period + 1) return null;
 
-    const slice = this.klineHistory.slice(-period);
+    const slice = this.klineHistory.slice(-(period + 1), -1);
     let highest = slice[0].high;
     let lowest = slice[0].low;
 
@@ -238,7 +241,7 @@ class TurtleBreakoutStrategy extends StrategyBase {
 
     // 2. Need enough data for the longest channel + ATR
     const { entryChannel, exitChannel, trendFilter, atrPeriod } = this.config;
-    const minRequired = Math.max(trendFilter, entryChannel, exitChannel, atrPeriod + 1);
+    const minRequired = Math.max(trendFilter + 1, entryChannel + 1, exitChannel + 1, atrPeriod + 1);
     if (this.klineHistory.length < minRequired) {
       log.debug('Not enough data yet', {
         have: this.klineHistory.length,
@@ -428,7 +431,21 @@ class TurtleBreakoutStrategy extends StrategyBase {
   // --------------------------------------------------------------------------
 
   onFill(fill) {
-    log.debug('Fill received', { fill });
+    if (!fill) return;
+    const action = fill.action || (fill.signal && fill.signal.action);
+
+    if (action === SIGNAL_ACTIONS.OPEN_LONG) {
+      this._positionSide = 'long';
+      if (fill.price !== undefined) this._entryPrice = String(fill.price);
+      log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+    } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
+      this._positionSide = 'short';
+      if (fill.price !== undefined) this._entryPrice = String(fill.price);
+      log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+    } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
+      log.trade('Position closed via fill', { side: this._positionSide, symbol: this._symbol });
+      this._resetPosition();
+    }
   }
 
   // --------------------------------------------------------------------------

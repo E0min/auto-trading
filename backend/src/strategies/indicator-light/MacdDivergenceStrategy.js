@@ -6,8 +6,8 @@
  * 가격과 MACD 히스토그램 사이의 다이버전스를 감지하여 추세 전환을 포착한다.
  *
  * - 양방향 (Long & Short)
- * - 롱: 상승 다이버전스 + 히스토그램 영점 상향 돌파 + RSI < 40
- * - 숏: 하락 다이버전스 + 히스토그램 영점 하향 돌파 + RSI > 60
+ * - 롱: 상승 다이버전스 AND 히스토그램 영점 상향 돌파 AND RSI < 45
+ * - 숏: 하락 다이버전스 AND 히스토그램 영점 하향 돌파 AND RSI > 55
  * - TP: EMA(50) 도달, SL: 스윙 저/고점 (최대 2.5*ATR)
  * - 트레일링: 1*ATR 수익 후 1.5*ATR 간격으로 추적
  * - 실패 감지: 진입 후 5캔들 이내 히스토그램 방향 반전 시 즉시 청산
@@ -365,10 +365,10 @@ class MacdDivergenceStrategy extends StrategyBase {
     // 4. Regime: TRENDING_DOWN or VOLATILE
     const bullishDiv = detectDivergence(pricePivots.lows, histPivots.lows, 'bullish');
     const histCrossUp = isLessThan(prevHist, '0') && !isLessThan(currentHistogram, '0');
-    const rsiBelow40 = isLessThan(rsiValue, '40');
-    const regimeLong = regime === MARKET_REGIMES.TRENDING_DOWN || regime === MARKET_REGIMES.VOLATILE;
+    const rsiBelow45 = isLessThan(rsiValue, '45');
+    const regimeLong = regime === null || regime === MARKET_REGIMES.TRENDING_DOWN || regime === MARKET_REGIMES.VOLATILE || regime === MARKET_REGIMES.RANGING;
 
-    if (bullishDiv && histCrossUp && rsiBelow40 && regimeLong) {
+    if (bullishDiv && histCrossUp && rsiBelow45 && regimeLong) {
       // Calculate SL from recent swing low, capped at slAtrMult * ATR
       const swingLow = this._findRecentSwingLow(pivotLeftBars);
       const maxSlDistance = multiply(slAtrMult, atrValue);
@@ -425,10 +425,10 @@ class MacdDivergenceStrategy extends StrategyBase {
     if (signal === null) {
       const bearishDiv = detectDivergence(pricePivots.highs, histPivots.highs, 'bearish');
       const histCrossDown = isGreaterThan(prevHist, '0') && !isGreaterThan(currentHistogram, '0');
-      const rsiAbove60 = isGreaterThan(rsiValue, '60');
-      const regimeShort = regime === MARKET_REGIMES.TRENDING_UP || regime === MARKET_REGIMES.VOLATILE;
+      const rsiAbove55 = isGreaterThan(rsiValue, '55');
+      const regimeShort = regime === null || regime === MARKET_REGIMES.TRENDING_UP || regime === MARKET_REGIMES.VOLATILE || regime === MARKET_REGIMES.RANGING;
 
-      if (bearishDiv && histCrossDown && rsiAbove60 && regimeShort) {
+      if (bearishDiv && histCrossDown && rsiAbove55 && regimeShort) {
         // Calculate SL from recent swing high, capped at slAtrMult * ATR
         const swingHigh = this._findRecentSwingHigh(pivotLeftBars);
         const maxSlDistance = multiply(slAtrMult, atrValue);

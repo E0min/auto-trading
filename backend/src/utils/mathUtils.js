@@ -128,6 +128,24 @@ function isLessThan(a, b) {
 
 /**
  * @param {string} a
+ * @param {string} b
+ * @returns {boolean}
+ */
+function isGreaterThanOrEqual(a, b) {
+  return parse(a) >= parse(b);
+}
+
+/**
+ * @param {string} a
+ * @param {string} b
+ * @returns {boolean}
+ */
+function isLessThanOrEqual(a, b) {
+  return parse(a) <= parse(b);
+}
+
+/**
+ * @param {string} a
  * @returns {boolean}
  */
 function isZero(a) {
@@ -185,6 +203,8 @@ module.exports = {
   pctChange,
   isGreaterThan,
   isLessThan,
+  isGreaterThanOrEqual,
+  isLessThanOrEqual,
   isZero,
   max,
   min,

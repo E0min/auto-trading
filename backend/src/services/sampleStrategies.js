@@ -189,11 +189,11 @@ class MomentumStrategy extends StrategyBase {
 
     let signal = null;
 
-    // OPEN_LONG: RSI oversold, price above SMA, regime is trending-up or ranging
+    // OPEN_LONG: RSI oversold, price below SMA (dip-buy in range), regime allows
     if (
       isLessThan(rsi, String(rsiOversold)) &&
-      isGreaterThan(price, sma) &&
-      (regime === MARKET_REGIMES.TRENDING_UP || regime === MARKET_REGIMES.RANGING)
+      isLessThan(price, sma) &&
+      (regime === null || regime === MARKET_REGIMES.TRENDING_UP || regime === MARKET_REGIMES.RANGING)
     ) {
       const confidence = this._rsiConfidence(rsiNum, rsiOversold, 'oversold');
       signal = {
@@ -206,11 +206,11 @@ class MomentumStrategy extends StrategyBase {
         marketContext: { rsi, sma, price, regime },
       };
     }
-    // OPEN_SHORT: RSI overbought, price below SMA, regime is trending-down or ranging
+    // OPEN_SHORT: RSI overbought, price above SMA (sell-high in range), regime allows
     else if (
       isGreaterThan(rsi, String(rsiOverbought)) &&
-      isLessThan(price, sma) &&
-      (regime === MARKET_REGIMES.TRENDING_DOWN || regime === MARKET_REGIMES.RANGING)
+      isGreaterThan(price, sma) &&
+      (regime === null || regime === MARKET_REGIMES.TRENDING_DOWN || regime === MARKET_REGIMES.RANGING)
     ) {
       const confidence = this._rsiConfidence(rsiNum, rsiOverbought, 'overbought');
       signal = {

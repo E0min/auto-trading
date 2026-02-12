@@ -471,7 +471,7 @@ class VwapReversionStrategy extends StrategyBase {
     }
 
     // 5. No position: check entry conditions (RANGING or QUIET regimes only)
-    if (regime !== MARKET_REGIMES.RANGING && regime !== MARKET_REGIMES.QUIET) {
+    if (regime !== null && regime !== MARKET_REGIMES.RANGING && regime !== MARKET_REGIMES.QUIET) {
       return;
     }
 
@@ -563,15 +563,25 @@ class VwapReversionStrategy extends StrategyBase {
 
   /**
    * Called when an order fill is received.
-   * Resets position tracking when a close signal is filled.
+   * Updates position tracking when an open or close signal is filled.
    *
    * @param {object} fill
    */
   onFill(fill) {
     if (!this._active) return;
-
+    if (!fill) return;
     const action = fill.action || (fill.signal && fill.signal.action);
-    if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
+
+    if (action === SIGNAL_ACTIONS.OPEN_LONG) {
+      this._positionSide = 'long';
+      if (fill.price !== undefined) this._entryPrice = String(fill.price);
+      log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+    } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
+      this._positionSide = 'short';
+      if (fill.price !== undefined) this._entryPrice = String(fill.price);
+      log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+    } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
+      log.trade('Position closed via fill', { side: this._positionSide, symbol: this._symbol });
       this._resetPosition();
     }
   }

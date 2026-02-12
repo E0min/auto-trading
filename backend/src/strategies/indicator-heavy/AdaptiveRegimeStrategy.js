@@ -53,7 +53,7 @@ class AdaptiveRegimeStrategy extends StrategyBase {
       volatilePositionSizePercent: '4',
       trendLeverage: '3',
       rangeLeverage: '2',
-      volatileLeverage: '5',
+      volatileLeverage: '3',
     },
   };
 
@@ -103,8 +103,6 @@ class AdaptiveRegimeStrategy extends StrategyBase {
     this._highestSinceEntry = null;
     this._lowestSinceEntry = null;
 
-    // Warm-up tracking
-    this._klineCount = 0;
     this._maxHistory = 200;
   }
 
@@ -250,8 +248,6 @@ class AdaptiveRegimeStrategy extends StrategyBase {
       this.klineHistory.splice(0, this.klineHistory.length - this._maxHistory);
     }
 
-    this._klineCount += 1;
-
     // ------ 2) Check if enough data for all indicators ------
     const minRequired = Math.max(
       this._bbPeriod,
@@ -259,9 +255,9 @@ class AdaptiveRegimeStrategy extends StrategyBase {
       this._adxPeriod * 2 + 1,
       this._emaPeriodSlow,
     );
-    if (this._klineCount < minRequired) {
+    if (this.priceHistory.length < minRequired) {
       log.debug('Warming up — not enough data', {
-        have: this._klineCount, need: minRequired,
+        have: this.priceHistory.length, need: minRequired,
       });
       return;
     }
@@ -291,8 +287,8 @@ class AdaptiveRegimeStrategy extends StrategyBase {
       return;
     }
 
-    // Volume surge check
-    const volumeSurge = this._checkVolumeSurge(volume);
+    // Volume surge check (pass current candle's volume for comparison)
+    const volumeSurge = this._checkVolumeSurge();
 
     const regime = this._marketRegime;
 
@@ -322,6 +318,9 @@ class AdaptiveRegimeStrategy extends StrategyBase {
 
     // ------ 5) If no position, check entry based on current regime ------
     if (this._entryPrice) return; // Already in position — skip entry
+
+    // Early exit if regime is null — AdaptiveRegime fundamentally depends on knowing the regime
+    if (regime === null) return;
 
     const marketContext = {
       regime,
@@ -371,14 +370,25 @@ class AdaptiveRegimeStrategy extends StrategyBase {
 
   /**
    * Called when an order fill is received.
-   * Resets position tracking when a close signal is filled.
+   * Updates position tracking when an open or close signal is filled.
+   *
    * @param {object} fill
    */
   onFill(fill) {
     if (!this._active) return;
-
+    if (!fill) return;
     const action = fill.action || (fill.signal && fill.signal.action);
-    if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
+
+    if (action === SIGNAL_ACTIONS.OPEN_LONG) {
+      this._positionSide = 'long';
+      if (fill.price !== undefined) this._entryPrice = String(fill.price);
+      log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+    } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
+      this._positionSide = 'short';
+      if (fill.price !== undefined) this._entryPrice = String(fill.price);
+      log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+    } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
+      log.trade('Position closed via fill', { side: this._positionSide, symbol: this._symbol });
       this._resetPosition();
     }
   }
@@ -592,15 +602,17 @@ class AdaptiveRegimeStrategy extends StrategyBase {
   // ---------------------------------------------------------------------------
 
   /**
-   * Check whether the current volume exceeds the 20-period SMA * 1.5.
-   * @param {string} currentVolume
+   * Check whether the current (latest) volume exceeds the 20-period SMA * 1.5.
+   * Uses the last element of _volumeHistory as the current candle.
    * @returns {boolean}
    */
-  _checkVolumeSurge(currentVolume) {
+  _checkVolumeSurge() {
     const lookback = 20;
     if (this._volumeHistory.length < lookback + 1) return false;
 
-    // Use the last 20 volumes BEFORE the current one (which is already pushed)
+    const currentVolume = this._volumeHistory[this._volumeHistory.length - 1];
+
+    // Average the 20 volumes BEFORE the current one
     const start = this._volumeHistory.length - lookback - 1;
     const end = this._volumeHistory.length - 1;
     let sum = '0';
@@ -669,10 +681,19 @@ class AdaptiveRegimeStrategy extends StrategyBase {
    * @private
    */
   _emitExit(action, price, reason) {
+    // Determine suggestedQty based on the regime under which the position was opened
+    let suggestedQty = this._trendPositionSizePercent;
+    if (this._entryRegime === MARKET_REGIMES.RANGING) {
+      suggestedQty = this._rangePositionSizePercent;
+    } else if (this._entryRegime === MARKET_REGIMES.VOLATILE) {
+      suggestedQty = this._volatilePositionSizePercent;
+    }
+
     const signal = {
       action,
       symbol: this._symbol,
       category: this._category,
+      suggestedQty,
       suggestedPrice: price,
       confidence: '1.0000',
       reason,

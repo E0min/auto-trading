@@ -408,7 +408,23 @@ class SwingStructureStrategy extends StrategyBase {
   // --------------------------------------------------------------------------
 
   /** @param {object} fill — fill data from the exchange */
-  onFill(fill) { log.debug('Fill received', { fill }); }
+  onFill(fill) {
+    if (!fill) return;
+    const action = fill.action || (fill.signal && fill.signal.action);
+
+    if (action === SIGNAL_ACTIONS.OPEN_LONG) {
+      this._positionSide = 'long';
+      if (fill.price !== undefined) this._entryPrice = String(fill.price);
+      log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+    } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
+      this._positionSide = 'short';
+      if (fill.price !== undefined) this._entryPrice = String(fill.price);
+      log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+    } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
+      log.trade('Position closed via fill', { side: this._positionSide, symbol: this._symbol });
+      this._resetPosition();
+    }
+  }
 
   /** @returns {object|null} most recently generated signal */
   getSignal() { return this._lastSignal; }

@@ -21,6 +21,8 @@ const {
   divide,
   isGreaterThan,
   isLessThan,
+  isGreaterThanOrEqual,
+  isLessThanOrEqual,
   toFixed,
   abs,
   max,
@@ -62,6 +64,7 @@ class GridStrategy extends StrategyBase {
       gridLevels: 10,
       totalBudgetPercent: '20',
       leverage: 2,
+      maxDrawdownPercent: '3',
     },
   };
 
@@ -83,6 +86,7 @@ class GridStrategy extends StrategyBase {
     this._gridLevelCount = merged.gridLevels;
     this._totalBudgetPercent = merged.totalBudgetPercent;
     this._leverage = merged.leverage;
+    this._maxDrawdownPercent = merged.maxDrawdownPercent;
 
     // --- Internal state -------------------------------------------------
     /** @type {{ high: string, low: string, close: string }[]} */
@@ -140,7 +144,7 @@ class GridStrategy extends StrategyBase {
   onTick(ticker) {
     if (!this._active) return;
 
-    const price = ticker.lastPr || ticker.last || ticker.price;
+    const price = ticker.lastPrice || ticker.last || ticker.price;
     if (!price) return;
 
     this._latestPrice = price;
@@ -148,11 +152,14 @@ class GridStrategy extends StrategyBase {
     // Nothing to check until grid is built
     if (this._gridLevels.length === 0) return;
 
-    // Only generate signals in RANGING regime
-    if (this._marketRegime !== MARKET_REGIMES.RANGING) return;
+    // Only generate signals in RANGING regime (allow null for backtest)
+    if (this._marketRegime !== null && this._marketRegime !== MARKET_REGIMES.RANGING) return;
 
     // Track out-of-range duration for potential grid reset
     this._trackOutOfRange(price);
+
+    // Check grid-wide drawdown stop-loss
+    if (this._checkGridDrawdownSL(price)) return;
 
     // Scan untriggered levels
     for (let i = 0; i < this._gridLevels.length; i++) {
@@ -234,8 +241,8 @@ class GridStrategy extends StrategyBase {
       period: this._atrPeriod,
     });
 
-    // Only operate in RANGING regime
-    if (this._marketRegime !== MARKET_REGIMES.RANGING) {
+    // Only operate in RANGING regime (allow null for backtest)
+    if (this._marketRegime !== null && this._marketRegime !== MARKET_REGIMES.RANGING) {
       log.debug('Regime not RANGING — grid signals suppressed', {
         regime: this._marketRegime,
       });
@@ -294,6 +301,19 @@ class GridStrategy extends StrategyBase {
 
     this._basePrice = price;
     this._gridSpacing = multiply(this._atrValue, this._gridSpacingMultiplier);
+
+    // Validate minimum grid spacing: at least 0.1% of base price to avoid
+    // excessively dense grids where slippage/commissions would erode profits.
+    const minSpacing = multiply(price, '0.001');
+    if (isLessThan(this._gridSpacing, minSpacing)) {
+      log.warn('Grid spacing too dense — adjusting to min 0.1% of price', {
+        original: this._gridSpacing,
+        minSpacing,
+        basePrice: price,
+      });
+      this._gridSpacing = minSpacing;
+    }
+
     this._gridLevels = [];
 
     // Buy (OPEN_LONG) levels below base price
@@ -433,10 +453,10 @@ class GridStrategy extends StrategyBase {
   _isLevelHit(price, lvl) {
     if (lvl.side === 'long') {
       // Buy level is hit when price drops to or below it
-      return isLessThan(price, lvl.price) || price === lvl.price;
+      return isLessThanOrEqual(price, lvl.price);
     }
     // Sell level is hit when price rises to or above it
-    return isGreaterThan(price, lvl.price) || price === lvl.price;
+    return isGreaterThanOrEqual(price, lvl.price);
   }
 
   /**
@@ -568,6 +588,104 @@ class GridStrategy extends StrategyBase {
     } else if (!isOutside) {
       this._outOfRangeStartTime = null;
     }
+  }
+
+  /**
+   * Check if the aggregate unrealised PnL of all triggered grid levels
+   * exceeds the maximum drawdown threshold.
+   *
+   * For each triggered level we estimate PnL:
+   *   - Long level: (currentPrice - levelPrice) per unit
+   *   - Short level: (levelPrice - currentPrice) per unit
+   *
+   * If total estimated drawdown exceeds maxDrawdownPercent of basePrice,
+   * emit CLOSE_LONG and CLOSE_SHORT signals for all triggered levels and
+   * reset the grid.
+   *
+   * @param {string} price — current market price
+   * @returns {boolean} true if SL was triggered and grid was cleared
+   */
+  _checkGridDrawdownSL(price) {
+    if (!this._basePrice || !this._maxDrawdownPercent) return false;
+
+    const triggered = this._gridLevels.filter(l => l.triggered);
+    if (triggered.length === 0) return false;
+
+    // Sum up per-level PnL as a fraction of base price
+    let totalPnl = '0';
+    for (const lvl of triggered) {
+      if (lvl.side === 'long') {
+        // Long: profit when price rises above level
+        totalPnl = add(totalPnl, subtract(price, lvl.price));
+      } else {
+        // Short: profit when price drops below level
+        totalPnl = add(totalPnl, subtract(lvl.price, price));
+      }
+    }
+
+    // Convert total PnL to percentage of base price
+    const pnlPercent = multiply(divide(totalPnl, this._basePrice), '100');
+
+    // If loss exceeds threshold, close all positions
+    const threshold = subtract('0', this._maxDrawdownPercent); // e.g. '-3'
+    if (isLessThan(pnlPercent, threshold)) {
+      log.trade('Grid drawdown SL triggered — closing all positions', {
+        pnlPercent,
+        threshold: this._maxDrawdownPercent,
+        triggeredLevels: triggered.length,
+        currentPrice: price,
+      });
+
+      // Emit close signals for all triggered levels
+      const hasLong = triggered.some(l => l.side === 'long');
+      const hasShort = triggered.some(l => l.side === 'short');
+
+      if (hasLong) {
+        const closeSignal = {
+          action: SIGNAL_ACTIONS.CLOSE_LONG,
+          symbol: this._symbol,
+          category: this._category,
+          suggestedPrice: price,
+          confidence: '1.0000',
+          reduceOnly: true,
+          marketContext: {
+            strategy: 'GridStrategy',
+            reason: 'grid_drawdown_sl',
+            pnlPercent,
+            maxDrawdownPercent: this._maxDrawdownPercent,
+          },
+        };
+        this.emitSignal(closeSignal);
+      }
+
+      if (hasShort) {
+        const closeSignal = {
+          action: SIGNAL_ACTIONS.CLOSE_SHORT,
+          symbol: this._symbol,
+          category: this._category,
+          suggestedPrice: price,
+          confidence: '1.0000',
+          reduceOnly: true,
+          marketContext: {
+            strategy: 'GridStrategy',
+            reason: 'grid_drawdown_sl',
+            pnlPercent,
+            maxDrawdownPercent: this._maxDrawdownPercent,
+          },
+        };
+        this.emitSignal(closeSignal);
+      }
+
+      // Reset grid entirely
+      this._gridLevels = [];
+      this._basePrice = null;
+      this._gridSpacing = null;
+      this._outOfRangeStartTime = null;
+
+      return true;
+    }
+
+    return false;
   }
 }
 

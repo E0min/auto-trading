@@ -13,8 +13,8 @@
  *   - Short: 가격이 Keltner 상단 터치 (close ≥ EMA + ATR * kcMultiplier)
  *
  * 청산:
- *   - TP: +0.8%  (좁은 레인지에서 빠른 이익 확정)
- *   - SL: -0.5%  (빡빡한 손절)
+ *   - TP: +1.2%  (좁은 레인지에서 빠른 이익 확정)
+ *   - SL: -0.8%  (슬리피지/수수료 반영한 손절)
  *   - EMA 중앙 복귀 시 부분 익절 (50%)
  *   - 장세 전환 시 즉시 청산
  *
@@ -34,32 +34,13 @@ const {
   divide,
   isGreaterThan,
   isLessThan,
+  isGreaterThanOrEqual,
+  isLessThanOrEqual,
   toFixed,
   min,
 } = require('../../utils/mathUtils');
+const { emaFromArray, sma: indicatorSma } = require('../../utils/indicators');
 const { createLogger } = require('../../utils/logger');
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function ema(prices, period) {
-  if (prices.length === 0) return '0';
-  const k = divide('2', String(period + 1));
-  let value = prices[0];
-  for (let i = 1; i < prices.length; i++) {
-    // EMA = price * k + prevEMA * (1 - k)
-    value = add(multiply(prices[i], k), multiply(value, subtract('1', k)));
-  }
-  return value;
-}
-
-function sma(arr) {
-  if (arr.length === 0) return '0';
-  let total = '0';
-  for (const v of arr) total = add(total, v);
-  return divide(total, String(arr.length));
-}
 
 // ---------------------------------------------------------------------------
 // Strategy
@@ -77,33 +58,14 @@ class QuietRangeScalpStrategy extends StrategyBase {
       atrQuietThreshold: '0.7',
       leverage: 2,
       positionSizePercent: '3',
-      tpPercent: '0.8',
-      slPercent: '0.5',
+      tpPercent: '1.2',
+      slPercent: '0.8',
     },
   };
 
-  constructor({
-    emaPeriod = 20,
-    atrPeriod = 14,
-    atrSmaPeriod = 20,
-    kcMultiplier = '1.5',
-    atrQuietThreshold = '0.7',
-    leverage = 2,
-    positionSizePercent = '3',
-    tpPercent = '0.8',
-    slPercent = '0.5',
-  } = {}) {
-    super('QuietRangeScalpStrategy', {
-      emaPeriod,
-      atrPeriod,
-      atrSmaPeriod,
-      kcMultiplier,
-      atrQuietThreshold,
-      leverage,
-      positionSizePercent,
-      tpPercent,
-      slPercent,
-    });
+  constructor(config = {}) {
+    const merged = { ...QuietRangeScalpStrategy.metadata.defaultConfig, ...config };
+    super('QuietRangeScalpStrategy', merged);
 
     this._log = createLogger('QuietRangeScalpStrategy');
 
@@ -123,7 +85,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
     this._halfProfitTaken = false;
     this._lastSignal = null;
 
-    this._maxHistory = Math.max(emaPeriod, atrPeriod, atrSmaPeriod) + 20;
+    this._maxHistory = Math.max(merged.emaPeriod, merged.atrPeriod, merged.atrSmaPeriod) + 20;
   }
 
   // -------------------------------------------------------------------------
@@ -200,9 +162,9 @@ class QuietRangeScalpStrategy extends StrategyBase {
     const minRequired = Math.max(emaPeriod, atrPeriod + 1, atrSmaPeriod);
     if (this.priceHistory.length < minRequired) return;
 
-    // 1. Calculate EMA
-    const emaSlice = this.priceHistory.slice(-emaPeriod);
-    const emaValue = ema(emaSlice, emaPeriod);
+    // 1. Calculate EMA (SMA-seeded, from full price history)
+    const emaValue = emaFromArray(this.priceHistory, emaPeriod);
+    if (!emaValue) return;
 
     // 2. Calculate ATR
     const atr = this._calculateAtr(atrPeriod);
@@ -213,7 +175,8 @@ class QuietRangeScalpStrategy extends StrategyBase {
 
     // 3. Calculate ATR SMA (volatility baseline)
     if (this._atrHistory.length < atrSmaPeriod) return;
-    const atrSmaValue = sma(this._atrHistory.slice(-atrSmaPeriod));
+    const atrSmaValue = indicatorSma(this._atrHistory, atrSmaPeriod);
+    if (!atrSmaValue) return;
 
     // 4. Keltner Channel bands
     const band = multiply(atr, kcMultiplier);
@@ -222,7 +185,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
 
     // 5. Quiet filter: ATR ≤ ATR_SMA * threshold
     const atrThreshold = multiply(atrSmaValue, atrQuietThreshold);
-    const isQuiet = isLessThan(atr, atrThreshold) || atr === atrThreshold;
+    const isQuiet = isLessThanOrEqual(atr, atrThreshold);
 
     const regime = this._marketRegime;
 
@@ -267,7 +230,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
     }
 
     // 6. Entry conditions — QUIET only
-    if (regime !== MARKET_REGIMES.QUIET) return;
+    if (regime !== null && regime !== MARKET_REGIMES.QUIET) return;
     if (!isQuiet) return;
 
     const marketContext = {
@@ -281,7 +244,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
     };
 
     // Long: price touches Keltner lower band
-    if (isLessThan(close, kcLower) || close === kcLower) {
+    if (isLessThanOrEqual(close, kcLower)) {
       const confidence = this._calcConfidence(close, kcLower, emaValue, 'long');
       const signal = {
         action: SIGNAL_ACTIONS.OPEN_LONG,
@@ -301,7 +264,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
     }
 
     // Short: price touches Keltner upper band
-    if (isGreaterThan(close, kcUpper) || close === kcUpper) {
+    if (isGreaterThanOrEqual(close, kcUpper)) {
       const confidence = this._calcConfidence(close, kcUpper, emaValue, 'short');
       const signal = {
         action: SIGNAL_ACTIONS.OPEN_SHORT,
@@ -361,7 +324,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
       const tpPrice = multiply(this._entryPrice, add('1', divide(tpPercent, '100')));
       const slPrice = multiply(this._entryPrice, subtract('1', divide(slPercent, '100')));
 
-      if (isGreaterThan(currentPrice, tpPrice) || currentPrice === tpPrice) {
+      if (isGreaterThanOrEqual(currentPrice, tpPrice)) {
         const signal = {
           action: SIGNAL_ACTIONS.CLOSE_LONG,
           symbol: this._symbol,
@@ -376,7 +339,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
         this._resetPosition();
         return;
       }
-      if (isLessThan(currentPrice, slPrice) || currentPrice === slPrice) {
+      if (isLessThanOrEqual(currentPrice, slPrice)) {
         const signal = {
           action: SIGNAL_ACTIONS.CLOSE_LONG,
           symbol: this._symbol,
@@ -394,7 +357,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
       const tpPrice = multiply(this._entryPrice, subtract('1', divide(tpPercent, '100')));
       const slPrice = multiply(this._entryPrice, add('1', divide(slPercent, '100')));
 
-      if (isLessThan(currentPrice, tpPrice) || currentPrice === tpPrice) {
+      if (isLessThanOrEqual(currentPrice, tpPrice)) {
         const signal = {
           action: SIGNAL_ACTIONS.CLOSE_SHORT,
           symbol: this._symbol,
@@ -409,7 +372,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
         this._resetPosition();
         return;
       }
-      if (isGreaterThan(currentPrice, slPrice) || currentPrice === slPrice) {
+      if (isGreaterThanOrEqual(currentPrice, slPrice)) {
         const signal = {
           action: SIGNAL_ACTIONS.CLOSE_SHORT,
           symbol: this._symbol,
@@ -455,7 +418,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
       trValues.push(tr);
     }
 
-    return sma(trValues);
+    return indicatorSma(trValues, trValues.length);
   }
 
   _calcConfidence(price, bandLevel, emaValue, direction) {

@@ -28,7 +28,7 @@ const StrategyBase = require('../../services/strategyBase');
 const { SIGNAL_ACTIONS, MARKET_REGIMES } = require('../../utils/constants');
 const {
   add, subtract, multiply, divide,
-  isGreaterThan, isLessThan, toFixed, abs,
+  isGreaterThan, isLessThan, isLessThanOrEqual, toFixed, abs,
   max: mathMax, min: mathMin,
 } = require('../../utils/mathUtils');
 const { atr } = require('../../utils/indicators');
@@ -41,11 +41,11 @@ class SupportResistanceStrategy extends StrategyBase {
     name: 'SupportResistanceStrategy',
     description: '지지저항 돌파 -- 수평 S/R 레벨 식별 + 리테스트 확인 후 돌파 진입',
     defaultConfig: {
-      lookback: 5,                    // Swing detection lookback (each side)
+      lookback: 3,                    // Swing detection lookback (each side)
       atrPeriod: 14,                  // ATR calculation period
-      clusterTolerance: '0.5',        // ATR multiplier for clustering nearby levels
-      retestTolerance: '0.3',         // ATR multiplier for retest confirmation
-      minTouches: 2,                  // Minimum touch count for a valid level
+      clusterTolerance: '1.0',        // ATR multiplier for clustering nearby levels
+      retestTolerance: '0.5',         // ATR multiplier for retest confirmation
+      minTouches: 1,                  // Minimum touch count for a valid level
       slMultiplier: '1.5',            // ATR multiplier for stop loss
       defaultTpMultiplier: '3',       // Fallback ATR multiplier when no next level
       trailingActivationAtr: '1.5',   // Activate trailing after N x ATR profit
@@ -159,7 +159,7 @@ class SupportResistanceStrategy extends StrategyBase {
     let cur = [sorted[0]];
     for (let i = 1; i < sorted.length; i++) {
       const dist = abs(subtract(sorted[i].price, cur[0].price));
-      if (isLessThan(dist, tolerance) || dist === tolerance) {
+      if (isLessThanOrEqual(dist, tolerance)) {
         cur.push(sorted[i]);
       } else {
         clusters.push(this._finalizeCluster(cur));
@@ -234,11 +234,11 @@ class SupportResistanceStrategy extends StrategyBase {
   _hasRetestConfirmation(levelPrice, side, toleranceDist, lookbackCandles = 3) {
     const len = this.klineHistory.length;
     const start = Math.max(0, len - 1 - lookbackCandles);
-    for (let i = start; i < len - 1; i++) {
+    for (let i = start; i < len; i++) {
       const c = this.klineHistory[i];
       const ref = side === 'long' ? c.low : c.high;
       const dist = abs(subtract(ref, levelPrice));
-      if (isLessThan(dist, toleranceDist) || dist === toleranceDist) return true;
+      if (isLessThanOrEqual(dist, toleranceDist)) return true;
     }
     return false;
   }
@@ -359,9 +359,14 @@ class SupportResistanceStrategy extends StrategyBase {
             positionSizePercent } = this.config;
 
     // 4. Detect swing highs/lows and build S/R levels
+    //    Use previous candle's close for classification so breakouts on
+    //    the current candle can be detected.
     const allSwings = [...this._findSwingHighs(lookback), ...this._findSwingLows(lookback)];
     const tolerance = multiply(clusterTolerance, currentAtr);
-    this._srLevels = this._classifyLevels(this._clusterLevels(allSwings, tolerance), price);
+    const prevClose = this.klineHistory.length >= 2
+      ? this.klineHistory[this.klineHistory.length - 2].close
+      : price;
+    this._srLevels = this._classifyLevels(this._clusterLevels(allSwings, tolerance), prevClose);
 
     log.debug('S/R levels updated', {
       symbol: this._symbol,
@@ -478,7 +483,23 @@ class SupportResistanceStrategy extends StrategyBase {
   // --------------------------------------------------------------------------
 
   /** @param {object} fill -- fill data from order manager */
-  onFill(fill) { log.debug('Fill received', { fill }); }
+  onFill(fill) {
+    if (!fill) return;
+    const action = fill.action || (fill.signal && fill.signal.action);
+
+    if (action === SIGNAL_ACTIONS.OPEN_LONG) {
+      this._positionSide = 'long';
+      if (fill.price !== undefined) this._entryPrice = String(fill.price);
+      log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+    } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
+      this._positionSide = 'short';
+      if (fill.price !== undefined) this._entryPrice = String(fill.price);
+      log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+    } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
+      log.trade('Position closed via fill', { side: this._positionSide, symbol: this._symbol });
+      this._resetPosition();
+    }
+  }
 
   /** @returns {object|null} most recent signal */
   getSignal() { return this._lastSignal; }

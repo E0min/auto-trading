@@ -119,39 +119,20 @@ class BollingerReversionStrategy extends StrategyBase {
   };
 
   /**
-   * @param {object} opts
-   * @param {number} [opts.bbPeriod=20]
-   * @param {number} [opts.bbStdDev=2]
-   * @param {number} [opts.rsiPeriod=14]
-   * @param {number} [opts.stochPeriod=14]
-   * @param {number} [opts.stochSmooth=3]
-   * @param {string} [opts.positionSizePercent='5']
-   * @param {string} [opts.tpPercent='4']
-   * @param {string} [opts.slPercent='4']
-   * @param {number} [opts.maxEntries=3]
+   * @param {object} config
+   * @param {number} [config.bbPeriod=20]
+   * @param {number} [config.bbStdDev=2]
+   * @param {number} [config.rsiPeriod=14]
+   * @param {number} [config.stochPeriod=14]
+   * @param {number} [config.stochSmooth=3]
+   * @param {string} [config.positionSizePercent='5']
+   * @param {string} [config.tpPercent='4']
+   * @param {string} [config.slPercent='4']
+   * @param {number} [config.maxEntries=3]
    */
-  constructor({
-    bbPeriod = 20,
-    bbStdDev = 2,
-    rsiPeriod = 14,
-    stochPeriod = 14,
-    stochSmooth = 3,
-    positionSizePercent = '5',
-    tpPercent = '4',
-    slPercent = '4',
-    maxEntries = 3,
-  } = {}) {
-    super('BollingerReversionStrategy', {
-      bbPeriod,
-      bbStdDev,
-      rsiPeriod,
-      stochPeriod,
-      stochSmooth,
-      positionSizePercent,
-      tpPercent,
-      slPercent,
-      maxEntries,
-    });
+  constructor(config = {}) {
+    const merged = { ...BollingerReversionStrategy.metadata.defaultConfig, ...config };
+    super('BollingerReversionStrategy', merged);
 
     this._log = createLogger('BollingerReversionStrategy');
 
@@ -190,7 +171,7 @@ class BollingerReversionStrategy extends StrategyBase {
     this._rawStochKValues = [];
 
     // Maximum number of prices we keep in memory
-    this._maxHistory = Math.max(bbPeriod, rsiPeriod, stochPeriod) + stochSmooth + 10;
+    this._maxHistory = Math.max(merged.bbPeriod, merged.rsiPeriod, merged.stochPeriod) + merged.stochSmooth + 10;
   }
 
   // --------------------------------------------------------------------------
@@ -392,7 +373,7 @@ class BollingerReversionStrategy extends StrategyBase {
       !isGreaterThan(prevStochK, prevStochD) && isGreaterThan(stochK, stochD) &&
       !isGreaterThan(prevStochK, '20') &&
       regime !== MARKET_REGIMES.TRENDING_DOWN &&
-      (regime === MARKET_REGIMES.RANGING || regime === MARKET_REGIMES.VOLATILE) &&
+      (regime === null || regime === MARKET_REGIMES.RANGING || regime === MARKET_REGIMES.VOLATILE) &&
       (this._positionSide === null || this._positionSide === 'long') &&
       this._entryCount < maxEntries
     ) {
@@ -430,7 +411,7 @@ class BollingerReversionStrategy extends StrategyBase {
       !isLessThan(prevStochK, prevStochD) && isLessThan(stochK, stochD) &&
       !isLessThan(prevStochK, '80') &&
       regime !== MARKET_REGIMES.TRENDING_UP &&
-      (regime === MARKET_REGIMES.RANGING || regime === MARKET_REGIMES.VOLATILE) &&
+      (regime === null || regime === MARKET_REGIMES.RANGING || regime === MARKET_REGIMES.VOLATILE) &&
       (this._positionSide === null || this._positionSide === 'short') &&
       this._entryCount < maxEntries
     ) {
@@ -465,6 +446,37 @@ class BollingerReversionStrategy extends StrategyBase {
     this._prevRsi = rsi;
     this._prevStochK = stochK;
     this._prevStochD = stochD;
+  }
+
+  // --------------------------------------------------------------------------
+  // onFill — handle fill events to update position state
+  // --------------------------------------------------------------------------
+
+  /**
+   * Called when an order fill is received.
+   * Updates position tracking when an open or close signal is filled.
+   *
+   * @param {object} fill
+   */
+  onFill(fill) {
+    if (!this._active) return;
+    if (!fill) return;
+    const action = fill.action || (fill.signal && fill.signal.action);
+
+    if (action === SIGNAL_ACTIONS.OPEN_LONG) {
+      this._positionSide = 'long';
+      if (fill.price !== undefined) this._entryPrice = String(fill.price);
+      if (this._entryCount === 0) this._entryCount = 1;
+      this._log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+    } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
+      this._positionSide = 'short';
+      if (fill.price !== undefined) this._entryPrice = String(fill.price);
+      if (this._entryCount === 0) this._entryCount = 1;
+      this._log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+    } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
+      this._log.trade('Position closed via fill', { side: this._positionSide, symbol: this._symbol });
+      this._resetPosition();
+    }
   }
 
   // --------------------------------------------------------------------------

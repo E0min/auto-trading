@@ -646,14 +646,32 @@ class BreakoutStrategy extends StrategyBase {
   }
 
   // --------------------------------------------------------------------------
-  // onFill — optional lifecycle hook
+  // onFill — handle fill events to update position state
   // --------------------------------------------------------------------------
 
   /**
+   * Called when an order fill is received.
+   * Updates position tracking when an open or close signal is filled.
+   *
    * @param {object} fill
    */
   onFill(fill) {
-    log.debug('Fill received', { fill });
+    if (!this._active) return;
+    if (!fill) return;
+    const action = fill.action || (fill.signal && fill.signal.action);
+
+    if (action === SIGNAL_ACTIONS.OPEN_LONG) {
+      this._positionSide = 'long';
+      if (fill.price !== undefined) this._entryPrice = String(fill.price);
+      log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+    } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
+      this._positionSide = 'short';
+      if (fill.price !== undefined) this._entryPrice = String(fill.price);
+      log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+    } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
+      log.trade('Position closed via fill', { side: this._positionSide, symbol: this._symbol });
+      this._resetPosition();
+    }
   }
 
   // --------------------------------------------------------------------------

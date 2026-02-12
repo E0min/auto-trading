@@ -410,49 +410,73 @@ class SupertrendStrategy extends StrategyBase {
   }
 
   /**
-   * Calculate MACD using incremental EMA approach.
+   * Calculate MACD using incremental O(1) EMA updates.
    *
    * MACD Line = EMA(fast) - EMA(slow)
    * Signal Line = EMA(MACD Line, signalPeriod)
    * Histogram = MACD Line - Signal Line
    */
   _computeMacd() {
-    const closes = this.klineHistory.map((c) => c.close);
+    const len = this.klineHistory.length;
+    const close = this.klineHistory[len - 1].close;
 
-    // We need at least macdSlow candles for the slow EMA
-    if (closes.length < this._macdSlow) return;
-
-    // Calculate full EMA series for fast and slow, then derive MACD
-    const fastEma = this._calculateEma(closes, this._macdFast);
-    const slowEma = this._calculateEma(closes, this._macdSlow);
-
-    if (!fastEma || !slowEma) return;
-
-    // MACD line values = fast EMA - slow EMA (aligned from slowEma start)
-    // slowEma is shorter than fastEma, so we align from the end
-    const slowStart = closes.length - slowEma.length;
-    const macdValues = [];
-
-    for (let i = 0; i < slowEma.length; i++) {
-      const fastIdx = i + slowStart - (closes.length - fastEma.length);
-      if (fastIdx >= 0 && fastIdx < fastEma.length) {
-        macdValues.push(subtract(fastEma[fastIdx], slowEma[i]));
+    // --- Incremental fast EMA ---
+    this._fastEmaCount += 1;
+    if (this._fastEmaCount < this._macdFast) return;
+    if (this._fastEmaValue === null) {
+      // SMA seed for first period
+      let sum = '0';
+      for (let i = len - this._macdFast; i < len; i++) {
+        sum = add(sum, this.klineHistory[i].close);
       }
+      this._fastEmaValue = divide(sum, String(this._macdFast), 8);
+    } else {
+      const k = divide('2', String(this._macdFast + 1), 8);
+      this._fastEmaValue = add(multiply(close, k), multiply(this._fastEmaValue, subtract('1', k)));
     }
 
-    if (macdValues.length < this._macdSignal) return;
+    // --- Incremental slow EMA ---
+    this._slowEmaCount += 1;
+    if (this._slowEmaCount < this._macdSlow) return;
+    if (this._slowEmaValue === null) {
+      let sum = '0';
+      for (let i = len - this._macdSlow; i < len; i++) {
+        sum = add(sum, this.klineHistory[i].close);
+      }
+      this._slowEmaValue = divide(sum, String(this._macdSlow), 8);
+    } else {
+      const k = divide('2', String(this._macdSlow + 1), 8);
+      this._slowEmaValue = add(multiply(close, k), multiply(this._slowEmaValue, subtract('1', k)));
+    }
 
-    // Signal line = EMA of MACD values
-    const signalEma = this._calculateEma(macdValues, this._macdSignal);
-    if (!signalEma || signalEma.length === 0) return;
+    // MACD line
+    const macdLine = subtract(this._fastEmaValue, this._slowEmaValue);
+
+    // --- Incremental signal EMA ---
+    this._signalEmaCount += 1;
+    if (this._signalEmaCount < this._macdSignal) {
+      // Accumulate MACD values for SMA seed
+      if (!this._macdSeedSum) this._macdSeedSum = '0';
+      this._macdSeedSum = add(this._macdSeedSum, macdLine);
+      return;
+    }
+    if (this._signalEmaValue === null) {
+      // SMA seed from first signal-period MACD values
+      if (!this._macdSeedSum) this._macdSeedSum = '0';
+      this._macdSeedSum = add(this._macdSeedSum, macdLine);
+      this._signalEmaValue = divide(this._macdSeedSum, String(this._macdSignal), 8);
+    } else {
+      const k = divide('2', String(this._macdSignal + 1), 8);
+      this._signalEmaValue = add(multiply(macdLine, k), multiply(this._signalEmaValue, subtract('1', k)));
+    }
 
     // Store previous values
     this._prevMacdLine = this._macdLine;
     this._prevSignalLine = this._signalLine;
 
     // Latest values
-    this._macdLine = macdValues[macdValues.length - 1];
-    this._signalLine = signalEma[signalEma.length - 1];
+    this._macdLine = macdLine;
+    this._signalLine = this._signalEmaValue;
     this._histogram = subtract(this._macdLine, this._signalLine);
 
     log.debug('MACD computed', {
@@ -463,31 +487,50 @@ class SupertrendStrategy extends StrategyBase {
   }
 
   /**
-   * Calculate Volume Oscillator.
+   * Calculate Volume Oscillator using incremental O(1) EMA updates.
    *
    * VolOsc = ((shortEMA - longEMA) / longEMA) * 100
    */
   _computeVolumeOscillator() {
-    const volumes = this.klineHistory.map((c) => c.volume);
+    const len = this.klineHistory.length;
+    const volume = this.klineHistory[len - 1].volume;
 
-    if (volumes.length < this._volOscLong) return;
+    // --- Incremental short volume EMA ---
+    this._volShortEmaCount += 1;
+    if (this._volShortEmaCount < this._volOscShort) return;
+    if (this._volShortEmaValue === null) {
+      let sum = '0';
+      for (let i = len - this._volOscShort; i < len; i++) {
+        sum = add(sum, this.klineHistory[i].volume);
+      }
+      this._volShortEmaValue = divide(sum, String(this._volOscShort), 8);
+    } else {
+      const k = divide('2', String(this._volOscShort + 1), 8);
+      this._volShortEmaValue = add(multiply(volume, k), multiply(this._volShortEmaValue, subtract('1', k)));
+    }
 
-    const shortEma = this._calculateEma(volumes, this._volOscShort);
-    const longEma = this._calculateEma(volumes, this._volOscLong);
-
-    if (!shortEma || !longEma || shortEma.length === 0 || longEma.length === 0) return;
-
-    const latestShort = shortEma[shortEma.length - 1];
-    const latestLong = longEma[longEma.length - 1];
+    // --- Incremental long volume EMA ---
+    this._volLongEmaCount += 1;
+    if (this._volLongEmaCount < this._volOscLong) return;
+    if (this._volLongEmaValue === null) {
+      let sum = '0';
+      for (let i = len - this._volOscLong; i < len; i++) {
+        sum = add(sum, this.klineHistory[i].volume);
+      }
+      this._volLongEmaValue = divide(sum, String(this._volOscLong), 8);
+    } else {
+      const k = divide('2', String(this._volOscLong + 1), 8);
+      this._volLongEmaValue = add(multiply(volume, k), multiply(this._volLongEmaValue, subtract('1', k)));
+    }
 
     // Avoid division by zero
-    if (latestLong === '0' || latestLong === '0.00000000') {
+    if (this._volLongEmaValue === '0' || this._volLongEmaValue === '0.00000000') {
       this._volOsc = '0';
       return;
     }
 
     this._volOsc = multiply(
-      divide(subtract(latestShort, latestLong), latestLong, 8),
+      divide(subtract(this._volShortEmaValue, this._volLongEmaValue), this._volLongEmaValue, 8),
       '100',
     );
 
@@ -608,7 +651,7 @@ class SupertrendStrategy extends StrategyBase {
       this._prevSupertrendDir === 'DOWN' &&
       isGreaterThan(this._macdLine, this._signalLine) &&
       isGreaterThan(this._histogram, '0') &&
-      (regime === MARKET_REGIMES.TRENDING_UP || regime === MARKET_REGIMES.VOLATILE)
+      (regime === null || regime === MARKET_REGIMES.TRENDING_UP || regime === MARKET_REGIMES.VOLATILE)
     ) {
       const confidence = this._calculateConfidence('long');
 
@@ -653,7 +696,7 @@ class SupertrendStrategy extends StrategyBase {
       this._prevSupertrendDir === 'UP' &&
       isLessThan(this._macdLine, this._signalLine) &&
       isLessThan(this._histogram, '0') &&
-      (regime === MARKET_REGIMES.TRENDING_DOWN || regime === MARKET_REGIMES.VOLATILE)
+      (regime === null || regime === MARKET_REGIMES.TRENDING_DOWN || regime === MARKET_REGIMES.VOLATILE)
     ) {
       const confidence = this._calculateConfidence('short');
 
@@ -692,40 +735,6 @@ class SupertrendStrategy extends StrategyBase {
   // ---------------------------------------------------------------------------
   // EMA & ATR helpers (String-based)
   // ---------------------------------------------------------------------------
-
-  /**
-   * Calculate EMA series over an array of string-valued prices.
-   *
-   * Returns an array of EMA values (strings) starting from index (period - 1).
-   * The first EMA value is the SMA of the first `period` elements.
-   *
-   * @param {string[]} prices — array of price strings
-   * @param {number} period — EMA period
-   * @returns {string[]|null} — array of EMA values, or null if insufficient data
-   */
-  _calculateEma(prices, period) {
-    if (!prices || prices.length < period) return null;
-
-    const result = [];
-    const k = divide('2', String(period + 1), 8); // smoothing factor = 2 / (period + 1)
-
-    // First value: SMA of the first `period` prices
-    let sum = '0';
-    for (let i = 0; i < period; i++) {
-      sum = add(sum, prices[i]);
-    }
-    let ema = divide(sum, String(period), 8);
-    result.push(ema);
-
-    // Subsequent values: EMA = price * k + prevEMA * (1 - k)
-    const oneMinusK = subtract('1', k);
-    for (let i = period; i < prices.length; i++) {
-      ema = add(multiply(prices[i], k), multiply(ema, oneMinusK));
-      result.push(ema);
-    }
-
-    return result;
-  }
 
   /**
    * Calculate ATR from klineHistory.

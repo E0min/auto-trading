@@ -39,6 +39,7 @@ const {
   divide,
   isGreaterThan,
   isLessThan,
+  isGreaterThanOrEqual,
   toFixed,
   abs,
   max: mathMax,
@@ -268,7 +269,7 @@ class CandlePatternStrategy extends StrategyBase {
 
     // lower shadow >= 2 × body
     const doubleBody = multiply(body, '2');
-    if (!isGreaterThan(lower, doubleBody) && lower !== doubleBody) return null;
+    if (!isGreaterThanOrEqual(lower, doubleBody)) return null;
 
     // upper shadow < body (작은 윗꼬리)
     if (!isLessThan(upper, body)) return null;
@@ -298,7 +299,7 @@ class CandlePatternStrategy extends StrategyBase {
 
     // upper shadow >= 2 × body
     const doubleBody = multiply(body, '2');
-    if (!isGreaterThan(upper, doubleBody) && upper !== doubleBody) return null;
+    if (!isGreaterThanOrEqual(upper, doubleBody)) return null;
 
     // lower shadow < body (작은 아래꼬리)
     if (!isLessThan(lower, body)) return null;
@@ -676,7 +677,21 @@ class CandlePatternStrategy extends StrategyBase {
   // --------------------------------------------------------------------------
 
   onFill(fill) {
-    log.debug('Fill received', { fill });
+    if (!fill) return;
+    const action = fill.action || (fill.signal && fill.signal.action);
+
+    if (action === SIGNAL_ACTIONS.OPEN_LONG) {
+      this._positionSide = 'long';
+      if (fill.price !== undefined) this._entryPrice = String(fill.price);
+      log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+    } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
+      this._positionSide = 'short';
+      if (fill.price !== undefined) this._entryPrice = String(fill.price);
+      log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+    } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
+      log.trade('Position closed via fill', { side: this._positionSide, symbol: this._symbol });
+      this._resetPosition();
+    }
   }
 
   // --------------------------------------------------------------------------
