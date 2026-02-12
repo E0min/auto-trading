@@ -8,6 +8,7 @@
 
 const router = require('express').Router();
 const { createLogger } = require('../utils/logger');
+const registry = require('../strategies');
 
 const log = createLogger('BotRoutes');
 
@@ -98,6 +99,97 @@ module.exports = function createBotRoutes({ botService, riskEngine }) {
       res.json({ success: true, data: session });
     } catch (err) {
       log.error('POST /emergency-stop — error', { error: err });
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // =========================================================================
+  // Strategy management endpoints
+  // =========================================================================
+
+  // GET /api/bot/strategies — list all registered strategies + active status
+  router.get('/strategies', (req, res) => {
+    try {
+      const allStrategies = registry.listWithMetadata();
+      const activeNames = botService.strategies.map((s) => s.name);
+
+      const strategies = allStrategies.map((meta) => ({
+        name: meta.name,
+        description: meta.description || '',
+        defaultConfig: meta.defaultConfig || {},
+        active: activeNames.includes(meta.name),
+      }));
+
+      res.json({ success: true, data: { strategies } });
+    } catch (err) {
+      log.error('GET /strategies — error', { error: err });
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/bot/strategies/:name/enable — enable a strategy at runtime
+  router.post('/strategies/:name/enable', (req, res) => {
+    try {
+      const { name } = req.params;
+      const config = req.body || {};
+      const ok = botService.enableStrategy(name, config);
+
+      if (!ok) {
+        return res.status(400).json({
+          success: false,
+          error: `Failed to enable strategy "${name}". Check that the bot is running and the strategy is registered.`,
+        });
+      }
+
+      res.json({ success: true, data: { name, enabled: true } });
+    } catch (err) {
+      log.error('POST /strategies/:name/enable — error', { error: err });
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/bot/strategies/:name/disable — disable a strategy at runtime
+  router.post('/strategies/:name/disable', (req, res) => {
+    try {
+      const { name } = req.params;
+      const ok = botService.disableStrategy(name);
+
+      if (!ok) {
+        return res.status(400).json({
+          success: false,
+          error: `Failed to disable strategy "${name}". Check that the bot is running and the strategy is active.`,
+        });
+      }
+
+      res.json({ success: true, data: { name, enabled: false } });
+    } catch (err) {
+      log.error('POST /strategies/:name/disable — error', { error: err });
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // PUT /api/bot/strategies/:name/config — update a running strategy's config
+  router.put('/strategies/:name/config', (req, res) => {
+    try {
+      const { name } = req.params;
+      const newConfig = req.body;
+
+      if (!newConfig || typeof newConfig !== 'object') {
+        return res.status(400).json({ success: false, error: 'Request body must be a valid config object' });
+      }
+
+      const strategy = botService.strategies.find((s) => s.name === name);
+      if (!strategy) {
+        return res.status(404).json({
+          success: false,
+          error: `Strategy "${name}" is not currently active`,
+        });
+      }
+
+      strategy.updateConfig(newConfig);
+      res.json({ success: true, data: { name, config: strategy.getConfig() } });
+    } catch (err) {
+      log.error('PUT /strategies/:name/config — error', { error: err });
       res.status(500).json({ success: false, error: err.message });
     }
   });

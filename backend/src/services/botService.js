@@ -19,7 +19,7 @@ const {
   WS_INST_TYPES,
 } = require('../utils/constants');
 const BotSession = require('../models/BotSession');
-const { MomentumStrategy, MeanReversionStrategy } = require('./sampleStrategies');
+const registry = require('../strategies');
 
 const log = createLogger('BotService');
 
@@ -491,10 +491,119 @@ class BotService extends EventEmitter {
         name: s.name,
         active: s.isActive(),
         symbol: s._symbol,
+        config: s.getConfig(),
+        lastSignal: s.getSignal(),
       })),
       symbols: this._selectedSymbols,
+      registeredStrategies: registry.list(),
       riskStatus: this.riskEngine.getStatus(),
     };
+  }
+
+  // =========================================================================
+  // enableStrategy / disableStrategy — runtime strategy management
+  // =========================================================================
+
+  /**
+   * Enable a strategy by name at runtime. Creates a new instance and wires
+   * it into the current event loop.
+   *
+   * @param {string} name — registered strategy name
+   * @param {object} [config={}] — strategy-specific configuration
+   * @returns {boolean} true if successfully enabled
+   */
+  enableStrategy(name, config = {}) {
+    if (!this._running) {
+      log.warn('enableStrategy — bot is not running');
+      return false;
+    }
+
+    if (!registry.has(name)) {
+      log.warn('enableStrategy — unknown strategy', { name });
+      return false;
+    }
+
+    // Prevent duplicate
+    if (this.strategies.some((s) => s.name === name)) {
+      log.warn('enableStrategy — strategy already active', { name });
+      return false;
+    }
+
+    try {
+      const strategy = registry.create(name, config);
+
+      // Activate on all selected symbols
+      const category = this.currentSession?.config?.category || CATEGORIES.USDT_FUTURES;
+      for (const symbol of this._selectedSymbols) {
+        strategy.activate(symbol, category);
+      }
+
+      // Set current market regime
+      if (this.marketRegime._currentRegime) {
+        strategy.setMarketRegime(this.marketRegime._currentRegime);
+      }
+
+      // Wire signal handler
+      const sessionId = this.currentSession ? this.currentSession._id.toString() : null;
+      const onSignal = (signal) => {
+        this.orderManager.submitOrder({
+          ...signal,
+          qty: signal.suggestedQty || signal.qty,
+          price: signal.suggestedPrice || signal.price,
+          sessionId,
+        }).catch((err) => {
+          log.error('orderManager.submitOrder error from strategy signal', {
+            strategy: name,
+            error: err,
+          });
+        });
+      };
+      strategy.on(TRADE_EVENTS.SIGNAL_GENERATED, onSignal);
+      this._eventCleanups.push(() => {
+        strategy.removeListener(TRADE_EVENTS.SIGNAL_GENERATED, onSignal);
+      });
+
+      this.strategies.push(strategy);
+
+      log.info('enableStrategy — strategy enabled', { name });
+      return true;
+    } catch (err) {
+      log.error('enableStrategy — failed', { name, error: err });
+      return false;
+    }
+  }
+
+  /**
+   * Disable a strategy by name at runtime. Deactivates and removes it
+   * from the active strategy list.
+   *
+   * @param {string} name — strategy name to disable
+   * @returns {boolean} true if successfully disabled
+   */
+  disableStrategy(name) {
+    if (!this._running) {
+      log.warn('disableStrategy — bot is not running');
+      return false;
+    }
+
+    const idx = this.strategies.findIndex((s) => s.name === name);
+    if (idx === -1) {
+      log.warn('disableStrategy — strategy not found in active list', { name });
+      return false;
+    }
+
+    try {
+      const strategy = this.strategies[idx];
+      strategy.deactivate();
+      strategy.removeAllListeners(TRADE_EVENTS.SIGNAL_GENERATED);
+      this.strategies.splice(idx, 1);
+
+      log.info('disableStrategy — strategy disabled', { name });
+      return true;
+    } catch (err) {
+      log.error('disableStrategy — failed', { name, error: err });
+      return false;
+    }
   }
 
   // =========================================================================
@@ -502,8 +611,13 @@ class BotService extends EventEmitter {
   // =========================================================================
 
   /**
-   * Create strategy instances based on config. Defaults to both
-   * MomentumStrategy and MeanReversionStrategy.
+   * Create strategy instances based on config using the strategy registry.
+   * Defaults to MomentumStrategy and MeanReversionStrategy when
+   * config.strategies is not specified (backward compatibility).
+   *
+   * Per-strategy config can be passed as `config.<strategyName>Config`
+   * (e.g. `config.rsiPivotConfig`) or using the camelCase form of the
+   * strategy name.
    *
    * @param {object} config
    * @returns {Array<import('./strategyBase')>}
@@ -515,18 +629,16 @@ class BotService extends EventEmitter {
 
     for (const name of strategyNames) {
       try {
-        let strategy;
-        switch (name) {
-          case 'MomentumStrategy':
-            strategy = new MomentumStrategy(config.momentumConfig || {});
-            break;
-          case 'MeanReversionStrategy':
-            strategy = new MeanReversionStrategy(config.meanReversionConfig || {});
-            break;
-          default:
-            log.warn('_createStrategies — unknown strategy name, skipping', { name });
-            continue;
+        if (!registry.has(name)) {
+          log.warn('_createStrategies — unknown strategy name, skipping', { name });
+          continue;
         }
+
+        // Resolve per-strategy config: try <name>Config, then <camelCase>Config
+        const configKey = name.charAt(0).toLowerCase() + name.slice(1) + 'Config';
+        const strategyConfig = config[configKey] || config[name + 'Config'] || {};
+
+        const strategy = registry.create(name, strategyConfig);
         strategies.push(strategy);
         log.info('_createStrategies — strategy created', { name });
       } catch (err) {
