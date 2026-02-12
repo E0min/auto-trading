@@ -82,14 +82,15 @@ async function bootstrap() {
     marketData,
   });
 
-  const coinSelector = new CoinSelector({
-    exchangeClient,
-    tickerAggregator,
-  });
-
   const marketRegime = new MarketRegime({
     marketData,
     tickerAggregator,
+  });
+
+  const coinSelector = new CoinSelector({
+    exchangeClient,
+    tickerAggregator,
+    marketRegime,
   });
 
   const performanceTracker = new PerformanceTracker();

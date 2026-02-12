@@ -167,7 +167,7 @@ class ExchangeClient extends EventEmitter {
     return this._withRetry(async () => {
       const params = category ? { productType: category } : undefined;
       log.info(label, { category });
-      const response = await restClient.getBalances(params);
+      const response = await restClient.getFuturesAccountAssets(params);
       log.debug(`${label} — response received`, {
         dataLength: Array.isArray(response?.data) ? response.data.length : undefined,
       });
@@ -234,7 +234,7 @@ class ExchangeClient extends EventEmitter {
         reduceOnly,
       });
 
-      const response = await restClient.submitNewOrder(orderParams);
+      const response = await restClient.futuresSubmitOrder(orderParams);
 
       log.trade(`${label} — submitted`, {
         symbol,
@@ -269,7 +269,7 @@ class ExchangeClient extends EventEmitter {
       if (clientOid !== undefined) params.clientOid = clientOid;
 
       log.trade(`${label} — requesting`, { symbol, orderId, clientOid });
-      const response = await restClient.cancelOrder(params);
+      const response = await restClient.futuresCancelOrder(params);
       log.trade(`${label} — done`, { symbol, orderId, clientOid });
       return response;
     }, label);
@@ -292,7 +292,7 @@ class ExchangeClient extends EventEmitter {
       if (symbol !== undefined) params.symbol = symbol;
 
       log.trade(`${label} — requesting`, { category, symbol });
-      const response = await restClient.cancelAllOrders(params);
+      const response = await restClient.futuresCancelAllOrders(params);
       log.trade(`${label} — done`, { category, symbol });
       return response;
     }, label);
@@ -315,7 +315,7 @@ class ExchangeClient extends EventEmitter {
       if (symbol !== undefined) params.symbol = symbol;
 
       log.info(label, { category, symbol });
-      const response = await restClient.getCurrentPosition(params);
+      const response = await restClient.getFuturesPositions(params);
       log.debug(`${label} — response received`, {
         positionCount: Array.isArray(response?.data) ? response.data.length : undefined,
       });
@@ -340,7 +340,7 @@ class ExchangeClient extends EventEmitter {
       if (symbol !== undefined) params.symbol = symbol;
 
       log.info(label, { category, symbol });
-      const response = await restClient.getUnfilledOrders(params);
+      const response = await restClient.getFuturesOpenOrders(params);
       log.debug(`${label} — response received`, {
         orderCount: Array.isArray(response?.data?.entrustedList) ? response.data.entrustedList.length : undefined,
       });
@@ -367,7 +367,7 @@ class ExchangeClient extends EventEmitter {
       if (clientOid !== undefined) params.clientOid = clientOid;
 
       log.info(label, { category, orderId, clientOid });
-      const response = await restClient.getOrderInfo(params);
+      const response = await restClient.getFuturesOrder(params);
       log.debug(`${label} — response received`);
       return response;
     }, label);
@@ -390,7 +390,7 @@ class ExchangeClient extends EventEmitter {
       if (symbol !== undefined) params.symbol = symbol;
 
       log.debug(label, { category, symbol });
-      const response = await restClient.getTickers(params);
+      const response = await restClient.getFuturesAllTickers(params);
       log.debug(`${label} — response received`, {
         tickerCount: Array.isArray(response?.data) ? response.data.length : undefined,
       });
@@ -421,7 +421,7 @@ class ExchangeClient extends EventEmitter {
       if (limit !== undefined) params.limit = String(limit);
 
       log.debug(label, { category, symbol, interval, limit });
-      const response = await restClient.getCandles(params);
+      const response = await restClient.getFuturesHistoricCandles(params);
       log.debug(`${label} — response received`, {
         candleCount: Array.isArray(response?.data) ? response.data.length : undefined,
       });
@@ -444,10 +444,78 @@ class ExchangeClient extends EventEmitter {
       const params = { productType: category };
 
       log.info(label, { category });
-      const response = await restClient.getInstruments(params);
+      const response = await restClient.getFuturesContractConfig(params);
       log.debug(`${label} — response received`, {
         instrumentCount: Array.isArray(response?.data) ? response.data.length : undefined,
       });
+      return response;
+    }, label);
+  }
+
+  /**
+   * Get open interest for a symbol.
+   *
+   * @param {Object} params
+   * @param {string} params.symbol   — trading pair (e.g. 'BTCUSDT')
+   * @param {string} params.category — product type
+   * @returns {Promise<Object>}
+   */
+  async getOpenInterest({ symbol, category }) {
+    const label = 'getOpenInterest';
+    const restClient = getRestClient();
+
+    return this._withRetry(async () => {
+      const params = { symbol, productType: category };
+
+      log.debug(label, { symbol, category });
+      const response = await restClient.getFuturesOpenInterest(params);
+      log.debug(`${label} — response received`, { symbol });
+      return response;
+    }, label);
+  }
+
+  /**
+   * Get current funding rate for a symbol.
+   *
+   * @param {Object} params
+   * @param {string} params.symbol   — trading pair (e.g. 'BTCUSDT')
+   * @param {string} params.category — product type
+   * @returns {Promise<Object>}
+   */
+  async getFundingRate({ symbol, category }) {
+    const label = 'getFundingRate';
+    const restClient = getRestClient();
+
+    return this._withRetry(async () => {
+      const params = { symbol, productType: category };
+
+      log.debug(label, { symbol, category });
+      const response = await restClient.getFuturesCurrentFundingRate(params);
+      log.debug(`${label} — response received`, { symbol });
+      return response;
+    }, label);
+  }
+
+  /**
+   * Get order book depth for a symbol.
+   *
+   * @param {Object} params
+   * @param {string} params.symbol   — trading pair (e.g. 'BTCUSDT')
+   * @param {string} params.category — product type
+   * @param {number} [params.limit]  — depth limit
+   * @returns {Promise<Object>}
+   */
+  async getOrderBookDepth({ symbol, category, limit }) {
+    const label = 'getOrderBookDepth';
+    const restClient = getRestClient();
+
+    return this._withRetry(async () => {
+      const params = { symbol, productType: category };
+      if (limit !== undefined) params.limit = String(limit);
+
+      log.debug(label, { symbol, category, limit });
+      const response = await restClient.getFuturesMergeDepth(params);
+      log.debug(`${label} — response received`, { symbol });
       return response;
     }, label);
   }
