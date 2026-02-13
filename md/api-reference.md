@@ -298,6 +298,57 @@
 
 ---
 
+## 리스크 이벤트 (`/api/risk`)
+
+리스크 엔진에서 발생한 이벤트(서킷 브레이크, 낙폭 경고, 노출 조정 등)를 조회하고 관리합니다.
+
+| Method | Path | 설명 | 쿼리/Body |
+|--------|------|------|-----------|
+| GET | `/api/risk/events` | 리스크 이벤트 목록 | `?sessionId=&severity=&limit=50` |
+| GET | `/api/risk/events/unacknowledged` | 미확인 리스크 이벤트 | - |
+| PUT | `/api/risk/events/:id/acknowledge` | 리스크 이벤트 확인 처리 | - |
+| GET | `/api/risk/status` | 현재 리스크 상태 (서킷 브레이커, 낙폭, 노출 종합) | - |
+
+#### GET /api/risk/events 응답
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "65a1b2c3...",
+      "eventType": "circuit_break",
+      "severity": "critical",
+      "message": "연속 5회 손실로 서킷 브레이커 발동",
+      "riskSnapshot": {
+        "equity": "9500",
+        "drawdown": "5.0",
+        "exposure": "15.2"
+      },
+      "acknowledged": false,
+      "sessionId": "65a1b2c3...",
+      "createdAt": "2026-01-15T10:00:00Z"
+    }
+  ]
+}
+```
+
+#### GET /api/risk/status 응답
+
+```json
+{
+  "success": true,
+  "data": {
+    "circuitBreaker": { "tripped": false, "reason": null },
+    "drawdownMonitor": { "currentDrawdown": "2.5", "halted": false },
+    "exposureGuard": { "utilizationPercent": "83.3" },
+    "accountState": { "equity": "10250", "positionCount": 3 }
+  }
+}
+```
+
+---
+
 ## 시스템 상태 (`/api/health`)
 
 | Method | Path | 설명 |
@@ -339,3 +390,7 @@
 | `circuit_break` | `{ reason, trippedAt }` | 서킷 브레이커 발동 |
 | `drawdown_warning` | `{ currentDrawdown, maxDrawdown }` | 낙폭 경고 |
 | `drawdown_halt` | `{ currentDrawdown }` | 낙폭 중단 |
+| `circuit_reset` | `{ resetAt }` | 서킷 브레이커 해제 |
+| `exposure_adjusted` | `{ symbol, adjustedQty, reason }` | 노출 자동 조정 |
+| `unhandled_error` | `{ error, source }` | 미처리 예외 발생 |
+| `signal_skipped` | `{ strategy, symbol, reason }` | 시그널 건너뜀 |

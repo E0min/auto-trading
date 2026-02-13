@@ -2,7 +2,7 @@
 
 ## 개요
 
-MongoDB + Mongoose ODM을 사용합니다. 4개의 모델이 정의되어 있습니다.
+MongoDB + Mongoose ODM을 사용합니다. 5개의 모델이 정의되어 있습니다.
 
 > **중요**: 모든 금액 필드는 **String 타입**입니다. 부동소수점 정밀도 문제를 방지하기 위해 `mathUtils`로 산술 연산합니다.
 
@@ -160,6 +160,49 @@ CLOSE_SHORT  — 숏 포지션 청산
 - 자산 곡선(equity curve) 시각화 데이터
 - 세션별 자산 추이 추적
 - 주기적 스냅샷 기록 (수 분 간격)
+
+---
+
+## 5. RiskEvent — 리스크 이벤트 (Sprint R2)
+
+파일: `backend/src/models/RiskEvent.js`
+
+### 스키마
+
+| 필드 | 타입 | 필수 | 기본값 | 설명 |
+|------|------|------|--------|------|
+| `eventType` | String | Yes | - | 이벤트 유형 (circuit_break, drawdown_warning, drawdown_halt, exposure_adjusted, unhandled_error 등) |
+| `severity` | String | Yes | - | 심각도 (`critical`, `warning`, `info`) (indexed) |
+| `message` | String | - | - | 이벤트 설명 메시지 |
+| `riskSnapshot` | Mixed | - | - | 발생 시점 리스크 상태 (equity, drawdown, exposure 등) |
+| `acknowledged` | Boolean | - | `false` | 사용자 확인 여부 (indexed) |
+| `sessionId` | ObjectId | - | - | 봇 세션 ID (ref: BotSession, indexed) |
+
+### 인덱스
+- `{ severity: 1 }` — 심각도별 조회
+- `{ acknowledged: 1 }` — 미확인 이벤트 조회
+- `{ sessionId: 1, createdAt: -1 }` — 세션 내 시간순 조회
+- `{ createdAt: 1 }` — **TTL 인덱스 (30일 후 자동 삭제)**
+
+### Static 메서드
+
+```javascript
+// 미확인 이벤트 조회
+RiskEvent.getUnacknowledged(sessionId?)  // → RiskEvent[]
+
+// 이벤트 확인 처리
+RiskEvent.acknowledge(eventId)           // → RiskEvent (acknowledged: true)
+```
+
+### 이벤트 유형 (eventType)
+```
+circuit_break       — 서킷 브레이커 발동
+circuit_reset       — 서킷 브레이커 해제
+drawdown_warning    — 낙폭 경고
+drawdown_halt       — 낙폭 중단
+exposure_adjusted   — 노출 자동 조정
+unhandled_error     — 미처리 예외/거부
+```
 
 ---
 

@@ -10,6 +10,9 @@
 | `proposals/round_1.md` | 13개 서비스 프로덕션 준비도 감사, 예외처리 매트릭스, 동시성 분석 | Round 1 | active |
 | `proposals/round_1_review.md` | Trader+UI 제안서 교차 리뷰, 의존성 DAG, 병렬 트랙 구현 계획 | Round 1 | active |
 | `../shared/decisions/round_1.md` | Round 1 합의 결정문서 (47개 이슈, Tier 0~3, 아키텍처 결정 AD-1~6) | Round 1 | active |
+| `proposals/round_2.md` | T0-4~T0-6 구현 제안 (크래시핸들러, mutex, equity 방어) | Round 2 | active |
+| `proposals/round_2_review.md` | Round 2 교차 리뷰 | Round 2 | active |
+| `../shared/decisions/round_2.md` | Round 2 합의 결정문서 (T0-1~T0-9, AD-7~AD-12) — **구현 완료** | Round 2 | active |
 
 ## Round 1 Key Findings Summary
 - **C-1**: unhandledRejection/uncaughtException 핸들러 누락 — 프로세스 즉시 종료 위험

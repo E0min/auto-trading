@@ -17,15 +17,15 @@
 
 | ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
 |----|--------|------|------|--------|--------|------|
-| T0-1 | P0 | Backend | 기본 전략 이름 수정 (MomentumStrategy→실존 이름) | T:C5, E:H-7 | R1 | agreed |
-| T0-2 | P0 | Backend | Position sizing: percentage→quantity 변환 파이프라인 구축 | T:C2 | R1 | agreed |
-| T0-3 | P0 | Backend | Multi-symbol routing: Set 기반 심볼 관리로 전환 | T:C1 | R1 | agreed |
-| T0-4 | P0 | Backend | unhandledRejection/uncaughtException 핸들러 추가 | E:C-1 | R1 | agreed |
-| T0-5 | P0 | Backend | orderManager.submitOrder() per-symbol mutex 추가 | E:C-2 | R1 | agreed |
-| T0-6 | P0 | Backend | ExposureGuard equity=0 division by zero 방어 | E:C-3 | R1 | agreed |
-| T0-7 | P0 | Frontend | Emergency Stop ConfirmDialog 추가 | UI:C1 | R1 | agreed |
-| T0-8 | P0 | Frontend | Risk 이벤트(CB/DD) 실시간 UI 표시 + RiskAlertBanner | UI:C2 | R1 | agreed |
-| T0-9 | P0 | Frontend | 실거래/가상거래 모드 시각적 경고 강화 | UI:C4 | R1 | agreed |
+| T0-1 | P0 | Backend | 기본 전략 이름 수정 (MomentumStrategy→실존 이름) | T:C5, E:H-7 | R1 | done |
+| T0-2 | P0 | Backend | Position sizing: percentage→quantity 변환 파이프라인 구축 | T:C2 | R1 | done |
+| T0-3 | P0 | Backend | Multi-symbol routing: Set 기반 심볼 관리로 전환 | T:C1 | R1 | done |
+| T0-4 | P0 | Backend | unhandledRejection/uncaughtException 핸들러 추가 | E:C-1 | R1 | done |
+| T0-5 | P0 | Backend | orderManager.submitOrder() per-symbol mutex 추가 | E:C-2 | R1 | done |
+| T0-6 | P0 | Backend | ExposureGuard equity=0 division by zero 방어 | E:C-3 | R1 | done |
+| T0-7 | P0 | Frontend | Emergency Stop ConfirmDialog 추가 | UI:C1 | R1 | done |
+| T0-8 | P0 | Frontend | Risk 이벤트(CB/DD) 실시간 UI 표시 + RiskAlertBanner | UI:C2 | R1 | done |
+| T0-9 | P0 | Frontend | 실거래/가상거래 모드 시각적 경고 강화 | UI:C4 | R1 | done |
 
 ## Tier 1 — 1주 내 수정 (Reliability)
 
@@ -76,3 +76,4 @@
 
 ## 아키텍처 결정 참조
 → `decisions/round_1.md` — AD-1~AD-6 참조
+→ `decisions/round_2.md` — AD-7~AD-12 참조 (T0-1~T0-9 구현 세부사항)

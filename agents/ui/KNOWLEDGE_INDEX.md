@@ -10,6 +10,9 @@
 | `proposals/round_1.md` | 25개 컴포넌트 줄단위 분석, 레이아웃 재설계안, 시각화 컴포넌트 제안 | Round 1 | active |
 | `proposals/round_1_review.md` | Trader+Engineer 제안서 교차 리뷰, 프론트엔드 변경 요구사항 종합, 타입 변경 | Round 1 | active |
 | `../shared/decisions/round_1.md` | Round 1 합의 결정문서 (47개 이슈, Tier 0~3, 아키텍처 결정 AD-1~6) | Round 1 | active |
+| `proposals/round_2.md` | T0-7~T0-9 구현 제안 (긴급정지 다이얼로그, 리스크배너, 모드배너) | Round 2 | active |
+| `proposals/round_2_review.md` | Round 2 교차 리뷰 | Round 2 | active |
+| `../shared/decisions/round_2.md` | Round 2 합의 결정문서 (T0-1~T0-9, AD-7~AD-12) — **구현 완료** | Round 2 | active |
 
 ## Round 1 Key Findings Summary
 - **C1**: Emergency Stop에 확인 다이얼로그 없음 — 실수로 전포지션 청산 위험

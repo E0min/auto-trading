@@ -41,6 +41,16 @@ module.exports = function createBotRoutes({ botService, riskEngine }) {
 
 // app.js에서 주입
 app.use('/api/bot', createBotRoutes({ botService, riskEngine }));
+app.use('/api/risk', createRiskRoutes({ riskEngine }));
+```
+
+### 프로세스 안정성
+
+`app.js`는 `unhandledRejection`과 `uncaughtException` 핸들러를 등록하여 예기치 않은 에러에도 안전하게 종료합니다. `safeShutdown()` 함수가 봇 정지 → WebSocket 해제 → DB 연결 종료 → 프로세스 종료 순서를 보장합니다.
+
+```javascript
+process.on('unhandledRejection', (reason) => { /* 로깅 후 safeShutdown() */ });
+process.on('uncaughtException', (err) => { /* 로깅 후 safeShutdown() */ });
 ```
 
 ## 의존성 그래프
@@ -111,6 +121,7 @@ app.use('/api/bot', createBotRoutes({ botService, riskEngine }));
 | `trade:order_filled` | orderManager | positionManager, botService | 주문 체결 |
 | `trade:order_cancelled` | orderManager | botService | 주문 취소 |
 | `trade:position_updated` | positionManager | botService (→ Socket.io) | 포지션 업데이트 |
+| `trade:signal_skipped` | botService | (로깅) | 시그널 건너뜀 (수량 산출 실패 등) |
 
 #### RISK_EVENTS — 리스크 이벤트
 | 이벤트 | 발신 서비스 | 수신 서비스 | 설명 |
@@ -122,6 +133,7 @@ app.use('/api/bot', createBotRoutes({ botService, riskEngine }));
 | `risk:drawdown_warning` | DrawdownMonitor | botService (→ Socket.io) | 낙폭 경고 |
 | `risk:drawdown_halt` | DrawdownMonitor | botService (→ Socket.io) | 낙폭 중단 |
 | `risk:exposure_adjusted` | ExposureGuard | botService | 노출 조정 |
+| `risk:unhandled_error` | app.js | botService (→ Socket.io) | 미처리 예외/거부 발생 |
 
 #### REGIME_EVENTS — 레짐 최적화 이벤트
 | 이벤트 | 발신 서비스 | 수신 서비스 | 설명 |
@@ -146,6 +158,10 @@ market:ticker              →    ticker                →  useSocket
 risk:circuit_break         →    circuit_break         →  useSocket
 risk:drawdown_warning      →    drawdown_warning      →  useSocket
 risk:drawdown_halt         →    drawdown_halt         →  useSocket
+risk:circuit_reset         →    circuit_reset         →  useSocket
+risk:exposure_adjusted     →    exposure_adjusted     →  useSocket
+risk:unhandled_error       →    unhandled_error       →  useSocket
+trade:signal_skipped       →    signal_skipped        →  useSocket
 ```
 
 ## 상수 체계

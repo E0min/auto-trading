@@ -102,6 +102,7 @@ exchangeClient (싱글턴) → riskEngine → orderManager/positionManager
 | `/api/backtest` | run(POST), list, :id(GET/DELETE) |
 | `/api/paper` | account, reset (PAPER_TRADING=true일 때만) |
 | `/api/tournament` | info, leaderboard, start, stop, reset, strategy/:name (TOURNAMENT_MODE=true일 때만) |
+| `/api/risk` | events, events/unacknowledged, events/:id/acknowledge, status |
 | `/api/health` | ping, status |
 
 ## 프론트엔드 구조
@@ -131,3 +132,4 @@ exchangeClient (싱글턴) → riskEngine → orderManager/positionManager
 - `BotSession` — 봇 세션 상태/설정/통계
 - `Signal` — 전략 시그널 (confidence, riskApproved, marketContext 포함)
 - `Snapshot` — 주식 곡선용 시점별 스냅샷 (sessionId, equity, cash, unrealizedPnl)
+- `RiskEvent` — 리스크 이벤트 기록 (eventType, severity, riskSnapshot, acknowledged, TTL 30일)

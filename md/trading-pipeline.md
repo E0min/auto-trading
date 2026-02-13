@@ -92,9 +92,15 @@ marketData 이벤트 → 전략.onKline(kline) → 지표 계산 → 조건 평�
 }
 ```
 
+**전략 심볼 관리** (`strategyBase.js`):
+- Set 기반 `_symbols` 관리: `addSymbol()`, `removeSymbol()`, `hasSymbol()`, `getSymbols()`
+- `_currentProcessingSymbol`: 현재 처리 중인 심볼 추적
+- `emitSignal()`: 시그널에 symbol이 없으면 `_currentProcessingSymbol`로 폴백
+
 **전략 라우터** (`strategyRouter.js`):
 - 시장 레짐 변경 시 `targetRegimes` 기반으로 전략 자동 활성화/비활성화
 - 예: 상승장 → Turtle, MaTrend, Supertrend 활성화; Grid, QuietRangeScalp 비활성화
+- **Phase 1 제한**: 전략당 첫 번째 심볼만 할당 (안정성 우선)
 
 ---
 
@@ -113,6 +119,35 @@ marketData 이벤트 → 전략.onKline(kline) → 지표 계산 → 조건 평�
 
 ```
 시그널 → 쿨다운? → 중복? → 포지션 한도? → 충돌? → ✅ 통과 / ❌ 차단
+```
+
+---
+
+## 3.5단계: 포지션 사이징 (Sprint R2)
+
+**담당**: `botService._resolveSignalQuantity()` + `botService._handleStrategySignal()`
+
+시그널 필터를 통과한 후, 리스크 검증 전에 추상적인 퍼센트 기반 수량을 거래소에서 사용 가능한 실제 수량으로 변환합니다.
+
+### `_resolveSignalQuantity(signal)` 파이프라인
+
+```
+suggestedQty (% of equity)
+  → equity 조회 (페이퍼/라이브)
+  → notional = equity × (suggestedQty / 100)
+  → rawQty = notional / currentPrice
+  → floorToStep(rawQty, stepSize)        ← mathUtils.floorToStep()
+  → qty (거래소 호환 수량)
+```
+
+**핵심 함수**: `mathUtils.floorToStep(value, step)` — 값을 step 단위로 내림 처리 (예: `floorToStep('0.0567', '0.01')` → `'0.05'`). `getDecimalPlaces(numStr)` 헬퍼로 소수점 자릿수를 정확히 계산합니다.
+
+### `_handleStrategySignal(signal)` 공통 핸들러
+
+모든 전략 시그널은 이 공통 핸들러를 거칩니다:
+
+```
+시그널 수신 → _resolveSignalQuantity() → 수량 0이면 SIGNAL_SKIPPED 이벤트 → 리스크 검증 → 주문 제출
 ```
 
 ---
@@ -158,6 +193,16 @@ marketData 이벤트 → 전략.onKline(kline) → 지표 계산 → 조건 평�
 **담당**: `orderManager.js`
 
 리스크 검증을 통과하면 주문을 구성합니다.
+
+### Per-Symbol Mutex (Sprint R2)
+
+`orderManager.submitOrder()`에 심볼별 Promise-chaining 뮤텍스가 적용되어 있습니다. 같은 심볼에 대한 동시 주문 요청은 순차적으로 처리됩니다 (30초 타임아웃).
+
+```
+BTCUSDT 주문 A → 실행 중
+BTCUSDT 주문 B → 대기 (A 완료 후 실행)
+ETHUSDT 주문 C → 즉시 실행 (다른 심볼이므로 독립)
+```
 
 ```javascript
 {

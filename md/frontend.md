@@ -19,7 +19,9 @@
 
 **레이아웃**:
 ```
-┌─ 헤더 ─────────────────────────────────────────────────────┐
+┌─ TradingModeBanner (LIVE=빨강 펄스 / PAPER=초록 배너) ──────┐
+├─ RiskAlertBanner (심각도 기반 자동 닫기 알림) ─────────────┤
+├─ 헤더 ─────────────────────────────────────────────────────┤
 │ 봇 제목 | 트레이딩 모드 토글 | 백테스트/토너먼트 링크      │
 ├─────────────────────────────────────────────────────────────┤
 │ 시스템 상태 표시기                                          │
@@ -105,13 +107,14 @@
 | 훅 | 파일 | 폴링 간격 | 용도 |
 |----|------|----------|------|
 | `useBotStatus` | `hooks/useBotStatus.ts` | 5초 | 봇 상태, 전략, 리스크 메트릭 |
-| `useSocket` | `hooks/useSocket.ts` | 이벤트 기반 | 실시간 시그널, 포지션, 레짐 |
+| `useSocket` | `hooks/useSocket.ts` | 이벤트 기반 | 실시간 시그널, 포지션, 레짐, circuit_reset, exposure_adjusted, unhandled_error |
 | `usePositions` | `hooks/usePositions.ts` | 5초 | 오픈 포지션 + 계정 상태 |
 | `useTrades` | `hooks/useTrades.ts` | 10초 | 거래 내역 + 미체결 주문 |
 | `useAnalytics` | `hooks/useAnalytics.ts` | 1회 | 자산 곡선 + 세션 통계 |
 | `useHealthCheck` | `hooks/useHealthCheck.ts` | 30초 | API 지연, 서비스 상태 |
 | `useBacktest` | `hooks/useBacktest.ts` | 1초 (실행 중) | 백테스트 CRUD + 결과 폴링 |
 | `useTournament` | `hooks/useTournament.ts` | 3초 | 토너먼트 정보 + 순위표 |
+| `useRiskEvents` | `hooks/useRiskEvents.ts` | 이벤트 기반 | 리스크 이벤트 조회/확인 처리 |
 
 ### 훅 사용 패턴
 
@@ -140,7 +143,7 @@ const { positions: openPositions, accountState } = usePositions();
 
 | 컴포넌트 | 설명 |
 |----------|------|
-| `BotControlPanel` | 시작/정지/일시정지/재개/긴급정지 버튼 |
+| `BotControlPanel` | 시작/정지/일시정지/재개/긴급정지 버튼 (LIVE 모드 시작 확인, EmergencyStopDialog 통합). Props: tradingMode, openPositionCount, unrealizedPnl |
 | `TradingModeToggle` | 라이브/페이퍼 모드 전환 |
 | `StrategyPanel` | 전략 선택기 (3단 필터: 카테고리, 방향, 변동성) |
 | `AccountOverview` | 자산, 잔고, 미실현 PnL |
@@ -154,6 +157,9 @@ const { positions: openPositions, accountState } = usePositions();
 | `TradesTable` | 거래 내역 + 페이지네이션 |
 | `SystemHealth` | API 상태, 지연, 소켓 연결 |
 | `ClientGate` | 서버/클라이언트 경계 안전 컴포넌트 |
+| `EmergencyStopDialog` | 긴급 정지 체크박스 확인 다이얼로그 |
+| `TradingModeBanner` | 트레이딩 모드 배너 (LIVE=빨강 펄스, PAPER=초록 배너) |
+| `RiskAlertBanner` | 심각도 기반 리스크 알림 배너 (critical=수동 닫기, warning=30초, info=10초 자동 닫기) |
 
 ### 백테스트 컴포넌트 (`components/backtest/`)
 
@@ -173,7 +179,7 @@ const { positions: openPositions, accountState } = usePositions();
 네임스페이스별로 분리된 API 호출 함수:
 
 ```typescript
-import { botApi, tradeApi, analyticsApi, healthApi, tournamentApi, backtestApi } from '@/lib/api-client';
+import { botApi, tradeApi, analyticsApi, healthApi, tournamentApi, backtestApi, riskApi } from '@/lib/api-client';
 
 // 사용 예시
 const status = await botApi.getStatus();
@@ -192,6 +198,7 @@ const health = await healthApi.check();
 | `healthApi` | check, ping |
 | `tournamentApi` | getInfo, start, stop, reset, getLeaderboard, getStrategyDetail |
 | `backtestApi` | run, list, getResult, getEquityCurve, getTrades, delete, getStrategies |
+| `riskApi` | getEvents, getUnacknowledged, acknowledge, getStatus |
 
 ---
 
@@ -239,6 +246,8 @@ getStrategyCategory('GridStrategy') // → 'indicator-light'
 | `MarketRegimeData` | `types/index.ts` | 시장 레짐 데이터 |
 | `TournamentInfo` | `types/index.ts` | 토너먼트 메타데이터 |
 | `LeaderboardEntry` | `types/index.ts` | 순위표 항목 |
+| `RiskEvent` | `types/index.ts` | 리스크 이벤트 (eventType, severity, riskSnapshot, acknowledged) |
+| `RiskEventLegacy` | `types/index.ts` | 레거시 호환 리스크 이벤트 |
 | `BacktestConfig` | `types/backtest.ts` | 백테스트 설정 |
 | `BacktestResult` | `types/backtest.ts` | 백테스트 결과 |
 | `BacktestMetrics` | `types/backtest.ts` | 백테스트 성과 지표 |

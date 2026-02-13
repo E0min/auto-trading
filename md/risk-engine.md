@@ -5,8 +5,12 @@
 `riskEngine.js`는 **모든 주문의 필수 게이트웨이**입니다. 3개의 독립적인 서브 엔진이 주문을 검증합니다. 하나라도 거부하면 주문이 실행되지 않습니다.
 
 ```
-주문 요청 → CircuitBreaker → DrawdownMonitor → ExposureGuard → 승인/거부
+주문 요청 → equity=0 조기 차단 → CircuitBreaker → DrawdownMonitor → ExposureGuard → 승인/거부
 ```
+
+### equity=0 안전장치 (Sprint R2)
+
+`validateOrder()`는 equity가 `'0'`이거나 falsy일 경우, 서브 엔진 검증 없이 **즉시 거부**합니다. 이는 봇 시작 직후 계정 상태가 동기화되기 전에 주문이 들어오는 경우를 방지합니다. `ExposureGuard`에서도 동일하게 equity=0일 때 division-by-zero를 방지하는 가드가 추가되었습니다.
 
 ## 기본 리스크 파라미터
 
@@ -211,3 +215,38 @@ riskEngine.updateAccountState({
   }
 }
 ```
+
+---
+
+## RiskEvent MongoDB 모델 (Sprint R2)
+
+파일: `backend/src/models/RiskEvent.js`
+
+리스크 엔진에서 발생한 이벤트를 MongoDB에 영구 기록합니다. 30일 TTL로 자동 만료됩니다.
+
+### 스키마
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|------|------|
+| `eventType` | String | Yes | 이벤트 유형 (circuit_break, drawdown_warning, drawdown_halt, exposure_adjusted, unhandled_error 등) |
+| `severity` | String | Yes | 심각도 (`critical`, `warning`, `info`) |
+| `message` | String | - | 이벤트 설명 |
+| `riskSnapshot` | Mixed | - | 발생 시점의 리스크 스냅샷 (equity, drawdown, exposure 등) |
+| `acknowledged` | Boolean | - | 사용자 확인 여부 (기본 `false`) |
+| `sessionId` | ObjectId | - | 관련 봇 세션 ID |
+
+### TTL
+- `createdAt` 필드에 30일 TTL 인덱스 설정 — 30일 후 자동 삭제
+
+### Static 메서드
+- `getUnacknowledged(sessionId?)` — 미확인 이벤트 조회
+- `acknowledge(eventId)` — 이벤트 확인 처리
+
+### 전용 API (`/api/risk`)
+
+| Method | Path | 설명 |
+|--------|------|------|
+| GET | `/api/risk/events` | 리스크 이벤트 목록 (`?sessionId=&severity=&limit=50`) |
+| GET | `/api/risk/events/unacknowledged` | 미확인 리스크 이벤트 |
+| PUT | `/api/risk/events/:id/acknowledge` | 이벤트 확인 처리 |
+| GET | `/api/risk/status` | 현재 리스크 상태 종합 |

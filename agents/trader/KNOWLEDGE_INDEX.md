@@ -10,6 +10,9 @@
 | `proposals/round_1.md` | 전략 18개 전수조사, 리스크엔진 감사, 백테스트 신뢰도 분석 | Round 1 | active |
 | `proposals/round_1_review.md` | Engineer+UI 제안서 교차 리뷰, 3-Agent 공통 이슈 분류, 스프린트 우선순위 | Round 1 | active |
 | `../shared/decisions/round_1.md` | Round 1 합의 결정문서 (47개 이슈, Tier 0~3, 아키텍처 결정 AD-1~6) | Round 1 | active |
+| `proposals/round_2.md` | T0-1~T0-9 구현 제안 (포지션 사이징, 심볼 라우팅, 기본전략) | Round 2 | active |
+| `proposals/round_2_review.md` | Round 2 교차 리뷰 | Round 2 | active |
+| `../shared/decisions/round_2.md` | Round 2 합의 결정문서 (T0-1~T0-9, AD-7~AD-12) — **구현 완료** | Round 2 | active |
 
 ## Round 1 Key Findings Summary
 - **C1**: multi-symbol 라우팅 버그 — `_symbol` 단일 값이라 마지막 심볼만 유효
