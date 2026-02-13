@@ -20,6 +20,7 @@ export interface StrategyInfo {
   name: string;
   active: boolean;
   symbol: string;
+  symbols: string[];     // T0-3: all active symbols
   config: Record<string, unknown>;
   lastSignal: Signal | null;
 }
@@ -117,6 +118,8 @@ export interface Signal {
   marketContext: Record<string, unknown>;
   resultOrderId: string;
   sessionId: string;
+  positionSizePercent?: string;  // T0-2: original percentage
+  resolvedQty?: string;          // T0-2: resolved absolute quantity
   createdAt: string;
   updatedAt: string;
 }
@@ -240,6 +243,33 @@ export interface OrderFilledEvent {
 }
 
 export interface RiskEvent {
+  _id: string;
+  sessionId?: string;
+  eventType: 'circuit_break' | 'circuit_reset' | 'drawdown_warning' | 'drawdown_halt' |
+             'exposure_adjusted' | 'order_rejected' | 'equity_insufficient' | 'emergency_stop' |
+             'process_error';
+  severity: 'info' | 'warning' | 'critical';
+  source: string;
+  symbol?: string;
+  reason: string;
+  details?: Record<string, unknown>;
+  riskSnapshot?: {
+    equity: string;
+    drawdownPercent?: string;
+    consecutiveLosses?: number;
+    isCircuitBroken?: boolean;
+    isDrawdownHalted?: boolean;
+    openPositionCount?: number;
+    peakEquity?: string;
+  };
+  acknowledged: boolean;
+  acknowledgedAt?: string;
+  createdAt: string;
+  timestamp?: string;
+}
+
+// Legacy RiskEvent compat (for useSocket inline events that lack full schema)
+export interface RiskEventLegacy {
   reason: string;
   timestamp: string;
   currentDrawdown?: string;

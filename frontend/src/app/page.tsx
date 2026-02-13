@@ -11,6 +11,8 @@ import { useHealthCheck } from '@/hooks/useHealthCheck';
 
 import BotControlPanel from '@/components/BotControlPanel';
 import TradingModeToggle from '@/components/TradingModeToggle';
+import TradingModeBanner from '@/components/TradingModeBanner';
+import RiskAlertBanner from '@/components/RiskAlertBanner';
 import StrategyHub from '@/components/strategy/StrategyHub';
 import AccountOverview from '@/components/AccountOverview';
 import RiskStatusPanel from '@/components/RiskStatusPanel';
@@ -21,6 +23,7 @@ import SignalFeed from '@/components/SignalFeed';
 import TradesTable from '@/components/TradesTable';
 import SystemHealth from '@/components/SystemHealth';
 import Spinner from '@/components/ui/Spinner';
+import { useRiskEvents } from '@/hooks/useRiskEvents';
 
 export default function Dashboard() {
   // Track pre-selected strategies for bot start
@@ -51,7 +54,10 @@ export default function Dashboard() {
     signals,
     regime,
     symbolRegimes: socketSymbolRegimes,
+    riskEvents: socketRiskEvents,
   } = useSocket();
+
+  const { events: riskEvents, acknowledge: acknowledgeRisk, dismiss: dismissRisk } = useRiskEvents(socketRiskEvents);
 
   const {
     positions,
@@ -87,8 +93,15 @@ export default function Dashboard() {
     );
   }
 
+  const tradingMode = botStatus.tradingMode ?? (botStatus.paperMode ? 'paper' : 'live');
+
   return (
-    <div className="min-h-screen p-4 md:p-6 max-w-[1600px] mx-auto">
+    <div className="min-h-screen flex flex-col">
+      {/* Top Banners */}
+      <TradingModeBanner mode={tradingMode} isLoading={botLoading} />
+      <RiskAlertBanner events={riskEvents} onDismiss={dismissRisk} onAcknowledge={acknowledgeRisk} />
+
+      <div className="flex-1 p-4 md:p-6 max-w-[1600px] mx-auto w-full">
       {/* Header */}
       <header className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
@@ -145,6 +158,9 @@ export default function Dashboard() {
         <BotControlPanel
           status={botStatus.status}
           running={botStatus.running}
+          tradingMode={tradingMode}
+          openPositionCount={positions.length}
+          unrealizedPnl={accountState?.unrealizedPnl ?? '0.00'}
           onStart={handleStartBot}
           onStop={stopBot}
           onPause={pauseBot}
@@ -193,6 +209,7 @@ export default function Dashboard() {
 
         {/* Trades Table */}
         <TradesTable trades={trades} loading={tradesLoading} />
+      </div>
       </div>
     </div>
   );

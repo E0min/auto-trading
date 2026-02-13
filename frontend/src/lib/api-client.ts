@@ -12,6 +12,8 @@ import type {
   LeaderboardEntry,
   StrategyDetail,
   StrategyStats,
+  RiskEvent,
+  RiskStatus,
 } from '@/types';
 import type {
   BacktestConfig,
@@ -129,6 +131,22 @@ export const tournamentApi = {
     request<{ message: string; info: TournamentInfo }>('/api/tournament/reset', { method: 'POST', body: JSON.stringify(config || {}) }),
   getLeaderboard: () => request<{ tournament: TournamentInfo; leaderboard: LeaderboardEntry[] }>('/api/tournament/leaderboard'),
   getStrategyDetail: (name: string) => request<StrategyDetail>(`/api/tournament/strategy/${name}`),
+};
+
+// Risk
+export const riskApi = {
+  getEvents: (params?: { sessionId?: string; severity?: string; limit?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.sessionId) query.set('sessionId', params.sessionId);
+    if (params?.severity) query.set('severity', params.severity);
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString();
+    return request<RiskEvent[]>(`/api/risk/events${qs ? `?${qs}` : ''}`);
+  },
+  getUnacknowledged: () => request<RiskEvent[]>('/api/risk/events/unacknowledged'),
+  acknowledge: (id: string) =>
+    request<RiskEvent>(`/api/risk/events/${id}/acknowledge`, { method: 'PUT' }),
+  getStatus: () => request<RiskStatus>('/api/risk/status'),
 };
 
 // Backtest
