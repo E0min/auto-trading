@@ -37,6 +37,12 @@ class StrategyBase extends EventEmitter {
     this._category = CATEGORIES.USDT_FUTURES;
     this._marketRegime = null;
 
+    /** @type {Set<string>} All symbols assigned to this strategy (T0-3) */
+    this._symbols = new Set();
+
+    /** @type {string|null} Symbol currently being processed in onTick/onKline (T0-3) */
+    this._currentProcessingSymbol = null;
+
     /** @type {Map<string, string>} Per-symbol regime overrides */
     this._symbolRegimes = new Map();
 
@@ -104,6 +110,7 @@ class StrategyBase extends EventEmitter {
     }
 
     this._symbol = symbol;
+    this._symbols.add(symbol);
     this._category = category;
     this._active = true;
 
@@ -116,7 +123,69 @@ class StrategyBase extends EventEmitter {
    */
   deactivate() {
     this._active = false;
+    this._symbols.clear();
     this._log.info('Strategy deactivated', { symbol: this._symbol });
+  }
+
+  // ---------------------------------------------------------------------------
+  // T0-3: Multi-symbol management (Set-based)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Add a symbol to this strategy's active set.
+   * @param {string} symbol
+   */
+  addSymbol(symbol) {
+    this._symbols.add(symbol);
+    if (!this._symbol) this._symbol = symbol;
+  }
+
+  /**
+   * Remove a symbol from this strategy's active set.
+   * @param {string} symbol
+   */
+  removeSymbol(symbol) {
+    this._symbols.delete(symbol);
+    if (this._symbols.size === 0) {
+      this._active = false;
+      this._symbol = null;
+    } else if (this._symbol === symbol) {
+      this._symbol = this._symbols.values().next().value;
+    }
+  }
+
+  /**
+   * Check if this strategy handles the given symbol.
+   * @param {string} symbol
+   * @returns {boolean}
+   */
+  hasSymbol(symbol) {
+    return this._symbols.has(symbol);
+  }
+
+  /**
+   * Get all symbols assigned to this strategy.
+   * @returns {string[]}
+   */
+  getSymbols() {
+    return Array.from(this._symbols);
+  }
+
+  /**
+   * Set the symbol currently being processed (for onTick/onKline context).
+   * Used by the router; cleared via try-finally.
+   * @param {string|null} symbol
+   */
+  _setCurrentProcessingSymbol(symbol) {
+    this._currentProcessingSymbol = symbol;
+  }
+
+  /**
+   * Get the symbol currently being processed, falling back to _symbol.
+   * @returns {string|null}
+   */
+  getCurrentSymbol() {
+    return this._currentProcessingSymbol || this._symbol;
   }
 
   /**
@@ -184,9 +253,10 @@ class StrategyBase extends EventEmitter {
    *
    * @returns {string|null}
    */
-  getEffectiveRegime() {
-    if (this._symbol && this._symbolRegimes.has(this._symbol)) {
-      return this._symbolRegimes.get(this._symbol);
+  getEffectiveRegime(symbol = null) {
+    const target = symbol || this._currentProcessingSymbol || this._symbol;
+    if (target && this._symbolRegimes.has(target)) {
+      return this._symbolRegimes.get(target);
     }
     return this._marketRegime;
   }
@@ -209,6 +279,8 @@ class StrategyBase extends EventEmitter {
       strategy: this.name,
       timestamp: new Date().toISOString(),
       ...signalData,
+      // T0-3: symbol fallback chain
+      symbol: signalData.symbol || this._currentProcessingSymbol || this._symbol,
     };
 
     this._log.trade('Signal generated', {

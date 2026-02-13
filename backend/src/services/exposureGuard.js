@@ -75,6 +75,13 @@ class ExposureGuard extends EventEmitter {
    */
   validateOrder(order, accountState) {
     const equity = accountState.equity;
+
+    // T0-6: Guard against equity=0 / null / undefined to prevent division by zero
+    if (!equity || equity === '0' || equity === 0) {
+      log.warn('Order rejected — equity not initialised', { symbol: order.symbol, equity });
+      return { approved: false, reason: 'equity_not_initialized', adjustedQty: '0' };
+    }
+
     const effectivePrice = order.price || '1';
     let qty = order.qty;
 

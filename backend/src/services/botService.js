@@ -17,7 +17,9 @@ const {
   TRADE_EVENTS,
   CATEGORIES,
   WS_INST_TYPES,
+  SIGNAL_ACTIONS,
 } = require('../utils/constants');
+const math = require('../utils/mathUtils');
 const BotSession = require('../models/BotSession');
 const registry = require('../strategies');
 
@@ -300,34 +302,10 @@ class BotService extends EventEmitter {
         });
       }
 
-      // 12. Wire up: strategy SIGNAL_GENERATED -> SignalFilter -> OrderManager
+      // 12. Wire up: strategy SIGNAL_GENERATED -> _handleStrategySignal (T0-2 qty resolution + filter + submit)
       for (const strategy of this.strategies) {
         const onSignal = (signal) => {
-          // Pass through SignalFilter first (if available)
-          if (this.signalFilter) {
-            const result = this.signalFilter.filter(signal);
-            if (!result.passed) {
-              log.debug('Signal filtered out', {
-                strategy: strategy.name,
-                symbol: signal.symbol,
-                action: signal.action,
-                reason: result.reason,
-              });
-              return;
-            }
-          }
-
-          this.orderManager.submitOrder({
-            ...signal,
-            qty: signal.suggestedQty || signal.qty,
-            price: signal.suggestedPrice || signal.price,
-            sessionId,
-          }).catch((err) => {
-            log.error('orderManager.submitOrder error from strategy signal', {
-              strategy: strategy.name,
-              error: err,
-            });
-          });
+          this._handleStrategySignal(signal, sessionId);
         };
         strategy.on(TRADE_EVENTS.SIGNAL_GENERATED, onSignal);
         this._eventCleanups.push(() => {
@@ -809,25 +787,10 @@ class BotService extends EventEmitter {
         }
       }
 
-      // Wire signal handler (with filter)
+      // Wire signal handler (T0-2: uses common _handleStrategySignal)
       const sessionId = this.currentSession ? this.currentSession._id.toString() : null;
       const onSignal = (signal) => {
-        if (this.signalFilter) {
-          const result = this.signalFilter.filter(signal);
-          if (!result.passed) return;
-        }
-
-        this.orderManager.submitOrder({
-          ...signal,
-          qty: signal.suggestedQty || signal.qty,
-          price: signal.suggestedPrice || signal.price,
-          sessionId,
-        }).catch((err) => {
-          log.error('orderManager.submitOrder error from strategy signal', {
-            strategy: name,
-            error: err,
-          });
-        });
+        this._handleStrategySignal(signal, sessionId);
       };
       strategy.on(TRADE_EVENTS.SIGNAL_GENERATED, onSignal);
       this._eventCleanups.push(() => {
@@ -893,7 +856,8 @@ class BotService extends EventEmitter {
    * @private
    */
   _createStrategies(config) {
-    const strategyNames = config.strategies || ['MomentumStrategy', 'MeanReversionStrategy'];
+    const DEFAULT_STRATEGIES = ['RsiPivot', 'MaTrend', 'BollingerReversion', 'Supertrend', 'TurtleBreakout'];
+    const strategyNames = config.strategies || DEFAULT_STRATEGIES;
     const strategies = [];
 
     for (const name of strategyNames) {
@@ -919,6 +883,122 @@ class BotService extends EventEmitter {
     }
 
     return strategies;
+  }
+
+  // =========================================================================
+  // T0-2: Position sizing — percentage → absolute quantity conversion
+  // =========================================================================
+
+  /**
+   * Convert a strategy's suggestedQty (percentage of equity) into an
+   * absolute quantity suitable for the exchange. CLOSE signals bypass
+   * this conversion and use the qty as-is.
+   *
+   * @param {object} signal — strategy signal
+   * @returns {Promise<string|null>} resolved absolute qty, or null if conversion fails
+   * @private
+   */
+  async _resolveSignalQuantity(signal) {
+    // CLOSE signals bypass percentage conversion (AD-7)
+    if (signal.action === SIGNAL_ACTIONS.CLOSE_LONG || signal.action === SIGNAL_ACTIONS.CLOSE_SHORT) {
+      return signal.suggestedQty || signal.qty || null;
+    }
+
+    // Get equity
+    let equity;
+    if (this.paperMode && this.paperPositionManager) {
+      equity = String(this.paperPositionManager.getEquity());
+    } else {
+      try {
+        const accountInfo = await this.exchangeClient.getAccountInfo();
+        equity = accountInfo.equity || accountInfo.totalEquity || '0';
+      } catch (err) {
+        log.error('_resolveSignalQuantity — failed to fetch equity', { error: err.message });
+        return null;
+      }
+    }
+
+    if (!equity || math.isZero(equity)) {
+      log.warn('_resolveSignalQuantity — equity is zero, skipping', { symbol: signal.symbol });
+      return null;
+    }
+
+    const pct = signal.suggestedQty;
+    if (!pct || math.isZero(pct)) return null;
+
+    // percentage → notional value
+    const allocatedValue = math.multiply(equity, math.divide(pct, '100'));
+
+    // notional → quantity
+    const price = signal.suggestedPrice || signal.price;
+    if (!price || math.isZero(price)) return null;
+
+    let qty = math.divide(allocatedValue, price);
+
+    // Floor to lot step (default 0.0001; Phase 2 will use per-symbol lot info)
+    qty = math.floorToStep(qty, '0.0001');
+
+    if (math.isZero(qty)) return null;
+
+    return qty;
+  }
+
+  /**
+   * Common signal handler for strategy SIGNAL_GENERATED events.
+   * Resolves quantity, applies SignalFilter, and submits to OrderManager.
+   * Used by both start() and enableStrategy() to avoid duplication.
+   *
+   * @param {object} signal — raw strategy signal
+   * @param {string|null} sessionId
+   * @private
+   */
+  async _handleStrategySignal(signal, sessionId) {
+    // Pass through SignalFilter first
+    if (this.signalFilter) {
+      const result = this.signalFilter.filter(signal);
+      if (!result.passed) {
+        log.debug('Signal filtered out', {
+          strategy: signal.strategy,
+          symbol: signal.symbol,
+          action: signal.action,
+          reason: result.reason,
+        });
+        return;
+      }
+    }
+
+    // Resolve quantity (T0-2)
+    const resolvedQty = await this._resolveSignalQuantity(signal);
+    if (!resolvedQty) {
+      log.warn('Signal skipped — qty resolution failed', {
+        symbol: signal.symbol,
+        action: signal.action,
+        suggestedQty: signal.suggestedQty,
+      });
+      // Emit skip event for frontend (T0-2 feedback)
+      this.emit('signal_skipped', {
+        symbol: signal.symbol,
+        strategy: signal.strategy,
+        reason: 'qty_resolution_failed',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    // Submit with resolved qty
+    this.orderManager.submitOrder({
+      ...signal,
+      qty: resolvedQty,
+      price: signal.suggestedPrice || signal.price,
+      positionSizePercent: signal.suggestedQty,
+      resolvedQty,
+      sessionId,
+    }).catch((err) => {
+      log.error('orderManager.submitOrder error from strategy signal', {
+        strategy: signal.strategy,
+        error: err,
+      });
+    });
   }
 }
 

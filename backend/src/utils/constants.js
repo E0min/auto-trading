@@ -68,6 +68,7 @@ const RISK_EVENTS = Object.freeze({
   DRAWDOWN_WARNING: 'risk:drawdown_warning',
   DRAWDOWN_HALT: 'risk:drawdown_halt',
   EXPOSURE_ADJUSTED: 'risk:exposure_adjusted',
+  UNHANDLED_ERROR: 'risk:unhandled_error',
 });
 
 const MARKET_EVENTS = Object.freeze({
@@ -85,6 +86,7 @@ const TRADE_EVENTS = Object.freeze({
   ORDER_CANCELLED: 'trade:order_cancelled',
   POSITION_UPDATED: 'trade:position_updated',
   SIGNAL_GENERATED: 'trade:signal_generated',
+  SIGNAL_SKIPPED: 'trade:signal_skipped',
 });
 
 const DEFAULT_RISK_PARAMS = Object.freeze({

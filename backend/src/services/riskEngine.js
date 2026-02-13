@@ -93,6 +93,18 @@ class RiskEngine extends EventEmitter {
    * @returns {{ approved: boolean, adjustedQty?: string, rejectReason?: string }}
    */
   validateOrder(order) {
+    // ---- Step 0: Equity guard (T0-6 defense-in-depth) ----
+    if (!this.accountState.equity || this.accountState.equity === '0') {
+      const result = { approved: false, rejectReason: 'equity_not_initialized' };
+      log.warn('Order REJECTED — equity not initialised', { symbol: order.symbol });
+      this.emit(RISK_EVENTS.ORDER_REJECTED, {
+        order,
+        reason: 'equity_not_initialized',
+        source: 'risk_engine',
+      });
+      return result;
+    }
+
     // ---- Step 1: Circuit Breaker ----
     const cbResult = this.circuitBreaker.check();
     if (!cbResult.allowed) {
