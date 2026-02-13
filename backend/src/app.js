@@ -55,6 +55,7 @@ const createBacktestRoutes = require('./api/backtestRoutes');
 const createPaperRoutes = require('./api/paperRoutes');
 const createTournamentRoutes = require('./api/tournamentRoutes');
 const createRegimeRoutes = require('./api/regimeRoutes');
+const createRiskRoutes = require('./api/riskRoutes');
 
 const log = createLogger('App');
 
@@ -234,6 +235,7 @@ async function bootstrap() {
   app.use('/api/backtest', createBacktestRoutes({ dataFetcher, backtestStore }));
 
   app.use('/api/regime', createRegimeRoutes({ marketRegime, regimeParamStore, regimeOptimizer, regimeEvaluator }));
+  app.use('/api/risk', createRiskRoutes({ riskEngine }));
 
   if (PAPER_TRADING) {
     app.use('/api/paper', createPaperRoutes({ paperEngine, paperPositionManager }));
@@ -382,15 +384,32 @@ async function bootstrap() {
     log.info(`Server listening on port ${PORT}`, { port: PORT });
   });
 
-  // 11. Graceful shutdown
-  const gracefulShutdown = async (signal) => {
-    log.info(`Received ${signal} — starting graceful shutdown`);
+  // 11. Graceful shutdown (T0-4: unified handler with duplicate-shutdown guard)
+  let isShuttingDown = false;
+
+  const safeShutdown = async (reason) => {
+    if (isShuttingDown) {
+      log.warn('safeShutdown — already shutting down, ignoring', { reason });
+      return;
+    }
+    isShuttingDown = true;
+    log.info(`safeShutdown — starting (reason: ${reason})`);
+
+    // Notify frontend before closing
+    try { io.emit(RISK_EVENTS.UNHANDLED_ERROR, { type: reason, timestamp: new Date().toISOString() }); } catch (_) {}
+
+    // Force exit after 10s if graceful shutdown hangs
+    const forceExitTimer = setTimeout(() => {
+      log.error('safeShutdown — force exit after 10s timeout');
+      process.exit(1);
+    }, 10000);
+    forceExitTimer.unref();
 
     // Stop bot if running
     try {
       await botService.stop('server_shutdown');
     } catch (err) {
-      log.error('Graceful shutdown — error stopping bot', { error: err });
+      log.error('safeShutdown — error stopping bot', { error: err });
     }
 
     // Clear tournament interval
@@ -408,7 +427,7 @@ async function bootstrap() {
       io.close();
       log.info('Socket.io server closed');
     } catch (err) {
-      log.error('Graceful shutdown — error closing Socket.io', { error: err });
+      log.error('safeShutdown — error closing Socket.io', { error: err });
     }
 
     // Disconnect from MongoDB
@@ -416,15 +435,39 @@ async function bootstrap() {
       await mongoose.disconnect();
       log.info('MongoDB disconnected');
     } catch (err) {
-      log.error('Graceful shutdown — error disconnecting MongoDB', { error: err });
+      log.error('safeShutdown — error disconnecting MongoDB', { error: err });
     }
 
-    log.info('Graceful shutdown complete');
+    log.info('safeShutdown complete');
     process.exit(0);
   };
 
-  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+  process.on('SIGTERM', () => safeShutdown('SIGTERM'));
+  process.on('SIGINT', () => safeShutdown('SIGINT'));
+
+  // T0-4: unhandledRejection — log + alert, process continues
+  process.on('unhandledRejection', (reason, promise) => {
+    log.error('UNHANDLED REJECTION — process will continue', {
+      reason: String(reason),
+      stack: reason instanceof Error ? reason.stack : undefined,
+    });
+    try {
+      io.emit(RISK_EVENTS.UNHANDLED_ERROR, {
+        type: 'unhandledRejection',
+        reason: String(reason),
+        timestamp: new Date().toISOString(),
+      });
+    } catch (_) {}
+  });
+
+  // T0-4: uncaughtException — graceful shutdown
+  process.on('uncaughtException', (error) => {
+    log.error('UNCAUGHT EXCEPTION — shutting down', {
+      error: error.message,
+      stack: error.stack,
+    });
+    safeShutdown('uncaughtException');
+  });
 
   // Expose references for testing or external access
   return {

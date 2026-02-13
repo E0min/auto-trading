@@ -138,7 +138,9 @@ class StrategyRouter extends EventEmitter {
 
       if (shouldBeActive && !strategy.isActive()) {
         // Activate — strategy fits current regime
-        for (const symbol of this._symbols) {
+        // T0-3 Phase 1: 1 symbol per strategy to prevent internal state contamination
+        const symbol = this._symbols[0];
+        if (symbol) {
           strategy.activate(symbol, this._category);
         }
         strategy.setMarketRegime(regime);
@@ -270,9 +272,11 @@ class StrategyRouter extends EventEmitter {
     this._symbols = symbols;
 
     // Re-activate active strategies on new symbols
+    // T0-3 Phase 1: 1 symbol per strategy
     for (const strategy of this.getActiveStrategies()) {
       strategy.deactivate();
-      for (const symbol of symbols) {
+      const symbol = symbols[0];
+      if (symbol) {
         strategy.activate(symbol, this._category);
       }
       strategy.setMarketRegime(this._currentRegime);

@@ -86,6 +86,9 @@ class OrderManager extends EventEmitter {
     this.riskEngine = riskEngine;
     this.exchangeClient = exchangeClient;
 
+    /** @type {Map<string, Promise>} Per-symbol lock promises (T0-5) */
+    this._symbolLocks = new Map();
+
     /** @type {boolean} Paper trading mode flag */
     this._paperMode = false;
 
@@ -147,7 +150,46 @@ class OrderManager extends EventEmitter {
   // =========================================================================
 
   /**
-   * Submit a new order. Validates through the RiskEngine first.
+   * Submit a new order with per-symbol mutex serialisation (T0-5).
+   * Ensures only one order per symbol is in-flight at a time.
+   *
+   * @param {object} signal
+   * @returns {Promise<object|null>} Trade document if submitted, null if rejected
+   */
+  async submitOrder(signal) {
+    const { symbol } = signal;
+    const LOCK_TIMEOUT_MS = 30000;
+
+    const prev = this._symbolLocks.get(symbol) || Promise.resolve();
+    let releaseLock;
+    const current = new Promise((resolve) => { releaseLock = resolve; });
+    this._symbolLocks.set(symbol, current);
+
+    try {
+      // Wait for previous order with timeout
+      await Promise.race([
+        prev,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Lock timeout')), LOCK_TIMEOUT_MS)
+        ),
+      ]);
+      return await this._submitOrderInternal(signal);
+    } catch (err) {
+      if (err.message === 'Lock timeout') {
+        log.error('submitOrder — lock timeout, skipping', { symbol });
+        return null;
+      }
+      throw err;
+    } finally {
+      releaseLock();
+      if (this._symbolLocks.get(symbol) === current) {
+        this._symbolLocks.delete(symbol);
+      }
+    }
+  }
+
+  /**
+   * Internal order submission — validates through RiskEngine then submits.
    *
    * @param {object} signal
    * @param {string} signal.symbol       — e.g. 'BTCUSDT'
@@ -163,8 +205,9 @@ class OrderManager extends EventEmitter {
    * @param {string} [signal.takeProfitPrice] — TP trigger price (String)
    * @param {string} [signal.stopLossPrice]   — SL trigger price (String)
    * @returns {Promise<object|null>} Trade document if submitted, null if rejected
+   * @private
    */
-  async submitOrder(signal) {
+  async _submitOrderInternal(signal) {
     const {
       symbol,
       action,

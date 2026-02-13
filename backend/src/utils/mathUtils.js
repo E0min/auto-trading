@@ -195,6 +195,34 @@ function abs(val) {
   return Math.abs(parse(val)).toFixed(precision);
 }
 
+/**
+ * Return the number of decimal places in a numeric string.
+ * @param {string|number} numStr
+ * @returns {number}
+ */
+function getDecimalPlaces(numStr) {
+  const str = String(numStr);
+  const dotIndex = str.indexOf('.');
+  if (dotIndex === -1) return 0;
+  return str.length - dotIndex - 1;
+}
+
+/**
+ * Floor a value to the nearest step (lot-size precision).
+ * Uses floor (never round-up) to avoid exceeding balance/limits.
+ * @param {string} value — the value to floor
+ * @param {string} step  — lot step size (e.g. '0.001' for BTC)
+ * @returns {string}
+ */
+function floorToStep(value, step) {
+  const v = parse(value);
+  const s = parse(step);
+  if (s === 0) return value;
+  const result = Math.floor(v / s) * s;
+  const decimals = getDecimalPlaces(step);
+  return result.toFixed(decimals);
+}
+
 module.exports = {
   add,
   subtract,
@@ -210,4 +238,5 @@ module.exports = {
   min,
   toFixed,
   abs,
+  floorToStep,
 };
