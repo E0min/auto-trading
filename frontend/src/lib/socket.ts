@@ -53,6 +53,9 @@ export const SOCKET_EVENTS = {
   DRAWDOWN_WARNING: 'risk:drawdown_warning',
   DRAWDOWN_HALT: 'risk:drawdown_halt',
   EXPOSURE_ADJUSTED: 'risk:exposure_adjusted',
+  UNHANDLED_ERROR: 'risk:unhandled_error',
+  // Trade extended
+  SIGNAL_SKIPPED: 'trade:signal_skipped',
   // Market events
   TICKER: 'market:ticker',
   KLINE: 'market:kline',

@@ -102,6 +102,36 @@ export function useSocket() {
       }));
     });
 
+    socket.on(SOCKET_EVENTS.CIRCUIT_RESET, (data: RiskEvent) => {
+      setState(prev => ({
+        ...prev,
+        riskEvents: [data, ...prev.riskEvents].slice(0, 20),
+      }));
+    });
+
+    socket.on(SOCKET_EVENTS.EXPOSURE_ADJUSTED, (data: RiskEvent) => {
+      setState(prev => ({
+        ...prev,
+        riskEvents: [data, ...prev.riskEvents].slice(0, 20),
+      }));
+    });
+
+    socket.on(SOCKET_EVENTS.UNHANDLED_ERROR, (data: { type: string; reason?: string; timestamp: string }) => {
+      const errorEvent: RiskEvent = {
+        _id: `err_${Date.now()}`,
+        eventType: 'process_error',
+        severity: 'critical',
+        source: 'process',
+        reason: data.reason || `Process ${data.type}`,
+        acknowledged: false,
+        createdAt: data.timestamp,
+      };
+      setState(prev => ({
+        ...prev,
+        riskEvents: [errorEvent, ...prev.riskEvents].slice(0, 20),
+      }));
+    });
+
     return () => {
       disconnectSocket();
     };
