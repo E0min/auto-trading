@@ -29,5 +29,18 @@ npm-debug.log*
 # Debug
 debug/
 
-# Claude Code
-.claude/
+# Claude Code (settings는 제외, commands는 포함)
+.claude/settings*.json
+.claude/statsig/
+.claude/todos/
+.claude/projects/
+
+# Cached data
+backend/data/klines/
+
+# Windows artifacts
+nul
+frontend/nul
+
+# Temp
+plan.md

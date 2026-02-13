@@ -31,6 +31,10 @@ const log = createLogger('SupertrendStrategy');
 class SupertrendStrategy extends StrategyBase {
   static metadata = {
     name: 'SupertrendStrategy',
+    targetRegimes: ['trending_up', 'trending_down', 'volatile'],
+    riskLevel: 'medium',
+    maxConcurrentPositions: 1,
+    cooldownMs: 180000,
     description: '슈퍼트렌드 + MACD 추세추종',
     defaultConfig: {
       atrPeriod: 10,
@@ -639,7 +643,7 @@ class SupertrendStrategy extends StrategyBase {
    * Evaluate entry conditions for both long and short.
    */
   _evaluateEntry() {
-    const regime = this._marketRegime;
+    const regime = this.getEffectiveRegime();
 
     // ---- Long entry ----
     // Supertrend turns UP (was DOWN, now UP)
@@ -812,7 +816,7 @@ class SupertrendStrategy extends StrategyBase {
     if (isGreaterThan(this._volOsc, '10')) score += 10;
 
     // Market regime alignment
-    const regime = this._marketRegime;
+    const regime = this.getEffectiveRegime();
     if (side === 'long' && regime === MARKET_REGIMES.TRENDING_UP) score += 15;
     if (side === 'short' && regime === MARKET_REGIMES.TRENDING_DOWN) score += 15;
     if (regime === MARKET_REGIMES.VOLATILE) score += 10;
@@ -846,7 +850,7 @@ class SupertrendStrategy extends StrategyBase {
         signalLine: this._signalLine,
         histogram: this._histogram,
         volOsc: this._volOsc,
-        regime: this._marketRegime,
+        regime: this.getEffectiveRegime(),
       },
     };
 

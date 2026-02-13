@@ -23,6 +23,7 @@ export default function MarketRegimeIndicator({ regime }: MarketRegimeIndicatorP
             currentRegime === 'trending_down' ? 'bg-red-400' :
             currentRegime === 'ranging' ? 'bg-yellow-400' :
             currentRegime === 'volatile' ? 'bg-purple-400' :
+            currentRegime === 'quiet' ? 'bg-blue-400' :
             'bg-zinc-400'
           }`} />
           {translateRegime(currentRegime)}

@@ -53,6 +53,10 @@ const log = createLogger('CandlePatternStrategy');
 class CandlePatternStrategy extends StrategyBase {
   static metadata = {
     name: 'CandlePatternStrategy',
+    targetRegimes: ['trending_up', 'trending_down', 'volatile', 'ranging'],
+    riskLevel: 'medium',
+    maxConcurrentPositions: 2,
+    cooldownMs: 60000,
     description: '캔들 패턴 가격행동 — Engulfing / Hammer / Star 패턴 + ATR 기반 TP/SL',
     defaultConfig: {
       atrPeriod: 14,                   // ATR 계산 기간
@@ -578,7 +582,7 @@ class CandlePatternStrategy extends StrategyBase {
     // 5. No position: regime filter + pattern detection
 
     // Regime filter: allow trending, volatile, ranging — reject QUIET
-    const regime = this._marketRegime;
+    const regime = this.getEffectiveRegime();
     const regimeOk = regime === null ||
       regime === MARKET_REGIMES.TRENDING_UP ||
       regime === MARKET_REGIMES.TRENDING_DOWN ||
@@ -786,11 +790,11 @@ class CandlePatternStrategy extends StrategyBase {
 
     // Regime bonus — trending markets favor reversal patterns after pullback
     if (
-      this._marketRegime === MARKET_REGIMES.TRENDING_UP ||
-      this._marketRegime === MARKET_REGIMES.TRENDING_DOWN
+      this.getEffectiveRegime() === MARKET_REGIMES.TRENDING_UP ||
+      this.getEffectiveRegime() === MARKET_REGIMES.TRENDING_DOWN
     ) {
       conf += 0.10;
-    } else if (this._marketRegime === MARKET_REGIMES.VOLATILE) {
+    } else if (this.getEffectiveRegime() === MARKET_REGIMES.VOLATILE) {
       conf += 0.05;
     }
 

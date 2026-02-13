@@ -31,7 +31,7 @@ const {
   max,
   min,
 } = require('../../utils/mathUtils');
-const { emaFromArray, emaStep, rsi, bollingerBands, atr, adx } = require('../../utils/indicators');
+const { emaStep } = require('../../utils/indicators');
 const { createLogger } = require('../../utils/logger');
 
 const log = createLogger('AdaptiveRegimeStrategy');
@@ -39,6 +39,10 @@ const log = createLogger('AdaptiveRegimeStrategy');
 class AdaptiveRegimeStrategy extends StrategyBase {
   static metadata = {
     name: 'AdaptiveRegimeStrategy',
+    targetRegimes: ['trending_up', 'trending_down', 'ranging', 'volatile', 'quiet'],
+    riskLevel: 'medium',
+    maxConcurrentPositions: 1,
+    cooldownMs: 120000,
     description: '장세 적응형 멀티전략 — 시장 국면에 따라 자동으로 매매 모드 전환',
     defaultConfig: {
       emaPeriodFast: 9,
@@ -81,14 +85,7 @@ class AdaptiveRegimeStrategy extends StrategyBase {
     this._rangeLeverage = merged.rangeLeverage;
     this._volatileLeverage = merged.volatileLeverage;
 
-    // Price / kline history arrays (all values as Strings)
-    this.klineHistory = [];       // { high, low, close, volume } String objects
-    this.priceHistory = [];       // String[] of closes
-    this._highHistory = [];       // String[]
-    this._lowHistory = [];        // String[]
-    this._volumeHistory = [];     // String[]
-
-    // EMA values (String | null)
+    // EMA values (String | null) — incremental, kept across klines
     this._emaFast = null;
     this._emaSlow = null;
 
@@ -102,8 +99,6 @@ class AdaptiveRegimeStrategy extends StrategyBase {
     // Trailing stop tracking
     this._highestSinceEntry = null;
     this._lowestSinceEntry = null;
-
-    this._maxHistory = 200;
   }
 
   // ---------------------------------------------------------------------------
@@ -140,7 +135,7 @@ class AdaptiveRegimeStrategy extends StrategyBase {
     }
 
     // --- 1) Regime incompatibility check ---
-    const regime = this._marketRegime;
+    const regime = this.getEffectiveRegime();
     if (isLong && regime === MARKET_REGIMES.TRENDING_DOWN) {
       log.trade('Regime incompatibility — closing long in TRENDING_DOWN', {
         symbol: this._symbol, price, regime,
@@ -156,8 +151,8 @@ class AdaptiveRegimeStrategy extends StrategyBase {
       return;
     }
 
-    // Need ATR for dynamic SL / trailing — require kline history
-    const atrVal = atr(this.klineHistory, this._atrPeriod);
+    // Need ATR for dynamic SL / trailing — require indicator cache
+    const atrVal = this._indicatorCache.get(this._symbol, 'atr', { period: this._atrPeriod });
     if (!atrVal) return;
 
     // --- 2) Dynamic stop-loss check ---
@@ -225,61 +220,41 @@ class AdaptiveRegimeStrategy extends StrategyBase {
     const low = String(kline.low);
     const volume = String(kline.volume || '0');
 
-    // ------ 1) Push to history arrays and trim ------
-    this.priceHistory.push(close);
-    this._highHistory.push(high);
-    this._lowHistory.push(low);
-    this._volumeHistory.push(volume);
-    this.klineHistory.push({ high, low, close, volume });
-
-    if (this.priceHistory.length > this._maxHistory) {
-      this.priceHistory.splice(0, this.priceHistory.length - this._maxHistory);
-    }
-    if (this._highHistory.length > this._maxHistory) {
-      this._highHistory.splice(0, this._highHistory.length - this._maxHistory);
-    }
-    if (this._lowHistory.length > this._maxHistory) {
-      this._lowHistory.splice(0, this._lowHistory.length - this._maxHistory);
-    }
-    if (this._volumeHistory.length > this._maxHistory) {
-      this._volumeHistory.splice(0, this._volumeHistory.length - this._maxHistory);
-    }
-    if (this.klineHistory.length > this._maxHistory) {
-      this.klineHistory.splice(0, this.klineHistory.length - this._maxHistory);
-    }
-
-    // ------ 2) Check if enough data for all indicators ------
+    // ------ 1) Check if enough data for all indicators ------
     const minRequired = Math.max(
       this._bbPeriod,
       this._rsiPeriod + 1,
       this._adxPeriod * 2 + 1,
       this._emaPeriodSlow,
     );
-    if (this.priceHistory.length < minRequired) {
+    const hist = this._indicatorCache.getHistory(this._symbol);
+    if (!hist || hist.closes.length < minRequired) {
       log.debug('Warming up — not enough data', {
-        have: this.priceHistory.length, need: minRequired,
+        have: hist ? hist.closes.length : 0, need: minRequired,
       });
       return;
     }
 
-    // ------ 3) Calculate all indicators ------
-    // EMA fast/slow (incremental when available)
+    // ------ 2) Calculate all indicators via IndicatorCache ------
+    const c = this._indicatorCache;
+
+    // EMA fast/slow (incremental when available, seed from cache)
     if (this._emaFast !== null) {
       this._emaFast = emaStep(this._emaFast, close, this._emaPeriodFast);
     } else {
-      this._emaFast = emaFromArray(this.priceHistory, this._emaPeriodFast);
+      this._emaFast = c.get(this._symbol, 'ema', { period: this._emaPeriodFast });
     }
 
     if (this._emaSlow !== null) {
       this._emaSlow = emaStep(this._emaSlow, close, this._emaPeriodSlow);
     } else {
-      this._emaSlow = emaFromArray(this.priceHistory, this._emaPeriodSlow);
+      this._emaSlow = c.get(this._symbol, 'ema', { period: this._emaPeriodSlow });
     }
 
-    const rsiVal = rsi(this.priceHistory, this._rsiPeriod);
-    const adxVal = adx(this.klineHistory, this._adxPeriod);
-    const atrVal = atr(this.klineHistory, this._atrPeriod);
-    const bb = bollingerBands(this.priceHistory, this._bbPeriod, this._bbStdDev);
+    const rsiVal = c.get(this._symbol, 'rsi', { period: this._rsiPeriod });
+    const adxVal = c.get(this._symbol, 'adx', { period: this._adxPeriod });
+    const atrVal = c.get(this._symbol, 'atr', { period: this._atrPeriod });
+    const bb = c.get(this._symbol, 'bb', { period: this._bbPeriod, stdDev: this._bbStdDev });
 
     // If any critical indicator is null, skip
     if (!this._emaFast || !this._emaSlow || !rsiVal || !adxVal || !atrVal || !bb) {
@@ -290,9 +265,9 @@ class AdaptiveRegimeStrategy extends StrategyBase {
     // Volume surge check (pass current candle's volume for comparison)
     const volumeSurge = this._checkVolumeSurge();
 
-    const regime = this._marketRegime;
+    const regime = this.getEffectiveRegime();
 
-    // ------ 4) If position open, check dynamic TP ------
+    // ------ 3) If position open, check dynamic TP ------
     if (this._entryPrice && this._positionSide) {
       const tpMultiplier = this._isTrendRegime(this._entryRegime) ? '2' : '1';
       const tpDistance = multiply(atrVal, tpMultiplier);
@@ -316,7 +291,7 @@ class AdaptiveRegimeStrategy extends StrategyBase {
       }
     }
 
-    // ------ 5) If no position, check entry based on current regime ------
+    // ------ 4) If no position, check entry based on current regime ------
     if (this._entryPrice) return; // Already in position — skip entry
 
     // Early exit if regime is null — AdaptiveRegime fundamentally depends on knowing the regime
@@ -603,21 +578,25 @@ class AdaptiveRegimeStrategy extends StrategyBase {
 
   /**
    * Check whether the current (latest) volume exceeds the 20-period SMA * 1.5.
-   * Uses the last element of _volumeHistory as the current candle.
+   * Uses the last element of the IndicatorCache volume history as the current candle.
    * @returns {boolean}
    */
   _checkVolumeSurge() {
-    const lookback = 20;
-    if (this._volumeHistory.length < lookback + 1) return false;
+    const hist = this._indicatorCache.getHistory(this._symbol);
+    if (!hist) return false;
 
-    const currentVolume = this._volumeHistory[this._volumeHistory.length - 1];
+    const volumes = hist.volumes;
+    const lookback = 20;
+    if (volumes.length < lookback + 1) return false;
+
+    const currentVolume = volumes[volumes.length - 1];
 
     // Average the 20 volumes BEFORE the current one
-    const start = this._volumeHistory.length - lookback - 1;
-    const end = this._volumeHistory.length - 1;
+    const start = volumes.length - lookback - 1;
+    const end = volumes.length - 1;
     let sum = '0';
     for (let i = start; i < end; i++) {
-      sum = add(sum, this._volumeHistory[i]);
+      sum = add(sum, volumes[i]);
     }
     const avgVolume = divide(sum, String(lookback));
     const threshold = multiply(avgVolume, '1.5');
@@ -699,7 +678,7 @@ class AdaptiveRegimeStrategy extends StrategyBase {
       reason,
       reduceOnly: true,
       marketContext: {
-        regime: this._marketRegime,
+        regime: this.getEffectiveRegime(),
         entryRegime: this._entryRegime,
         entryPrice: this._entryPrice,
         exitPrice: price,

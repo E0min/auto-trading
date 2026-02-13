@@ -39,6 +39,10 @@ const log = createLogger('SupportResistanceStrategy');
 class SupportResistanceStrategy extends StrategyBase {
   static metadata = {
     name: 'SupportResistanceStrategy',
+    targetRegimes: ['trending_up', 'trending_down', 'volatile', 'ranging'],
+    riskLevel: 'medium',
+    maxConcurrentPositions: 2,
+    cooldownMs: 120000,
     description: '지지저항 돌파 -- 수평 S/R 레벨 식별 + 리테스트 확인 후 돌파 진입',
     defaultConfig: {
       lookback: 3,                    // Swing detection lookback (each side)
@@ -255,8 +259,8 @@ class SupportResistanceStrategy extends StrategyBase {
     // Strength bonus: 5+ touches = max (0-0.10)
     conf += Math.min(level.touches / 5, 1.0) * 0.10;
     // Regime bonus
-    if (this._marketRegime === MARKET_REGIMES.TRENDING_UP ||
-        this._marketRegime === MARKET_REGIMES.TRENDING_DOWN) conf += 0.10;
+    if (this.getEffectiveRegime() === MARKET_REGIMES.TRENDING_UP ||
+        this.getEffectiveRegime() === MARKET_REGIMES.TRENDING_DOWN) conf += 0.10;
     return Math.min(conf, 1.0);
   }
 
@@ -408,7 +412,7 @@ class SupportResistanceStrategy extends StrategyBase {
     }
 
     // 6. No position: check entry conditions
-    const regime = this._marketRegime;
+    const regime = this.getEffectiveRegime();
     const regimeOk = regime === null ||
       regime === MARKET_REGIMES.TRENDING_UP || regime === MARKET_REGIMES.TRENDING_DOWN ||
       regime === MARKET_REGIMES.VOLATILE || regime === MARKET_REGIMES.RANGING;

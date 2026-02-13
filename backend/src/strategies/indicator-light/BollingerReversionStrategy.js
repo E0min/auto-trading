@@ -48,55 +48,6 @@ const {
 } = require('../../utils/mathUtils');
 const { createLogger } = require('../../utils/logger');
 
-// ---------------------------------------------------------------------------
-// Helpers — pure functions, all String-based
-// ---------------------------------------------------------------------------
-
-/**
- * Sum an array of String numbers.
- * @param {string[]} arr
- * @returns {string}
- */
-function sumStrings(arr) {
-  let total = '0';
-  for (const v of arr) {
-    total = add(total, v);
-  }
-  return total;
-}
-
-/**
- * Calculate the arithmetic mean of a String array.
- * @param {string[]} arr
- * @returns {string}
- */
-function mean(arr) {
-  if (arr.length === 0) return '0';
-  return divide(sumStrings(arr), String(arr.length));
-}
-
-/**
- * Calculate the population standard deviation of a String array.
- * @param {string[]} arr
- * @param {string}   avg — pre-computed mean
- * @returns {string}
- */
-function stdDev(arr, avg) {
-  if (arr.length === 0) return '0';
-
-  let sumSqDiff = '0';
-  for (const v of arr) {
-    const diff = subtract(v, avg);
-    const sq = multiply(diff, diff);
-    sumSqDiff = add(sumSqDiff, sq);
-  }
-
-  const variance = divide(sumSqDiff, String(arr.length));
-  // sqrt via native Math, then back to String with 8 decimals
-  const varianceNum = parseFloat(variance);
-  return toFixed(String(Math.sqrt(varianceNum)), 8);
-}
-
 // ==========================================================================
 // BollingerReversionStrategy
 // ==========================================================================
@@ -104,6 +55,10 @@ function stdDev(arr, avg) {
 class BollingerReversionStrategy extends StrategyBase {
   static metadata = {
     name: 'BollingerReversionStrategy',
+    targetRegimes: ['ranging', 'volatile'],
+    riskLevel: 'medium',
+    maxConcurrentPositions: 2,
+    cooldownMs: 60000,
     description: '볼린저밴드 역추세 + RSI + 스토캐스틱 (분할매수)',
     defaultConfig: {
       bbPeriod: 20,
@@ -138,13 +93,6 @@ class BollingerReversionStrategy extends StrategyBase {
 
     // Internal state ----------------------------------------------------------
 
-    /** @type {string[]} close prices as Strings */
-    this.priceHistory = [];
-    /** @type {string[]} high prices as Strings (for stochastic) */
-    this._highHistory = [];
-    /** @type {string[]} low prices as Strings (for stochastic) */
-    this._lowHistory = [];
-
     /** @type {string|null} previous candle close */
     this._prevClose = null;
     /** @type {string|null} previous RSI value */
@@ -166,12 +114,6 @@ class BollingerReversionStrategy extends StrategyBase {
     this._positionSide = null;
     /** @type {boolean} whether half profit has been taken */
     this._halfProfitTaken = false;
-
-    /** @type {string[]} raw %K values for smoothing into %D */
-    this._rawStochKValues = [];
-
-    // Maximum number of prices we keep in memory
-    this._maxHistory = Math.max(merged.bbPeriod, merged.rsiPeriod, merged.stochPeriod) + merged.stochSmooth + 10;
   }
 
   // --------------------------------------------------------------------------
@@ -249,29 +191,6 @@ class BollingerReversionStrategy extends StrategyBase {
     const close = kline && kline.close !== undefined ? String(kline.close) : null;
     if (close === null) return;
 
-    const high = kline && kline.high !== undefined ? String(kline.high) : close;
-    const low = kline && kline.low !== undefined ? String(kline.low) : close;
-
-    // 1. Record previous close before pushing new one (for crossover detection)
-    const prevClose = this.priceHistory.length > 0
-      ? this.priceHistory[this.priceHistory.length - 1]
-      : null;
-
-    // Push close, high, low to their respective histories and trim
-    this.priceHistory.push(close);
-    this._highHistory.push(high);
-    this._lowHistory.push(low);
-
-    if (this.priceHistory.length > this._maxHistory) {
-      this.priceHistory = this.priceHistory.slice(-this._maxHistory);
-    }
-    if (this._highHistory.length > this._maxHistory) {
-      this._highHistory = this._highHistory.slice(-this._maxHistory);
-    }
-    if (this._lowHistory.length > this._maxHistory) {
-      this._lowHistory = this._lowHistory.slice(-this._maxHistory);
-    }
-
     const {
       bbPeriod,
       bbStdDev,
@@ -282,25 +201,31 @@ class BollingerReversionStrategy extends StrategyBase {
       maxEntries,
     } = this.config;
 
-    // Need enough data for all indicators
+    // 1. Get history from IndicatorCache for data sufficiency & prevClose
+    const c = this._indicatorCache;
+    const hist = c.getHistory(this._symbol);
     const minRequired = Math.max(bbPeriod, rsiPeriod + 1, stochPeriod + stochSmooth);
-    if (this.priceHistory.length < minRequired) {
+
+    if (!hist || hist.closes.length < minRequired) {
       this._log.debug('Not enough data yet', {
-        have: this.priceHistory.length,
+        have: hist ? hist.closes.length : 0,
         need: minRequired,
       });
       return;
     }
 
-    // 2. Calculate Bollinger Bands (20, 2) ------------------------------------
-    const bb = this._calculateBB(bbPeriod, bbStdDev);
+    const prevClose = hist.closes.length > 1 ? hist.closes[hist.closes.length - 2] : null;
+
+    // 2. Calculate indicators via IndicatorCache
+    const bb = c.get(this._symbol, 'bb', { period: bbPeriod, stdDev: bbStdDev });
+    const rsi = c.get(this._symbol, 'rsi', { period: rsiPeriod });
+    const stoch = c.get(this._symbol, 'stochastic', { period: stochPeriod, smooth: stochSmooth });
+
+    // Null checks — cache returns null if insufficient data
+    if (bb === null || rsi === null) return;
+
     const { upper, middle, lower, bandwidth } = bb;
 
-    // 3. Calculate RSI (14) ---------------------------------------------------
-    const rsi = this._calculateRsi(rsiPeriod);
-
-    // 4. Calculate Stochastic (14, 3) -----------------------------------------
-    const stoch = this._calculateStochastic(stochPeriod, stochSmooth, close);
     if (stoch === null) {
       this._prevClose = prevClose;
       this._prevRsi = rsi;
@@ -313,7 +238,7 @@ class BollingerReversionStrategy extends StrategyBase {
     const prevStochK = this._prevStochK;
     const prevStochD = this._prevStochD;
 
-    const regime = this._marketRegime;
+    const regime = this.getEffectiveRegime();
     const price = close;
 
     const marketContext = {
@@ -488,150 +413,6 @@ class BollingerReversionStrategy extends StrategyBase {
    */
   getSignal() {
     return this._lastSignal;
-  }
-
-  // --------------------------------------------------------------------------
-  // Private helpers — Bollinger Bands
-  // --------------------------------------------------------------------------
-
-  /**
-   * Calculate Bollinger Bands.
-   *
-   * @param {number} period  — SMA period (default 20)
-   * @param {number} numStdDev — number of standard deviations (default 2)
-   * @returns {{ upper: string, middle: string, lower: string, bandwidth: string }}
-   */
-  _calculateBB(period, numStdDev) {
-    const slice = this.priceHistory.slice(-period);
-    const middle = mean(slice);
-    const sd = stdDev(slice, middle);
-
-    const bandWidth = multiply(String(numStdDev), sd);
-    const upper = add(middle, bandWidth);
-    const lower = subtract(middle, bandWidth);
-
-    // Bandwidth = (upper - lower) / middle * 100
-    const diff = subtract(upper, lower);
-    const bandwidth = isGreaterThan(middle, '0')
-      ? toFixed(multiply(divide(diff, middle), '100'), 4)
-      : '0';
-
-    return { upper, middle, lower, bandwidth };
-  }
-
-  // --------------------------------------------------------------------------
-  // Private helpers — RSI
-  // --------------------------------------------------------------------------
-
-  /**
-   * Compute RSI over the last `period` price changes.
-   *
-   * @param {number} period
-   * @returns {string} RSI as a String (0-100)
-   */
-  _calculateRsi(period) {
-    const prices = this.priceHistory;
-    const len = prices.length;
-
-    // We need period + 1 prices to get period changes
-    const startIdx = len - period - 1;
-    let sumGain = '0';
-    let sumLoss = '0';
-
-    for (let i = startIdx; i < len - 1; i++) {
-      const diff = subtract(prices[i + 1], prices[i]);
-      if (isGreaterThan(diff, '0')) {
-        sumGain = add(sumGain, diff);
-      } else if (isLessThan(diff, '0')) {
-        // losses stored as positive values
-        sumLoss = add(sumLoss, subtract('0', diff));
-      }
-    }
-
-    const avgGain = divide(sumGain, String(period));
-    const avgLoss = divide(sumLoss, String(period));
-
-    // If avgLoss is zero, RSI = 100
-    if (!isGreaterThan(avgLoss, '0')) {
-      return '100';
-    }
-
-    // If avgGain is zero, RSI = 0
-    if (!isGreaterThan(avgGain, '0')) {
-      return '0';
-    }
-
-    const rs = divide(avgGain, avgLoss);
-    // RSI = 100 - (100 / (1 + RS))
-    const onePlusRs = add('1', rs);
-    const rsiDenom = divide('100', onePlusRs);
-    const rsi = subtract('100', rsiDenom);
-
-    return toFixed(rsi, 4);
-  }
-
-  // --------------------------------------------------------------------------
-  // Private helpers — Stochastic
-  // --------------------------------------------------------------------------
-
-  /**
-   * Calculate Stochastic %K and %D.
-   *
-   * %K = (close - lowestLow(period)) / (highestHigh(period) - lowestLow(period)) * 100
-   * %D = SMA(%K, smooth)
-   *
-   * @param {number} period — lookback period for highest high / lowest low
-   * @param {number} smooth — smoothing period for %D (SMA of %K)
-   * @param {string} close  — current close price
-   * @returns {{ k: string, d: string }|null} — null if not enough data for %D
-   */
-  _calculateStochastic(period, smooth, close) {
-    const highSlice = this._highHistory.slice(-period);
-    const lowSlice = this._lowHistory.slice(-period);
-
-    if (highSlice.length < period || lowSlice.length < period) {
-      return null;
-    }
-
-    // Find highest high and lowest low over the period
-    let highestHigh = highSlice[0];
-    for (let i = 1; i < highSlice.length; i++) {
-      if (isGreaterThan(highSlice[i], highestHigh)) {
-        highestHigh = highSlice[i];
-      }
-    }
-
-    let lowestLow = lowSlice[0];
-    for (let i = 1; i < lowSlice.length; i++) {
-      if (isLessThan(lowSlice[i], lowestLow)) {
-        lowestLow = lowSlice[i];
-      }
-    }
-
-    // %K = (close - lowestLow) / (highestHigh - lowestLow) * 100
-    const range = subtract(highestHigh, lowestLow);
-    let rawK;
-    if (!isGreaterThan(range, '0')) {
-      rawK = '50'; // If high == low, neutral
-    } else {
-      rawK = toFixed(multiply(divide(subtract(close, lowestLow), range), '100'), 4);
-    }
-
-    // Accumulate raw %K values for %D smoothing
-    this._rawStochKValues.push(rawK);
-    if (this._rawStochKValues.length > this._maxHistory) {
-      this._rawStochKValues = this._rawStochKValues.slice(-this._maxHistory);
-    }
-
-    // %D = SMA of last `smooth` %K values
-    if (this._rawStochKValues.length < smooth) {
-      return null;
-    }
-
-    const kSlice = this._rawStochKValues.slice(-smooth);
-    const d = mean(kSlice);
-
-    return { k: rawK, d: toFixed(d, 4) };
   }
 
   // --------------------------------------------------------------------------

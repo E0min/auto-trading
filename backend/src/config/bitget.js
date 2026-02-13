@@ -14,7 +14,8 @@
  */
 
 const {
-  RestClientV3,
+  RestClientV2,
+  WebsocketClientV2,
   WebsocketClientV3,
   WebsocketAPIClient,
   WS_KEY_MAP,
@@ -48,10 +49,10 @@ function getCredentials() {
 // Singleton cache
 // ---------------------------------------------------------------------------
 
-/** @type {RestClientV3 | null} */
+/** @type {RestClientV2 | null} */
 let _restClient = null;
 
-/** @type {WebsocketClientV3 | null} */
+/** @type {WebsocketClientV2 | null} */
 let _wsPublicClient = null;
 
 /** @type {WebsocketClientV3 | null} */
@@ -65,15 +66,15 @@ let _wsApiClient = null;
 // ---------------------------------------------------------------------------
 
 /**
- * Returns a cached RestClientV3 singleton.
+ * Returns a cached RestClientV2 singleton.
  * The client is created on the first invocation.
  *
- * @returns {RestClientV3}
+ * @returns {RestClientV2}
  */
 function getRestClient() {
   if (!_restClient) {
     const creds = getCredentials();
-    _restClient = new RestClientV3({
+    _restClient = new RestClientV2({
       apiKey: creds.apiKey,
       apiSecret: creds.apiSecret,
       apiPass: creds.apiPass,
@@ -83,19 +84,17 @@ function getRestClient() {
 }
 
 /**
- * Returns a cached WebsocketClientV3 singleton configured for public
+ * Returns a cached WebsocketClientV2 singleton configured for public
  * (market data) channels.
  *
- * This client does NOT send authentication on connect because it only
- * accesses public topics (ticker, kline, orderbook, etc.).
+ * Uses V2 because V3 public WebSocket does not support kline/candle
+ * topics for futures — only ticker works on V3.
  *
- * @returns {WebsocketClientV3}
+ * @returns {WebsocketClientV2}
  */
 function getWsPublicClient() {
   if (!_wsPublicClient) {
-    // Public client — no credentials needed for public channels, but
-    // providing them does no harm and enables later upgrade if needed.
-    _wsPublicClient = new WebsocketClientV3({});
+    _wsPublicClient = new WebsocketClientV2({});
   }
   return _wsPublicClient;
 }

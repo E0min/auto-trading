@@ -49,6 +49,10 @@ const log = createLogger('SwingStructureStrategy');
 class SwingStructureStrategy extends StrategyBase {
   static metadata = {
     name: 'SwingStructureStrategy',
+    targetRegimes: ['trending_up', 'trending_down', 'volatile'],
+    riskLevel: 'medium',
+    maxConcurrentPositions: 1,
+    cooldownMs: 300000,
     description: '스윙 구조 추세 — HH/HL/LH/LL 구조 분석 + BOS 돌파 진입',
     defaultConfig: {
       swingLookback: 3,              // Bars each side to confirm a swing point
@@ -320,7 +324,7 @@ class SwingStructureStrategy extends StrategyBase {
     // 6. No position: check BOS entry conditions
     if (this._structure === null) return;
     if (this._swingHighs.length < 2 || this._swingLows.length < 2) return;
-    const regime = this._marketRegime;
+    const regime = this.getEffectiveRegime();
 
     // --- BOS Long: uptrend + price breaks above most recent swing high ---
     if (this._structure === 'uptrend') {
@@ -513,8 +517,8 @@ class SwingStructureStrategy extends StrategyBase {
     }
 
     // Regime alignment
-    if (structure === 'uptrend' && this._marketRegime === MARKET_REGIMES.TRENDING_UP) conf += 0.10;
-    else if (structure === 'downtrend' && this._marketRegime === MARKET_REGIMES.TRENDING_DOWN) conf += 0.10;
+    if (structure === 'uptrend' && this.getEffectiveRegime() === MARKET_REGIMES.TRENDING_UP) conf += 0.10;
+    else if (structure === 'downtrend' && this.getEffectiveRegime() === MARKET_REGIMES.TRENDING_DOWN) conf += 0.10;
 
     return Math.min(conf, 1.0);
   }

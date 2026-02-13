@@ -224,7 +224,7 @@ class DataFetcher {
       });
 
       try {
-        const response = await restClient.getCandles({
+        const response = await restClient.getFuturesHistoricCandles({
           productType: 'USDT-FUTURES',
           symbol,
           granularity,

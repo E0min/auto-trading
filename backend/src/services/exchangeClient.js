@@ -613,15 +613,17 @@ class ExchangeClient extends EventEmitter {
    */
   subscribePublic(topics) {
     const wsPublic = getWsPublicClient();
-    const WS_KEY_MAP = getWsKeyMap();
 
     log.info('Subscribing to public topics', {
       count: topics.length,
       topics: topics.map((t) => `${t.topic}:${t.payload?.symbol ?? '*'}`),
     });
 
-    for (const topic of topics) {
-      wsPublic.subscribe(topic, WS_KEY_MAP.v3Public);
+    for (const t of topics) {
+      // V2 requires uppercase instType (e.g. 'USDT-FUTURES' not 'usdt-futures')
+      const instType = (t.payload?.instType || 'USDT-FUTURES').toUpperCase();
+      const symbol = t.payload?.symbol;
+      wsPublic.subscribeTopic(instType, t.topic, symbol);
     }
   }
 
@@ -663,8 +665,15 @@ class ExchangeClient extends EventEmitter {
       topics: topics.map((t) => `${t.topic}:${t.payload?.symbol ?? '*'}`),
     });
 
-    for (const topic of topics) {
-      wsPublic.unsubscribe(topic, WS_KEY_MAP.v3Public);
+    for (const t of topics) {
+      const instType = (t.payload?.instType || 'USDT-FUTURES').toUpperCase();
+      const symbol = t.payload?.symbol;
+      // V2 unsubscribe uses the same object format as V2 subscribe
+      wsPublic.unsubscribe({
+        instType,
+        channel: t.topic,
+        instId: symbol,
+      }, WS_KEY_MAP.v2Public);
     }
   }
 

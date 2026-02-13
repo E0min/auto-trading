@@ -1,14 +1,18 @@
 'use strict';
 
 /**
- * MarketRegime — Classifies the current market state.
+ * MarketRegime — 6-Factor Weighted Scoring Market Classifier.
  *
- * Combines BTC price action (SMA-20, ATR-14) with broad market breadth
- * (advancers vs. decliners) to emit a regime classification:
- *   TRENDING_UP | TRENDING_DOWN | VOLATILE | RANGING | QUIET
+ * Combines six factors with dynamic weighting to classify the market:
+ *   Factor 1: Multi-SMA Trend (EMA-9, SMA-20, SMA-50 alignment)
+ *   Factor 2: Adaptive ATR (percentile-based, no fixed thresholds)
+ *   Factor 3: ROC Momentum (rate of change)
+ *   Factor 4: Market Breadth (volume-weighted advancer/decliner ratio)
+ *   Factor 5: Volume Confirmation (volume vs SMA ratio)
+ *   Factor 6: Hysteresis (minimum N-candle confirmation)
  *
- * Downstream strategy modules use the regime to adjust position sizing,
- * entry filters, or disable trading entirely during unfavourable conditions.
+ * Emits REGIME_CHANGE with confidence score when regime transitions.
+ * Supports dynamic parameters via RegimeParamStore (optional dependency).
  *
  * All monetary / numeric values are represented as String.
  */
@@ -19,6 +23,7 @@ const { MARKET_EVENTS, MARKET_REGIMES } = require('../utils/constants');
 const {
   add,
   subtract,
+  multiply,
   divide,
   abs,
   isGreaterThan,
@@ -28,17 +33,47 @@ const {
 
 const log = createLogger('MarketRegime');
 
-/** Number of close prices to keep for SMA calculation */
-const SMA_PERIOD = 20;
-
-/** Number of candles used for ATR approximation */
-const ATR_PERIOD = 14;
-
 /** Maximum number of regime transitions to store in history */
 const MAX_HISTORY = 100;
 
 /** BTC symbol constant */
 const BTC_SYMBOL = 'BTCUSDT';
+
+/** All possible regime labels */
+const REGIMES = [
+  MARKET_REGIMES.TRENDING_UP,
+  MARKET_REGIMES.TRENDING_DOWN,
+  MARKET_REGIMES.VOLATILE,
+  MARKET_REGIMES.RANGING,
+  MARKET_REGIMES.QUIET,
+];
+
+/** Hardcoded fallback defaults (used when no regimeParamStore) */
+const FALLBACK_PARAMS = Object.freeze({
+  ema9Period: 9,
+  sma20Period: 20,
+  sma50Period: 50,
+  atrPeriod: 14,
+  atrBufferSize: 100,
+  atrHighPercentile: 0.75,
+  atrLowPercentile: 0.25,
+  rocPeriod: 10,
+  rocStrongThreshold: 1.5,
+  breadthStrongRatio: 0.65,
+  breadthVolumeWeight: 0.4,
+  volumeSmaPeriod: 20,
+  volumeHighRatio: 1.5,
+  volumeLowRatio: 0.7,
+  hysteresisMinCandles: 3,
+  weights: {
+    multiSmaTrend: 0.20,
+    adaptiveAtr: 0.18,
+    rocMomentum: 0.17,
+    marketBreadth: 0.20,
+    volumeConfirmation: 0.15,
+    hysteresis: 0.10,
+  },
+});
 
 // ---------------------------------------------------------------------------
 // MarketRegime class
@@ -49,8 +84,9 @@ class MarketRegime extends EventEmitter {
    * @param {Object} deps
    * @param {import('./marketData')}       deps.marketData
    * @param {import('./tickerAggregator')} deps.tickerAggregator
+   * @param {import('./regimeParamStore')} [deps.regimeParamStore] — optional
    */
-  constructor({ marketData, tickerAggregator }) {
+  constructor({ marketData, tickerAggregator, regimeParamStore }) {
     super();
 
     if (!marketData) {
@@ -66,25 +102,45 @@ class MarketRegime extends EventEmitter {
     /** @private */
     this._aggregator = tickerAggregator;
 
+    /** @private */
+    this._paramStore = regimeParamStore || null;
+
     /** @type {string} current regime label */
     this._currentRegime = MARKET_REGIMES.QUIET;
+
+    /** @type {number} confidence of current classification (0~1) */
+    this._confidence = 0;
+
+    /** @type {Object} last factor scores snapshot */
+    this._lastFactorScores = null;
 
     /** @type {Array<Object>} chronological regime transitions */
     this._regimeHistory = [];
 
-    /**
-     * Rolling buffer of BTC close prices for SMA calculation.
-     * Each entry is a String.
-     * @type {string[]}
-     */
-    this._smaBuffer = [];
+    // --- Buffers ---
+    /** @type {string[]} close prices for SMA-20 */
+    this._sma20Buffer = [];
 
-    /**
-     * Rolling buffer of BTC candle ranges (|high - low|) for ATR approx.
-     * Each entry is a String.
-     * @type {string[]}
-     */
+    /** @type {string[]} close prices for SMA-50 */
+    this._sma50Buffer = [];
+
+    /** @type {string} current EMA-9 value */
+    this._ema9 = '0';
+
+    /** @type {boolean} EMA-9 initialized */
+    this._ema9Initialized = false;
+
+    /** @type {string[]} candle ranges for ATR */
     this._atrBuffer = [];
+
+    /** @type {number[]} ATR percentile history */
+    this._atrPercentileBuffer = [];
+
+    /** @type {string[]} close prices for ROC */
+    this._rocBuffer = [];
+
+    /** @type {string[]} volume for Volume SMA */
+    this._volumeBuffer = [];
 
     /** @private latest BTC close price (String) */
     this._btcPrice = '0';
@@ -92,11 +148,24 @@ class MarketRegime extends EventEmitter {
     /** @private latest SMA-20 value (String) */
     this._sma20 = '0';
 
-    /** @private latest ATR-14 approximation (String) */
-    this._atr14 = '0';
+    /** @private latest SMA-50 value (String) */
+    this._sma50 = '0';
+
+    /** @private latest ATR value (String) */
+    this._atr = '0';
 
     /** @private latest aggregate stats snapshot */
     this._latestAggStats = null;
+
+    // --- Hysteresis state ---
+    /** @type {string|null} pending regime waiting for confirmation */
+    this._pendingRegime = null;
+
+    /** @type {number} consecutive candle count for pending regime */
+    this._pendingCount = 0;
+
+    /** @type {boolean} whether the initial regime has been emitted */
+    this._initialEmitted = false;
 
     // Bound handler references
     this._boundOnBtcKline = this._onBtcKline.bind(this);
@@ -104,15 +173,16 @@ class MarketRegime extends EventEmitter {
 
     /** @private */
     this._running = false;
+
+    log.info('MarketRegime 6-factor initialised', {
+      hasParamStore: !!this._paramStore,
+    });
   }
 
   // =========================================================================
   // Lifecycle
   // =========================================================================
 
-  /**
-   * Start listening for BTC klines and aggregate breadth updates.
-   */
   start() {
     if (this._running) {
       log.info('Already running — skipping start');
@@ -126,9 +196,6 @@ class MarketRegime extends EventEmitter {
     log.info('MarketRegime started');
   }
 
-  /**
-   * Stop listening and reset transient state (regime and history are preserved).
-   */
   stop() {
     this._marketData.removeListener(MARKET_EVENTS.KLINE_UPDATE, this._boundOnBtcKline);
     this._aggregator.removeListener('aggregate:update', this._boundOnAggregateUpdate);
@@ -138,15 +205,24 @@ class MarketRegime extends EventEmitter {
   }
 
   // =========================================================================
-  // Internal handlers
+  // Parameter access
   // =========================================================================
 
   /**
-   * Process a kline update. Only BTC klines are used for regime analysis.
-   *
-   * @param {Object} kline — normalised kline from MarketData
-   * @private
+   * Get current active parameters (from store or fallback).
+   * @returns {Object}
    */
+  _getParams() {
+    if (this._paramStore) {
+      return this._paramStore.getParams();
+    }
+    return { ...FALLBACK_PARAMS, weights: { ...FALLBACK_PARAMS.weights } };
+  }
+
+  // =========================================================================
+  // Internal handlers
+  // =========================================================================
+
   _onBtcKline(kline) {
     if (!kline || kline.symbol !== BTC_SYMBOL) return;
 
@@ -154,16 +230,27 @@ class MarketRegime extends EventEmitter {
       const close = kline.close || '0';
       const high = kline.high || '0';
       const low = kline.low || '0';
+      const volume = kline.volume || '0';
+      const params = this._getParams();
 
       this._btcPrice = close;
 
-      // --- SMA buffer ---
-      this._smaBuffer.push(close);
-      if (this._smaBuffer.length > SMA_PERIOD) {
-        this._smaBuffer.shift();
+      // --- SMA-20 buffer ---
+      this._sma20Buffer.push(close);
+      if (this._sma20Buffer.length > params.sma20Period) {
+        this._sma20Buffer.shift();
       }
 
-      // --- ATR buffer (|high - low| per candle) ---
+      // --- SMA-50 buffer ---
+      this._sma50Buffer.push(close);
+      if (this._sma50Buffer.length > params.sma50Period) {
+        this._sma50Buffer.shift();
+      }
+
+      // --- EMA-9 ---
+      this._updateEma9(close, params.ema9Period);
+
+      // --- ATR buffer ---
       let range = '0';
       try {
         range = abs(subtract(high, low));
@@ -171,39 +258,52 @@ class MarketRegime extends EventEmitter {
         range = '0';
       }
       this._atrBuffer.push(range);
-      if (this._atrBuffer.length > ATR_PERIOD) {
+      if (this._atrBuffer.length > params.atrPeriod) {
         this._atrBuffer.shift();
       }
 
-      // Compute SMA-20
-      this._sma20 = this._computeSma(this._smaBuffer);
+      // --- ROC buffer ---
+      this._rocBuffer.push(close);
+      if (this._rocBuffer.length > params.rocPeriod + 1) {
+        this._rocBuffer.shift();
+      }
 
-      // Compute ATR-14 approximation (average true range ≈ average |high-low|)
-      this._atr14 = this._computeAverage(this._atrBuffer);
+      // --- Volume buffer ---
+      this._volumeBuffer.push(volume);
+      if (this._volumeBuffer.length > params.volumeSmaPeriod) {
+        this._volumeBuffer.shift();
+      }
 
-      // Attempt classification (only meaningful when we also have aggregate data)
+      // Compute indicators
+      this._sma20 = this._computeSma(this._sma20Buffer);
+      this._sma50 = this._computeSma(this._sma50Buffer);
+      this._atr = this._computeSma(this._atrBuffer);
+
+      // --- ATR percentile buffer ---
+      if (this._atr !== '0') {
+        const atrPct = parseFloat(this._atr);
+        this._atrPercentileBuffer.push(atrPct);
+        if (this._atrPercentileBuffer.length > params.atrBufferSize) {
+          this._atrPercentileBuffer.shift();
+        }
+      }
+
+      // Attempt classification
       if (this._latestAggStats) {
-        this._classify();
+        this._classifyWithScoring();
       }
     } catch (err) {
       log.error('_onBtcKline error', { error: err });
     }
   }
 
-  /**
-   * Handle aggregate breadth update from TickerAggregator.
-   *
-   * @param {Object} stats
-   * @private
-   */
   _onAggregateUpdate(stats) {
     if (!stats) return;
     this._latestAggStats = stats;
 
-    // Re-classify if we have BTC price data
-    if (this._smaBuffer.length > 0) {
+    if (this._sma20Buffer.length > 0) {
       try {
-        this._classify();
+        this._classifyWithScoring();
       } catch (err) {
         log.error('_onAggregateUpdate classification error', { error: err });
       }
@@ -211,99 +311,433 @@ class MarketRegime extends EventEmitter {
   }
 
   // =========================================================================
-  // Regime classification
+  // EMA computation
   // =========================================================================
 
   /**
-   * Classify the current market regime based on:
-   *   - BTC price vs SMA-20 (trend bias)
-   *   - ATR-14 level (volatility)
-   *   - Aggregate advancers vs decliners (breadth)
-   *
-   * Emits MARKET_EVENTS.REGIME_CHANGE when the regime changes.
-   *
+   * Update EMA-9 with a new close price.
+   * @param {string} close
+   * @param {number} period
    * @private
    */
-  _classify() {
+  _updateEma9(close, period) {
+    const closeF = parseFloat(close);
+    if (isNaN(closeF)) return;
+
+    if (!this._ema9Initialized) {
+      this._ema9 = close;
+      this._ema9Initialized = true;
+      return;
+    }
+
+    const k = 2 / (period + 1);
+    const prevEma = parseFloat(this._ema9);
+    const newEma = closeF * k + prevEma * (1 - k);
+    this._ema9 = toFixed(String(newEma), 8);
+  }
+
+  // =========================================================================
+  // 6-Factor Scoring Classification
+  // =========================================================================
+
+  /**
+   * Classify market regime using 6-factor weighted scoring.
+   * @private
+   */
+  _classifyWithScoring() {
     const stats = this._latestAggStats;
     if (!stats) return;
 
     const btcPrice = this._btcPrice;
     const sma20 = this._sma20;
-    const atr14 = this._atr14;
 
-    // Guard: not enough data to classify
     if (btcPrice === '0' || sma20 === '0') return;
 
-    // --- Trend bias from SMA ---
-    // Determine directional bias: price above SMA → bullish, below → bearish
-    const priceAboveSma = isGreaterThan(btcPrice, sma20);
+    const params = this._getParams();
+    const w = params.weights;
 
-    // --- ATR relative to price (as percentage) ---
-    // atrPercent = (atr14 / btcPrice) * 100
-    let atrPercent = '0';
-    try {
-      atrPercent = toFixed(divide(atr14, btcPrice, 8), 4);
-      // Convert to percentage: multiply by 100
-      atrPercent = toFixed(String(parseFloat(atrPercent) * 100), 4);
-    } catch (_) {
-      atrPercent = '0';
+    // Initialize score accumulator for each regime
+    const scores = {};
+    for (const r of REGIMES) {
+      scores[r] = 0;
     }
 
-    // Thresholds (ATR% of BTC price)
-    const HIGH_ATR_THRESHOLD = '0.8';  // > 0.8% → volatile
-    const LOW_ATR_THRESHOLD = '0.2';   // < 0.2% → quiet
+    // Factor 1: Multi-SMA Trend
+    const f1 = this._scoreMultiSmaTrend(params);
+    for (const r of REGIMES) {
+      scores[r] += (f1[r] || 0) * w.multiSmaTrend;
+    }
 
-    const isHighAtr = isGreaterThan(atrPercent, HIGH_ATR_THRESHOLD);
-    const isLowAtr = isLessThan(atrPercent, LOW_ATR_THRESHOLD);
+    // Factor 2: Adaptive ATR
+    const f2 = this._scoreAdaptiveAtr(params);
+    for (const r of REGIMES) {
+      scores[r] += (f2[r] || 0) * w.adaptiveAtr;
+    }
 
-    // --- Breadth bias ---
-    const { advancers = 0, decliners = 0, tickerCount = 0 } = stats;
+    // Factor 3: ROC Momentum
+    const f3 = this._scoreRocMomentum(params);
+    for (const r of REGIMES) {
+      scores[r] += (f3[r] || 0) * w.rocMomentum;
+    }
+
+    // Factor 4: Market Breadth
+    const f4 = this._scoreMarketBreadth(params);
+    for (const r of REGIMES) {
+      scores[r] += (f4[r] || 0) * w.marketBreadth;
+    }
+
+    // Factor 5: Volume Confirmation
+    const f5 = this._scoreVolumeConfirmation(params);
+    for (const r of REGIMES) {
+      scores[r] += (f5[r] || 0) * w.volumeConfirmation;
+    }
+
+    // Hysteresis bonus: current regime gets a small bonus
+    scores[this._currentRegime] += w.hysteresis;
+
+    // Store factor scores for diagnostics
+    this._lastFactorScores = { f1, f2, f3, f4, f5 };
+
+    // Find best regime
+    let bestRegime = MARKET_REGIMES.QUIET;
+    let bestScore = -1;
+    let secondBestScore = -1;
+
+    for (const r of REGIMES) {
+      if (scores[r] > bestScore) {
+        secondBestScore = bestScore;
+        bestScore = scores[r];
+        bestRegime = r;
+      } else if (scores[r] > secondBestScore) {
+        secondBestScore = scores[r];
+      }
+    }
+
+    // Confidence = gap between 1st and 2nd
+    const confidence = bestScore > 0
+      ? Math.min((bestScore - Math.max(secondBestScore, 0)) / bestScore, 1)
+      : 0;
+
+    // Apply hysteresis (Factor 6): require N consecutive candles
+    this._applyHysteresis(bestRegime, confidence, scores, params);
+  }
+
+  // =========================================================================
+  // Factor 1: Multi-SMA Trend
+  // =========================================================================
+
+  _scoreMultiSmaTrend(params) {
+    const s = {};
+    for (const r of REGIMES) s[r] = 0;
+
+    const price = parseFloat(this._btcPrice);
+    const ema9 = parseFloat(this._ema9);
+    const sma20 = parseFloat(this._sma20);
+    const sma50 = parseFloat(this._sma50);
+
+    if (price === 0 || sma20 === 0 || sma50 === 0 || ema9 === 0) {
+      s[MARKET_REGIMES.QUIET] = 0.5;
+      return s;
+    }
+
+    // Perfect bull alignment: price > EMA-9 > SMA-20 > SMA-50
+    if (price > ema9 && ema9 > sma20 && sma20 > sma50) {
+      s[MARKET_REGIMES.TRENDING_UP] = 1.0;
+      return s;
+    }
+
+    // Perfect bear alignment: price < EMA-9 < SMA-20 < SMA-50
+    if (price < ema9 && ema9 < sma20 && sma20 < sma50) {
+      s[MARKET_REGIMES.TRENDING_DOWN] = 1.0;
+      return s;
+    }
+
+    // SMA convergence check: |SMA-20 - SMA-50| / SMA-50 < 1%
+    const smaSpread = Math.abs(sma20 - sma50) / sma50;
+    if (smaSpread < 0.01) {
+      s[MARKET_REGIMES.RANGING] = 0.6;
+      s[MARKET_REGIMES.QUIET] = 0.4;
+      return s;
+    }
+
+    // Partial trend signals
+    if (price > sma20 && sma20 > sma50) {
+      s[MARKET_REGIMES.TRENDING_UP] = 0.7;
+      s[MARKET_REGIMES.VOLATILE] = 0.3;
+    } else if (price < sma20 && sma20 < sma50) {
+      s[MARKET_REGIMES.TRENDING_DOWN] = 0.7;
+      s[MARKET_REGIMES.VOLATILE] = 0.3;
+    } else {
+      // Mixed signals
+      s[MARKET_REGIMES.VOLATILE] = 0.6;
+      s[MARKET_REGIMES.RANGING] = 0.4;
+    }
+
+    return s;
+  }
+
+  // =========================================================================
+  // Factor 2: Adaptive ATR (percentile-based)
+  // =========================================================================
+
+  _scoreAdaptiveAtr(params) {
+    const s = {};
+    for (const r of REGIMES) s[r] = 0;
+
+    if (this._atrPercentileBuffer.length < 10) {
+      s[MARKET_REGIMES.RANGING] = 0.5;
+      return s;
+    }
+
+    const currentAtr = parseFloat(this._atr);
+    if (currentAtr === 0) {
+      s[MARKET_REGIMES.QUIET] = 0.5;
+      return s;
+    }
+
+    // Calculate percentile of current ATR within history
+    const sorted = [...this._atrPercentileBuffer].sort((a, b) => a - b);
+    let rank = 0;
+    for (const v of sorted) {
+      if (v <= currentAtr) rank++;
+    }
+    const percentile = rank / sorted.length;
+
+    if (percentile > params.atrHighPercentile) {
+      // High ATR: volatile or trending
+      s[MARKET_REGIMES.VOLATILE] = 0.6;
+      s[MARKET_REGIMES.TRENDING_UP] = 0.2;
+      s[MARKET_REGIMES.TRENDING_DOWN] = 0.2;
+    } else if (percentile < params.atrLowPercentile) {
+      // Low ATR: quiet or ranging
+      s[MARKET_REGIMES.QUIET] = 0.6;
+      s[MARKET_REGIMES.RANGING] = 0.4;
+    } else {
+      // Mid-range ATR
+      s[MARKET_REGIMES.RANGING] = 0.6;
+      s[MARKET_REGIMES.VOLATILE] = 0.2;
+      s[MARKET_REGIMES.QUIET] = 0.2;
+    }
+
+    return s;
+  }
+
+  // =========================================================================
+  // Factor 3: ROC Momentum
+  // =========================================================================
+
+  _scoreRocMomentum(params) {
+    const s = {};
+    for (const r of REGIMES) s[r] = 0;
+
+    if (this._rocBuffer.length < params.rocPeriod + 1) {
+      s[MARKET_REGIMES.RANGING] = 0.5;
+      return s;
+    }
+
+    const current = parseFloat(this._rocBuffer[this._rocBuffer.length - 1]);
+    const past = parseFloat(this._rocBuffer[0]);
+
+    if (past === 0) {
+      s[MARKET_REGIMES.RANGING] = 0.5;
+      return s;
+    }
+
+    const roc = ((current - past) / Math.abs(past)) * 100;
+
+    if (roc > params.rocStrongThreshold) {
+      s[MARKET_REGIMES.TRENDING_UP] = 1.0;
+    } else if (roc < -params.rocStrongThreshold) {
+      s[MARKET_REGIMES.TRENDING_DOWN] = 1.0;
+    } else if (Math.abs(roc) < 0.5) {
+      s[MARKET_REGIMES.RANGING] = 0.5;
+      s[MARKET_REGIMES.QUIET] = 0.5;
+    } else if (roc > 0) {
+      s[MARKET_REGIMES.TRENDING_UP] = 0.6;
+      s[MARKET_REGIMES.RANGING] = 0.4;
+    } else {
+      s[MARKET_REGIMES.TRENDING_DOWN] = 0.6;
+      s[MARKET_REGIMES.RANGING] = 0.4;
+    }
+
+    return s;
+  }
+
+  // =========================================================================
+  // Factor 4: Market Breadth
+  // =========================================================================
+
+  _scoreMarketBreadth(params) {
+    const s = {};
+    for (const r of REGIMES) s[r] = 0;
+
+    const stats = this._latestAggStats;
+    if (!stats) {
+      s[MARKET_REGIMES.RANGING] = 0.5;
+      return s;
+    }
+
+    const { advancers = 0, decliners = 0 } = stats;
     const total = advancers + decliners;
 
-    // Strong directional breadth: > 65% in one direction
-    let strongBull = false;
-    let strongBear = false;
-
-    if (total > 0) {
-      const bullRatio = advancers / total;
-      const bearRatio = decliners / total;
-      strongBull = bullRatio > 0.65;
-      strongBear = bearRatio > 0.65;
+    if (total === 0) {
+      s[MARKET_REGIMES.QUIET] = 0.5;
+      return s;
     }
 
-    // --- Combined classification ---
-    let newRegime = MARKET_REGIMES.QUIET;
+    const bullRatio = advancers / total;
+    const bearRatio = decliners / total;
 
-    if (isHighAtr && (priceAboveSma || strongBull) && !strongBear) {
-      newRegime = MARKET_REGIMES.TRENDING_UP;
-    } else if (isHighAtr && (!priceAboveSma || strongBear) && !strongBull) {
-      newRegime = MARKET_REGIMES.TRENDING_DOWN;
-    } else if (isHighAtr) {
-      // High ATR but no clear directional consensus
-      newRegime = MARKET_REGIMES.VOLATILE;
-    } else if (isLowAtr) {
-      newRegime = MARKET_REGIMES.QUIET;
+    if (bullRatio > params.breadthStrongRatio) {
+      s[MARKET_REGIMES.TRENDING_UP] = 1.0;
+    } else if (bearRatio > params.breadthStrongRatio) {
+      s[MARKET_REGIMES.TRENDING_DOWN] = 1.0;
+    } else if (Math.abs(bullRatio - 0.5) < 0.05) {
+      // Very balanced
+      s[MARKET_REGIMES.RANGING] = 0.5;
+      s[MARKET_REGIMES.VOLATILE] = 0.5;
+    } else if (bullRatio > 0.55) {
+      s[MARKET_REGIMES.TRENDING_UP] = 0.6;
+      s[MARKET_REGIMES.RANGING] = 0.4;
     } else {
-      // Medium ATR, no strong trend
-      newRegime = MARKET_REGIMES.RANGING;
+      s[MARKET_REGIMES.TRENDING_DOWN] = 0.6;
+      s[MARKET_REGIMES.RANGING] = 0.4;
     }
 
-    // --- Emit on change ---
-    if (newRegime !== this._currentRegime) {
+    return s;
+  }
+
+  // =========================================================================
+  // Factor 5: Volume Confirmation
+  // =========================================================================
+
+  _scoreVolumeConfirmation(params) {
+    const s = {};
+    for (const r of REGIMES) s[r] = 0;
+
+    if (this._volumeBuffer.length < 2) {
+      s[MARKET_REGIMES.RANGING] = 0.5;
+      return s;
+    }
+
+    // Current volume = last element
+    const currentVol = parseFloat(this._volumeBuffer[this._volumeBuffer.length - 1]);
+
+    // Volume SMA (all elements)
+    let volSum = 0;
+    for (const v of this._volumeBuffer) {
+      volSum += parseFloat(v) || 0;
+    }
+    const volSma = volSum / this._volumeBuffer.length;
+
+    if (volSma === 0) {
+      s[MARKET_REGIMES.QUIET] = 0.5;
+      return s;
+    }
+
+    const volRatio = currentVol / volSma;
+
+    if (volRatio > params.volumeHighRatio) {
+      // High volume: confirms trend or volatility
+      s[MARKET_REGIMES.TRENDING_UP] = 0.3;
+      s[MARKET_REGIMES.TRENDING_DOWN] = 0.3;
+      s[MARKET_REGIMES.VOLATILE] = 0.4;
+    } else if (volRatio < params.volumeLowRatio) {
+      // Low volume: quiet or ranging
+      s[MARKET_REGIMES.QUIET] = 0.6;
+      s[MARKET_REGIMES.RANGING] = 0.4;
+    } else {
+      // Normal volume
+      s[MARKET_REGIMES.RANGING] = 0.5;
+      s[MARKET_REGIMES.TRENDING_UP] = 0.15;
+      s[MARKET_REGIMES.TRENDING_DOWN] = 0.15;
+      s[MARKET_REGIMES.VOLATILE] = 0.1;
+      s[MARKET_REGIMES.QUIET] = 0.1;
+    }
+
+    return s;
+  }
+
+  // =========================================================================
+  // Factor 6: Hysteresis
+  // =========================================================================
+
+  /**
+   * Apply hysteresis: only switch regime after N consecutive candles.
+   * @param {string} candidateRegime — best-scoring regime
+   * @param {number} confidence — confidence value
+   * @param {Object} scores — regime scores
+   * @param {Object} params — current parameters
+   * @private
+   */
+  _applyHysteresis(candidateRegime, confidence, scores, params) {
+    const minCandles = params.hysteresisMinCandles;
+
+    if (candidateRegime === this._currentRegime) {
+      // Same as current — reset pending
+      this._pendingRegime = null;
+      this._pendingCount = 0;
+      this._confidence = confidence;
+
+      // Emit once on first successful classification so frontend gets initial state
+      if (!this._initialEmitted) {
+        this._initialEmitted = true;
+        const context = {
+          previous: null,
+          current: this._currentRegime,
+          confidence: toFixed(String(confidence), 4),
+          scores,
+          btcPrice: this._btcPrice,
+          ema9: this._ema9,
+          sma20: this._sma20,
+          sma50: this._sma50,
+          atr: this._atr,
+          advancers: this._latestAggStats?.advancers || 0,
+          decliners: this._latestAggStats?.decliners || 0,
+          tickerCount: this._latestAggStats?.tickerCount || 0,
+          ts: Date.now(),
+        };
+        this._regimeHistory.push(context);
+        this.emit(MARKET_EVENTS.REGIME_CHANGE, context);
+        log.info('Initial regime emitted', {
+          regime: this._currentRegime,
+          confidence: toFixed(String(confidence), 4),
+        });
+      }
+      return;
+    }
+
+    if (candidateRegime === this._pendingRegime) {
+      // Same candidate as pending — increment counter
+      this._pendingCount++;
+    } else {
+      // Different candidate — restart counter
+      this._pendingRegime = candidateRegime;
+      this._pendingCount = 1;
+    }
+
+    // Check if threshold met
+    if (this._pendingCount >= minCandles) {
       const previous = this._currentRegime;
-      this._currentRegime = newRegime;
+      this._currentRegime = candidateRegime;
+      this._confidence = confidence;
+      this._pendingRegime = null;
+      this._pendingCount = 0;
+      this._initialEmitted = true;
 
       const context = {
         previous,
-        current: newRegime,
-        btcPrice,
-        sma20,
-        atr14,
-        atrPercent,
-        advancers,
-        decliners,
-        tickerCount,
+        current: candidateRegime,
+        confidence: toFixed(String(confidence), 4),
+        scores,
+        btcPrice: this._btcPrice,
+        ema9: this._ema9,
+        sma20: this._sma20,
+        sma50: this._sma50,
+        atr: this._atr,
+        advancers: this._latestAggStats?.advancers || 0,
+        decliners: this._latestAggStats?.decliners || 0,
+        tickerCount: this._latestAggStats?.tickerCount || 0,
         ts: Date.now(),
       };
 
@@ -317,12 +751,9 @@ class MarketRegime extends EventEmitter {
 
       log.info('Regime changed', {
         from: previous,
-        to: newRegime,
-        btcPrice,
-        sma20,
-        atrPercent,
-        advancers,
-        decliners,
+        to: candidateRegime,
+        confidence: toFixed(String(confidence), 4),
+        btcPrice: this._btcPrice,
       });
     }
   }
@@ -333,7 +764,6 @@ class MarketRegime extends EventEmitter {
 
   /**
    * Compute the simple moving average of a buffer of String values.
-   *
    * @param {string[]} buffer
    * @returns {string}
    * @private
@@ -353,50 +783,44 @@ class MarketRegime extends EventEmitter {
     }
   }
 
-  /**
-   * Compute the average of a buffer of String values.
-   *
-   * @param {string[]} buffer
-   * @returns {string}
-   * @private
-   */
-  _computeAverage(buffer) {
-    return this._computeSma(buffer);
-  }
-
   // =========================================================================
   // Public accessors
   // =========================================================================
 
-  /**
-   * Return the current regime label.
-   * @returns {string}
-   */
   getCurrentRegime() {
     return this._currentRegime;
   }
 
-  /**
-   * Return the full regime transition history.
-   * @returns {Object[]}
-   */
+  getConfidence() {
+    return this._confidence;
+  }
+
   getRegimeHistory() {
     return [...this._regimeHistory];
   }
 
-  /**
-   * Return a snapshot of the current regime context for diagnostics.
-   * @returns {Object}
-   */
   getContext() {
     return {
       regime: this._currentRegime,
+      confidence: toFixed(String(this._confidence), 4),
+      ema9: this._ema9,
       sma20: this._sma20,
-      atr14: this._atr14,
+      sma50: this._sma50,
+      atr: this._atr,
       btcPrice: this._btcPrice,
+      factorScores: this._lastFactorScores,
+      params: this._getParams(),
       aggregateStats: this._latestAggStats ? { ...this._latestAggStats } : null,
-      smaBufferLength: this._smaBuffer.length,
-      atrBufferLength: this._atrBuffer.length,
+      pendingRegime: this._pendingRegime,
+      pendingCount: this._pendingCount,
+      bufferLengths: {
+        sma20: this._sma20Buffer.length,
+        sma50: this._sma50Buffer.length,
+        atr: this._atrBuffer.length,
+        atrPercentile: this._atrPercentileBuffer.length,
+        roc: this._rocBuffer.length,
+        volume: this._volumeBuffer.length,
+      },
       historyLength: this._regimeHistory.length,
       ts: Date.now(),
     };

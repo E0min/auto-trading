@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import { useBotStatus } from '@/hooks/useBotStatus';
 import { useBacktest } from '@/hooks/useBacktest';
 import BacktestForm from '@/components/backtest/BacktestForm';
 import BacktestStatsPanel from '@/components/backtest/BacktestStatsPanel';
@@ -12,6 +13,10 @@ import BacktestListPanel from '@/components/backtest/BacktestListPanel';
 import Spinner from '@/components/ui/Spinner';
 
 export default function BacktestPage() {
+  const { status: botStatus, loading: botStatusLoading } = useBotStatus(10000);
+
+  const isPaper = botStatus.tradingMode === 'paper' || botStatus.paperMode;
+
   const {
     backtests,
     activeResult,
@@ -48,6 +53,31 @@ export default function BacktestPage() {
     return result;
   }, [activeResult?.equityCurve]);
 
+  if (!botStatusLoading && !isPaper) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center space-y-4 max-w-md">
+          <div className="w-16 h-16 mx-auto rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center">
+            <svg className="w-8 h-8 text-zinc-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+            </svg>
+          </div>
+          <h2 className="text-lg font-semibold text-zinc-200">가상거래 모드 전용</h2>
+          <p className="text-sm text-zinc-500">
+            백테스트는 가상거래(Paper) 모드에서만 사용할 수 있습니다.<br />
+            대시보드에서 가상거래 모드로 전환해주세요.
+          </p>
+          <Link
+            href="/"
+            className="inline-block mt-2 px-4 py-2 text-sm font-medium text-amber-400 border border-amber-500/30 bg-amber-500/10 rounded-lg hover:bg-amber-500/20 transition-colors"
+          >
+            대시보드로 돌아가기
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen p-4 md:p-6 max-w-[1600px] mx-auto">
       {/* Header */}
@@ -59,6 +89,9 @@ export default function BacktestPage() {
           &larr; 대시보드
         </Link>
         <h1 className="text-xl font-bold text-zinc-100">백테스트</h1>
+        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400/80 border border-amber-500/20">
+          가상거래 전용
+        </span>
       </header>
 
       <div className="space-y-4">

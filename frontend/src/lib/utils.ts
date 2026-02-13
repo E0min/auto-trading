@@ -1,13 +1,27 @@
 /**
- * Format a string number as currency (USDT)
+ * Format a string number as currency (USDT).
+ * Auto-detects decimal places for small numbers so that
+ * tiny prices (e.g. 0.0004369) don't display as "$0.00".
  */
 export function formatCurrency(value: string | undefined | null, decimals = 2): string {
   if (!value) return '0.00';
   const num = parseFloat(value);
   if (isNaN(num)) return '0.00';
+  if (num === 0) return '0.00';
+
+  const absNum = Math.abs(num);
+  let effectiveDecimals = decimals;
+
+  if (absNum > 0 && absNum < 1) {
+    // Find how many leading zeros after decimal point, then show 2 significant digits
+    const leadingZeros = -Math.floor(Math.log10(absNum)) - 1;
+    effectiveDecimals = Math.max(decimals, leadingZeros + 2);
+    effectiveDecimals = Math.min(effectiveDecimals, 8); // cap at 8
+  }
+
   return num.toLocaleString('en-US', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
+    minimumFractionDigits: effectiveDecimals,
+    maximumFractionDigits: effectiveDecimals,
   });
 }
 
@@ -119,6 +133,7 @@ export function translateRegime(regime: string): string {
     trending_down: '하락 추세',
     ranging: '횡보',
     volatile: '고변동성',
+    quiet: '저변동성',
     unknown: '분석 중',
   };
   return map[regime] || regime;
@@ -133,6 +148,7 @@ export function getRegimeColor(regime: string): string {
     trending_down: 'bg-red-500/20 text-red-400 border-red-500/30',
     ranging: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
     volatile: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+    quiet: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
     unknown: 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
   };
   return map[regime] || map.unknown;
@@ -175,6 +191,26 @@ export function translateStrategyName(name: string): string {
     FibonacciRetracementStrategy: '피보나치 되돌림',
   };
   return map[name] || name;
+}
+
+/**
+ * Strategy category — 3-way classification
+ */
+export type StrategyCategory = 'price-action' | 'indicator-light' | 'indicator-heavy';
+
+const STRATEGY_CATEGORY_MAP: Record<string, StrategyCategory> = {
+  TurtleBreakoutStrategy: 'price-action',
+  CandlePatternStrategy: 'price-action',
+  SupportResistanceStrategy: 'price-action',
+  SwingStructureStrategy: 'price-action',
+  FibonacciRetracementStrategy: 'price-action',
+  QuietRangeScalpStrategy: 'indicator-heavy',
+  BreakoutStrategy: 'indicator-heavy',
+  AdaptiveRegimeStrategy: 'indicator-heavy',
+};
+
+export function getStrategyCategory(name: string): StrategyCategory {
+  return STRATEGY_CATEGORY_MAP[name] || 'indicator-light';
 }
 
 /**

@@ -80,6 +80,14 @@ function stdDev(arr, avg) {
 // ==========================================================================
 
 class MomentumStrategy extends StrategyBase {
+  static metadata = {
+    name: 'MomentumStrategy',
+    targetRegimes: ['trending_up', 'ranging'],
+    riskLevel: 'medium',
+    maxConcurrentPositions: 1,
+    cooldownMs: 120000,
+  };
+
   /**
    * @param {object} opts
    * @param {number} [opts.rsiPeriod=14]
@@ -184,7 +192,7 @@ class MomentumStrategy extends StrategyBase {
 
     // 4. Signal logic --------------------------------------------------------
     const price = close;
-    const regime = this._marketRegime;
+    const regime = this.getEffectiveRegime();
     const rsiNum = parseFloat(rsi);
 
     let signal = null;
@@ -365,6 +373,14 @@ class MomentumStrategy extends StrategyBase {
 // ==========================================================================
 
 class MeanReversionStrategy extends StrategyBase {
+  static metadata = {
+    name: 'MeanReversionStrategy',
+    targetRegimes: ['ranging', 'quiet'],
+    riskLevel: 'low',
+    maxConcurrentPositions: 2,
+    cooldownMs: 60000,
+  };
+
   /**
    * @param {object} opts
    * @param {number} [opts.bbPeriod=20]
@@ -451,7 +467,7 @@ class MeanReversionStrategy extends StrategyBase {
     const lower = subtract(middle, bandWidth);
 
     const price = close;
-    const regime = this._marketRegime;
+    const regime = this.getEffectiveRegime();
 
     // 4. Only generate signals in ranging or quiet regimes
     if (

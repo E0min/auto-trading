@@ -40,14 +40,7 @@ const {
   toFixed,
   abs,
 } = require('../../utils/mathUtils');
-const {
-  bollingerBands,
-  keltnerChannel,
-  atr,
-  sma,
-  emaFromArray,
-  emaStep,
-} = require('../../utils/indicators');
+const { sma } = require('../../utils/indicators');
 const { createLogger } = require('../../utils/logger');
 
 const log = createLogger('BreakoutStrategy');
@@ -55,6 +48,10 @@ const log = createLogger('BreakoutStrategy');
 class BreakoutStrategy extends StrategyBase {
   static metadata = {
     name: 'BreakoutStrategy',
+    targetRegimes: ['quiet', 'ranging'],
+    riskLevel: 'high',
+    maxConcurrentPositions: 1,
+    cooldownMs: 300000,
     description: 'BB 스퀴즈 돌파 전략 — 볼린저밴드가 켈트너채널 안으로 수축 후 돌파 진입',
     defaultConfig: {
       bbPeriod: 20,
@@ -85,15 +82,6 @@ class BreakoutStrategy extends StrategyBase {
     super('BreakoutStrategy', merged);
 
     // Internal state ----------------------------------------------------------
-
-    /** @type {string[]} close prices as Strings */
-    this.priceHistory = [];
-
-    /** @type {Array<{high:string, low:string, close:string, volume:string}>} */
-    this.klineHistory = [];
-
-    /** @type {string[]} volume values as Strings */
-    this._volumeHistory = [];
 
     /** @type {string[]} ATR values as Strings (to compute ATR SMA) */
     this._atrHistory = [];
@@ -133,9 +121,6 @@ class BreakoutStrategy extends StrategyBase {
 
     /** @type {string|null} previous EMA(9) value for slope detection */
     this._prevEma9 = null;
-
-    /** @type {number} max number of data points to keep */
-    this._maxHistory = 200;
   }
 
   // --------------------------------------------------------------------------
@@ -288,22 +273,7 @@ class BreakoutStrategy extends StrategyBase {
     const low = kline && kline.low !== undefined ? String(kline.low) : close;
     const volume = kline && kline.volume !== undefined ? String(kline.volume) : '0';
 
-    // 1. Push data and trim ---------------------------------------------------
-    this.priceHistory.push(close);
-    this.klineHistory.push({ high, low, close, volume });
-    this._volumeHistory.push(volume);
-
-    if (this.priceHistory.length > this._maxHistory) {
-      this.priceHistory = this.priceHistory.slice(-this._maxHistory);
-    }
-    if (this.klineHistory.length > this._maxHistory) {
-      this.klineHistory = this.klineHistory.slice(-this._maxHistory);
-    }
-    if (this._volumeHistory.length > this._maxHistory) {
-      this._volumeHistory = this._volumeHistory.slice(-this._maxHistory);
-    }
-
-    // 2. Need enough data -----------------------------------------------------
+    // 1. Need enough data -----------------------------------------------------
     const {
       bbPeriod,
       bbStdDev,
@@ -324,36 +294,39 @@ class BreakoutStrategy extends StrategyBase {
     } = this.config;
 
     const minRequired = Math.max(bbPeriod, kcEmaPeriod, kcAtrPeriod + 1, atrPeriod + 1, emaSlopePeriod, volumeSmaPeriod);
-    if (this.priceHistory.length < minRequired) {
+
+    const hist = this._indicatorCache ? this._indicatorCache.getHistory(this._symbol) : null;
+    if (!hist || hist.closes.length < minRequired) {
       log.debug('Not enough data yet', {
-        have: this.priceHistory.length,
+        have: hist ? hist.closes.length : 0,
         need: minRequired,
       });
       return;
     }
 
-    // 3. Compute indicators ---------------------------------------------------
-    const bb = bollingerBands(this.priceHistory, bbPeriod, bbStdDev);
+    // 2. Compute indicators via IndicatorCache --------------------------------
+    const c = this._indicatorCache;
+    const bb = c.get(this._symbol, 'bb', { period: bbPeriod, stdDev: bbStdDev });
     if (bb === null) return;
 
-    const kc = keltnerChannel(this.priceHistory, this.klineHistory, kcEmaPeriod, kcAtrPeriod, kcMult);
+    const kc = c.get(this._symbol, 'keltner', { emaPeriod: kcEmaPeriod, atrPeriod: kcAtrPeriod, mult: kcMult });
     if (kc === null) return;
 
-    const currentAtr = atr(this.klineHistory, atrPeriod);
+    const currentAtr = c.get(this._symbol, 'atr', { period: atrPeriod });
     if (currentAtr === null) return;
 
     // Store ATR for ATR SMA computation
     this._atrHistory.push(currentAtr);
-    if (this._atrHistory.length > this._maxHistory) {
-      this._atrHistory = this._atrHistory.slice(-this._maxHistory);
+    if (this._atrHistory.length > 200) {
+      this._atrHistory = this._atrHistory.slice(-200);
     }
 
-    const volumeSma = sma(this._volumeHistory, volumeSmaPeriod);
+    const volumeSma = hist ? sma(hist.volumes, volumeSmaPeriod) : null;
     const atrSma = sma(this._atrHistory, volumeSmaPeriod); // ATR SMA over 20 periods
 
-    const currentEma9 = emaFromArray(this.priceHistory, emaSlopePeriod);
+    const currentEma9 = c.get(this._symbol, 'ema', { period: emaSlopePeriod });
 
-    // 4. Check squeeze: BB inside KC? -----------------------------------------
+    // 3. Check squeeze: BB inside KC? -----------------------------------------
     const isSqueeze = isLessThan(bb.upper, kc.upper) && isGreaterThan(bb.lower, kc.lower);
 
     if (isSqueeze) {
@@ -372,7 +345,7 @@ class BreakoutStrategy extends StrategyBase {
 
     const price = close;
 
-    // 5. If position open: check failure, TP, trailing activation -------------
+    // 4. If position open: check failure, TP, trailing activation -------------
     if (this._positionSide !== null && this._entryPrice !== null) {
       this._candlesSinceEntry += 1;
 
@@ -504,7 +477,7 @@ class BreakoutStrategy extends StrategyBase {
       return;
     }
 
-    // 6. No position: check breakout entry conditions -------------------------
+    // 5. No position: check breakout entry conditions -------------------------
     if (this._squeezeCount < minSqueezeCandles) {
       this._updatePrevEma9(currentEma9);
       return;
@@ -523,7 +496,7 @@ class BreakoutStrategy extends StrategyBase {
     }
 
     // Regime filter: QUIET (primary), RANGING (secondary)
-    const regime = this._marketRegime;
+    const regime = this.getEffectiveRegime();
     const regimeOk = regime === null ||
       regime === MARKET_REGIMES.QUIET ||
       regime === MARKET_REGIMES.RANGING;

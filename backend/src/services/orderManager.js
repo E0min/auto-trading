@@ -86,6 +86,15 @@ class OrderManager extends EventEmitter {
     this.riskEngine = riskEngine;
     this.exchangeClient = exchangeClient;
 
+    /** @type {boolean} Paper trading mode flag */
+    this._paperMode = false;
+
+    /** @type {import('./paperEngine')|null} */
+    this._paperEngine = null;
+
+    /** @type {import('./paperPositionManager')|null} */
+    this._paperPositionManager = null;
+
     // Bind WS handlers
     this._handleWsOrderUpdate = this._handleWsOrderUpdate.bind(this);
     this._handleWsFillUpdate = this._handleWsFillUpdate.bind(this);
@@ -95,6 +104,42 @@ class OrderManager extends EventEmitter {
     this.exchangeClient.on('ws:fill', this._handleWsFillUpdate);
 
     log.info('OrderManager initialised');
+  }
+
+  // =========================================================================
+  // Paper mode setup
+  // =========================================================================
+
+  /**
+   * Enable paper trading mode. Orders will be routed to PaperEngine
+   * instead of the exchange.
+   *
+   * @param {import('./paperEngine')} paperEngine
+   * @param {import('./paperPositionManager')} paperPositionManager
+   */
+  setPaperMode(paperEngine, paperPositionManager) {
+    this._paperMode = true;
+    this._paperEngine = paperEngine;
+    this._paperPositionManager = paperPositionManager;
+
+    // Listen for limit order fills from PaperEngine
+    this._paperEngine.on('paper:fill', (fill) => {
+      this._handlePaperFill(fill).catch((err) => {
+        log.error('setPaperMode — error handling paper fill', { error: err });
+      });
+    });
+
+    log.info('OrderManager — paper trading mode enabled');
+  }
+
+  /**
+   * Switch back to live trading mode. Clears paper engine references.
+   */
+  setLiveMode() {
+    this._paperMode = false;
+    this._paperEngine = null;
+    this._paperPositionManager = null;
+    log.info('OrderManager — live trading mode enabled');
   }
 
   // =========================================================================
@@ -217,11 +262,39 @@ class OrderManager extends EventEmitter {
     }
 
     // ------------------------------------------------------------------
-    // Step 3: Build order and submit to exchange
+    // Step 3: Build order and submit (paper or exchange)
     // ------------------------------------------------------------------
     const finalQty = riskResult.adjustedQty || qty;
     const clientOid = `bot_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
+    // ----------------------------------------------------------------
+    // PAPER TRADING PATH
+    // ----------------------------------------------------------------
+    if (this._paperMode) {
+      return this._submitPaperOrder({
+        clientOid,
+        symbol,
+        category,
+        side: actionMapping.side,
+        posSide: actionMapping.posSide,
+        orderType,
+        qty: finalQty,
+        price,
+        reduceOnly: actionMapping.reduceOnly,
+        strategy,
+        sessionId,
+        action,
+        confidence,
+        marketContext,
+        takeProfitPrice,
+        stopLossPrice,
+        originalQty: qty,
+      });
+    }
+
+    // ----------------------------------------------------------------
+    // LIVE TRADING PATH
+    // ----------------------------------------------------------------
     const orderParams = {
       category,
       symbol,
@@ -377,16 +450,24 @@ class OrderManager extends EventEmitter {
   async cancelOrder({ symbol, orderId, clientOid, category = CATEGORIES.USDT_FUTURES }) {
     log.info('cancelOrder — requesting cancellation', { symbol, orderId, clientOid });
 
-    try {
-      await this.exchangeClient.cancelOrder({ category, symbol, orderId, clientOid });
-    } catch (err) {
-      log.error('cancelOrder — exchange cancelOrder failed', {
-        symbol,
-        orderId,
-        clientOid,
-        error: err,
-      });
-      throw err;
+    // Paper mode: cancel via PaperEngine
+    if (this._paperMode && this._paperEngine) {
+      const cancelOid = clientOid || orderId;
+      if (cancelOid) {
+        this._paperEngine.cancelOrder(cancelOid);
+      }
+    } else {
+      try {
+        await this.exchangeClient.cancelOrder({ category, symbol, orderId, clientOid });
+      } catch (err) {
+        log.error('cancelOrder — exchange cancelOrder failed', {
+          symbol,
+          orderId,
+          clientOid,
+          error: err,
+        });
+        throw err;
+      }
     }
 
     // Update trade in DB
@@ -426,6 +507,211 @@ class OrderManager extends EventEmitter {
     });
 
     return trade;
+  }
+
+  // =========================================================================
+  // Paper trading — Order submission
+  // =========================================================================
+
+  /**
+   * Submit an order through the paper trading engine.
+   *
+   * Market orders are filled instantly. Limit orders are queued and filled
+   * when the price condition is met (handled via paper:fill event).
+   *
+   * @param {object} params
+   * @returns {Promise<object|null>} Trade document
+   * @private
+   */
+  async _submitPaperOrder(params) {
+    const {
+      clientOid, symbol, category, side, posSide, orderType, qty,
+      price, reduceOnly, strategy, sessionId, action, confidence,
+      marketContext, takeProfitPrice, stopLossPrice, originalQty,
+    } = params;
+
+    const orderParams = {
+      clientOid,
+      symbol,
+      side,
+      posSide,
+      qty,
+      price,
+      reduceOnly,
+      strategy,
+    };
+
+    let fill = null;
+
+    if (orderType === 'market') {
+      // Instant fill via PaperEngine
+      fill = this._paperEngine.matchMarketOrder(orderParams);
+
+      if (!fill) {
+        log.warn('_submitPaperOrder — market order failed (no price)', { symbol });
+        return null;
+      }
+    } else {
+      // Queue limit order
+      this._paperEngine.submitLimitOrder(orderParams);
+    }
+
+    // Determine status and fill fields
+    const isFilled = fill !== null;
+    const status = isFilled ? ORDER_STATUS.FILLED : ORDER_STATUS.OPEN;
+    const filledQty = isFilled ? fill.qty : '0';
+    const avgFilledPrice = isFilled ? fill.fillPrice : undefined;
+    const fee = isFilled ? fill.fee : '0';
+
+    // Get entry price for close orders (for PnL calc)
+    let entryPriceMeta;
+    if (reduceOnly && this._paperPositionManager) {
+      const pos = this._paperPositionManager.getPosition(symbol, posSide, strategy);
+      if (pos) entryPriceMeta = pos.entryPrice;
+    }
+
+    // Persist Trade to MongoDB
+    let trade;
+    try {
+      trade = await Trade.create({
+        orderId: `paper_${clientOid}`,
+        clientOid,
+        symbol,
+        category,
+        side,
+        posSide,
+        orderType,
+        qty,
+        price: price || undefined,
+        filledQty,
+        avgFilledPrice,
+        fee,
+        status,
+        sessionId,
+        strategy,
+        reduceOnly,
+        takeProfitPrice,
+        stopLossPrice,
+        metadata: {
+          paperTrade: true,
+          entryPrice: entryPriceMeta,
+        },
+      });
+    } catch (dbErr) {
+      log.error('_submitPaperOrder — failed to save trade', { error: dbErr });
+      return null;
+    }
+
+    // Persist Signal
+    try {
+      const savedSignal = await Signal.create({
+        strategy,
+        symbol,
+        action,
+        category,
+        suggestedQty: originalQty,
+        suggestedPrice: price,
+        confidence,
+        riskApproved: true,
+        resultOrderId: trade.orderId,
+        marketContext,
+        sessionId,
+      });
+      trade.signalId = savedSignal._id;
+      await trade.save();
+    } catch (dbErr) {
+      log.error('_submitPaperOrder — failed to save signal', { error: dbErr });
+    }
+
+    // Process fill through PaperPositionManager if market order
+    if (isFilled && this._paperPositionManager) {
+      const { pnl } = this._paperPositionManager.onFill(fill);
+
+      if (pnl !== null) {
+        trade.pnl = pnl;
+        await trade.save().catch((err) => {
+          log.error('_submitPaperOrder — failed to save PnL', { pnl, error: err.message });
+        });
+        this.riskEngine.recordTrade({ pnl });
+      }
+
+      log.trade('_submitPaperOrder — fill processed', {
+        symbol, side, reduceOnly, pnl,
+      });
+
+      this.emit(TRADE_EVENTS.ORDER_FILLED, {
+        trade: trade.toObject(),
+        pnl,
+      });
+    }
+
+    log.trade('_submitPaperOrder — paper order processed', {
+      orderId: trade.orderId,
+      clientOid,
+      symbol,
+      side,
+      orderType,
+      status,
+      fillPrice: avgFilledPrice,
+    });
+
+    this.emit(TRADE_EVENTS.ORDER_SUBMITTED, {
+      trade: trade.toObject(),
+    });
+
+    return trade;
+  }
+
+  // =========================================================================
+  // Paper trading — Deferred limit order fill handler
+  // =========================================================================
+
+  /**
+   * Handle fills from PaperEngine for limit orders that were queued.
+   * Updates the Trade document and processes position changes.
+   *
+   * @param {object} fill — from PaperEngine 'paper:fill' event
+   * @private
+   */
+  async _handlePaperFill(fill) {
+    try {
+      const trade = await Trade.findOne({ clientOid: fill.clientOid });
+      if (!trade) {
+        log.warn('_handlePaperFill — no matching trade', { clientOid: fill.clientOid });
+        return;
+      }
+
+      // Update trade to FILLED
+      trade.status = ORDER_STATUS.FILLED;
+      trade.filledQty = fill.qty;
+      trade.avgFilledPrice = fill.fillPrice;
+      trade.fee = fill.fee;
+      await trade.save();
+
+      // Process through PaperPositionManager
+      if (this._paperPositionManager) {
+        const { pnl } = this._paperPositionManager.onFill(fill);
+
+        if (pnl !== null) {
+          trade.pnl = pnl;
+          await trade.save();
+          this.riskEngine.recordTrade({ pnl });
+        }
+
+        this.emit(TRADE_EVENTS.ORDER_FILLED, {
+          trade: trade.toObject(),
+          pnl,
+        });
+      }
+
+      log.trade('_handlePaperFill — limit order filled', {
+        clientOid: fill.clientOid,
+        symbol: fill.symbol,
+        fillPrice: fill.fillPrice,
+      });
+    } catch (err) {
+      log.error('_handlePaperFill — error', { error: err });
+    }
   }
 
   // =========================================================================
@@ -721,11 +1007,12 @@ class OrderManager extends EventEmitter {
    * @param {number} [filters.skip=0]    — pagination offset
    * @returns {Promise<Array>}
    */
-  async getTradeHistory({ sessionId, symbol, limit = 50, skip = 0 } = {}) {
+  async getTradeHistory({ sessionId, symbol, strategy, limit = 50, skip = 0 } = {}) {
     try {
       const query = {};
       if (sessionId) query.sessionId = sessionId;
       if (symbol) query.symbol = symbol;
+      if (strategy) query.strategy = strategy;
 
       const trades = await Trade.find(query)
         .sort({ createdAt: -1 })

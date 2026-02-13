@@ -34,7 +34,7 @@ class StrategyRegistry {
 
     const metadata = StrategyClass.metadata || { name, description: '' };
     this._strategies.set(name, { StrategyClass, metadata });
-    log.info('Strategy registered', { name });
+    log.info('Strategy registered', { name, targetRegimes: metadata.targetRegimes || 'all' });
   }
 
   /**

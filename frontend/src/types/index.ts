@@ -9,6 +9,11 @@ export interface BotStatus {
   symbols: string[];
   registeredStrategies: string[];
   riskStatus: RiskStatus;
+  paperMode?: boolean;
+  tradingMode?: 'live' | 'paper';
+  paperAccount?: AccountState;
+  regime?: MarketRegimeData;
+  symbolRegimes?: Record<string, SymbolRegimeEntry>;
 }
 
 export interface StrategyInfo {
@@ -145,7 +150,7 @@ export interface HealthReport {
 }
 
 // Market types
-export type MarketRegime = 'trending_up' | 'trending_down' | 'ranging' | 'volatile' | 'unknown';
+export type MarketRegime = 'trending_up' | 'trending_down' | 'ranging' | 'volatile' | 'quiet' | 'unknown';
 
 export interface MarketRegimeData {
   regime: MarketRegime;
@@ -153,12 +158,64 @@ export interface MarketRegimeData {
   timestamp: string;
 }
 
+export interface SymbolRegimeEntry {
+  regime: MarketRegime;
+  confidence: number;
+  warmedUp: boolean;
+}
+
 // Strategy list item (from GET /api/bot/strategies)
 export interface StrategyListItem {
   name: string;
   description: string;
   defaultConfig: Record<string, unknown>;
+  targetRegimes: string[];
+  riskLevel?: 'low' | 'medium' | 'high';
   active: boolean;
+}
+
+// Tournament types
+export interface TournamentInfo {
+  tournamentId: string | null;
+  running: boolean;
+  startedAt: string | null;
+  strategyCount: number;
+  initialBalance: string;
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  strategy: string;
+  equity: string;
+  pnl: string;
+  pnlPercent: string;
+  unrealizedPnl: string;
+  positionCount: number;
+}
+
+export interface StrategyDetail {
+  strategy: string;
+  account: AccountState;
+  positions: Position[];
+  stats: {
+    totalTrades: number;
+    wins: number;
+    losses: number;
+    winRate: string;
+  };
+  recentTrades: Trade[];
+}
+
+// Strategy stats (from GET /api/trades/strategy-stats/:name)
+export interface StrategyStats {
+  strategy: string;
+  totalTrades: number;
+  wins: number;
+  losses: number;
+  winRate: string;
+  totalPnl: string;
+  recentTrades: Trade[];
+  recentSignals: Signal[];
 }
 
 // API response wrapper

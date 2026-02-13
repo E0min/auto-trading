@@ -37,6 +37,12 @@ class StrategyBase extends EventEmitter {
     this._category = CATEGORIES.USDT_FUTURES;
     this._marketRegime = null;
 
+    /** @type {Map<string, string>} Per-symbol regime overrides */
+    this._symbolRegimes = new Map();
+
+    /** @type {import('./indicatorCache')|null} */
+    this._indicatorCache = null;
+
     this._log = createLogger(`Strategy:${name}`);
   }
 
@@ -121,6 +127,16 @@ class StrategyBase extends EventEmitter {
   }
 
   /**
+   * Inject the shared IndicatorCache instance.
+   * Called by BotService during strategy creation.
+   *
+   * @param {import('./indicatorCache')} cache
+   */
+  setIndicatorCache(cache) {
+    this._indicatorCache = cache;
+  }
+
+  /**
    * Update the current market regime (set by the MarketRegime service).
    *
    * @param {string} regime — one of MARKET_REGIMES values
@@ -138,6 +154,41 @@ class StrategyBase extends EventEmitter {
     if (previous !== regime) {
       this._log.debug('Market regime updated', { previous, current: regime });
     }
+  }
+
+  /**
+   * Set a per-symbol regime override. When a symbol's individual regime
+   * differs from the global BTC regime, this value takes precedence.
+   *
+   * @param {string} symbol — e.g. 'ETHUSDT'
+   * @param {string|null} regime — regime label, or null to clear
+   */
+  setSymbolRegime(symbol, regime) {
+    if (regime === null) {
+      this._symbolRegimes.delete(symbol);
+      return;
+    }
+
+    const validRegimes = Object.values(MARKET_REGIMES);
+    if (!validRegimes.includes(regime)) {
+      this._log.warn('Ignoring unknown symbol regime', { symbol, regime });
+      return;
+    }
+
+    this._symbolRegimes.set(symbol, regime);
+  }
+
+  /**
+   * Return the effective regime for this strategy's current symbol.
+   * Prefers per-symbol regime; falls back to global BTC regime.
+   *
+   * @returns {string|null}
+   */
+  getEffectiveRegime() {
+    if (this._symbol && this._symbolRegimes.has(this._symbol)) {
+      return this._symbolRegimes.get(this._symbol);
+    }
+    return this._marketRegime;
   }
 
   /**
@@ -178,6 +229,28 @@ class StrategyBase extends EventEmitter {
    */
   getName() {
     return this.name;
+  }
+
+  /**
+   * Return the target regimes from static metadata.
+   * Strategies declare their preferred regimes via `static metadata`.
+   * @returns {string[]} array of regime strings (e.g. ['trending_up', 'ranging'])
+   */
+  getTargetRegimes() {
+    const meta = this.constructor.metadata;
+    if (meta && Array.isArray(meta.targetRegimes)) {
+      return meta.targetRegimes;
+    }
+    // Default: all regimes (backward compatibility)
+    return Object.values(MARKET_REGIMES);
+  }
+
+  /**
+   * Return the full static metadata for this strategy.
+   * @returns {object}
+   */
+  getMetadata() {
+    return this.constructor.metadata || { name: this.name, targetRegimes: Object.values(MARKET_REGIMES) };
   }
 
   /**

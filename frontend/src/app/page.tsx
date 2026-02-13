@@ -10,10 +10,11 @@ import { useAnalytics } from '@/hooks/useAnalytics';
 import { useHealthCheck } from '@/hooks/useHealthCheck';
 
 import BotControlPanel from '@/components/BotControlPanel';
-import StrategyPanel from '@/components/StrategyPanel';
+import TradingModeToggle from '@/components/TradingModeToggle';
+import StrategyHub from '@/components/strategy/StrategyHub';
 import AccountOverview from '@/components/AccountOverview';
 import RiskStatusPanel from '@/components/RiskStatusPanel';
-import MarketRegimeIndicator from '@/components/MarketRegimeIndicator';
+import SymbolRegimeTable from '@/components/SymbolRegimeTable';
 import EquityCurveChart from '@/components/EquityCurveChart';
 import PositionsTable from '@/components/PositionsTable';
 import SignalFeed from '@/components/SignalFeed';
@@ -34,6 +35,7 @@ export default function Dashboard() {
     pauseBot,
     resumeBot,
     emergencyStop,
+    refetch: refetchBotStatus,
   } = useBotStatus();
 
   const handleStartBot = useCallback(async () => {
@@ -48,6 +50,7 @@ export default function Dashboard() {
     connected: socketConnected,
     signals,
     regime,
+    symbolRegimes: socketSymbolRegimes,
   } = useSocket();
 
   const {
@@ -92,12 +95,42 @@ export default function Dashboard() {
           <h1 className="text-xl font-bold text-zinc-100">
             Bitget 자동매매
           </h1>
-          <Link
-            href="/backtest"
-            className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors border border-zinc-700 rounded-lg px-3 py-1.5"
-          >
-            백테스트
-          </Link>
+          <TradingModeToggle
+            currentMode={botStatus.tradingMode ?? (botStatus.paperMode ? 'paper' : 'live')}
+            botRunning={botStatus.running}
+            onModeChange={() => refetchBotStatus()}
+          />
+          {(botStatus.tradingMode === 'paper' || botStatus.paperMode) ? (
+            <>
+              <Link
+                href="/backtest"
+                className="text-sm text-amber-400/80 hover:text-amber-300 transition-colors border border-amber-500/30 bg-amber-500/5 rounded-lg px-3 py-1.5"
+              >
+                백테스트
+              </Link>
+              <Link
+                href="/tournament"
+                className="text-sm text-amber-400/80 hover:text-amber-300 transition-colors border border-amber-500/30 bg-amber-500/5 rounded-lg px-3 py-1.5"
+              >
+                토너먼트
+              </Link>
+            </>
+          ) : (
+            <>
+              <span
+                className="text-sm text-zinc-600 border border-zinc-800 rounded-lg px-3 py-1.5 cursor-not-allowed select-none"
+                title="가상거래 모드에서만 사용 가능"
+              >
+                백테스트
+              </span>
+              <span
+                className="text-sm text-zinc-600 border border-zinc-800 rounded-lg px-3 py-1.5 cursor-not-allowed select-none"
+                title="가상거래 모드에서만 사용 가능"
+              >
+                토너먼트
+              </span>
+            </>
+          )}
         </div>
         <SystemHealth
           health={health}
@@ -119,9 +152,13 @@ export default function Dashboard() {
           onEmergencyStop={emergencyStop}
         />
 
-        {/* Strategy Management */}
-        <StrategyPanel
+        {/* Strategy Hub — unified strategy management + regime recommendation + per-strategy detail */}
+        <StrategyHub
           botRunning={botStatus.running}
+          currentRegime={regime?.regime ?? botStatus.regime?.regime ?? null}
+          sessionId={botStatus.sessionId}
+          realtimeSignals={signals}
+          positions={positions}
           onSelectionChange={handleSelectionChange}
         />
 
@@ -136,8 +173,14 @@ export default function Dashboard() {
           <RiskStatusPanel riskStatus={botStatus.riskStatus} />
         </div>
 
-        {/* Market Regime */}
-        <MarketRegimeIndicator regime={regime} />
+        {/* Per-symbol Regimes — prefer socket data, fall back to REST polling */}
+        <SymbolRegimeTable
+          symbolRegimes={
+            Object.keys(socketSymbolRegimes).length > 0
+              ? socketSymbolRegimes
+              : (botStatus.symbolRegimes ?? {})
+          }
+        />
 
         {/* Equity Curve */}
         <EquityCurveChart data={equityCurve} loading={analyticsLoading} />

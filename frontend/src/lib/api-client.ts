@@ -8,6 +8,10 @@ import type {
   SessionStats,
   EquityPoint,
   HealthReport,
+  TournamentInfo,
+  LeaderboardEntry,
+  StrategyDetail,
+  StrategyStats,
 } from '@/types';
 import type {
   BacktestConfig,
@@ -51,14 +55,19 @@ export const botApi = {
     }),
   disableStrategy: (name: string) =>
     request<{ message: string }>(`/api/bot/strategies/${name}/disable`, { method: 'POST' }),
+  getTradingMode: () =>
+    request<{ mode: string }>('/api/bot/trading-mode'),
+  setTradingMode: (mode: string) =>
+    request<{ mode: string }>('/api/bot/trading-mode', { method: 'POST', body: JSON.stringify({ mode }) }),
 };
 
 // Trades
 export const tradeApi = {
-  getHistory: (params?: { sessionId?: string; symbol?: string; limit?: number; skip?: number }) => {
+  getHistory: (params?: { sessionId?: string; symbol?: string; strategy?: string; limit?: number; skip?: number }) => {
     const query = new URLSearchParams();
     if (params?.sessionId) query.set('sessionId', params.sessionId);
     if (params?.symbol) query.set('symbol', params.symbol);
+    if (params?.strategy) query.set('strategy', params.strategy);
     if (params?.limit) query.set('limit', String(params.limit));
     if (params?.skip) query.set('skip', String(params.skip));
     const qs = query.toString();
@@ -69,12 +78,17 @@ export const tradeApi = {
     return request<Trade[]>(`/api/trades/open${qs}`);
   },
   getPositions: () => request<{ positions: Position[]; accountState: AccountState }>('/api/trades/positions'),
-  getSignals: (params?: { sessionId?: string; limit?: number }) => {
+  getSignals: (params?: { sessionId?: string; strategy?: string; limit?: number }) => {
     const query = new URLSearchParams();
     if (params?.sessionId) query.set('sessionId', params.sessionId);
+    if (params?.strategy) query.set('strategy', params.strategy);
     if (params?.limit) query.set('limit', String(params.limit));
     const qs = query.toString();
     return request<Signal[]>(`/api/trades/signals${qs ? `?${qs}` : ''}`);
+  },
+  getStrategyStats: (name: string, sessionId?: string) => {
+    const qs = sessionId ? `?sessionId=${sessionId}` : '';
+    return request<StrategyStats>(`/api/trades/strategy-stats/${name}${qs}`);
   },
   submitOrder: (order: { symbol: string; action: string; [key: string]: unknown }) =>
     request<Trade>('/api/trades/order', { method: 'POST', body: JSON.stringify(order) }),
@@ -103,6 +117,18 @@ export const healthApi = {
     const res = await fetch(`${API_BASE}/api/health/ping`);
     return res.json() as Promise<{ pong: boolean; timestamp: string }>;
   },
+};
+
+// Tournament
+export const tournamentApi = {
+  getInfo: () => request<TournamentInfo>('/api/tournament/info'),
+  start: (config?: { strategies?: string[]; initialBalance?: string }) =>
+    request<TournamentInfo>('/api/tournament/start', { method: 'POST', body: JSON.stringify(config || {}) }),
+  stop: () => request<TournamentInfo>('/api/tournament/stop', { method: 'POST' }),
+  reset: (config?: { initialBalance?: string; clearTrades?: boolean }) =>
+    request<{ message: string; info: TournamentInfo }>('/api/tournament/reset', { method: 'POST', body: JSON.stringify(config || {}) }),
+  getLeaderboard: () => request<{ tournament: TournamentInfo; leaderboard: LeaderboardEntry[] }>('/api/tournament/leaderboard'),
+  getStrategyDetail: (name: string) => request<StrategyDetail>(`/api/tournament/strategy/${name}`),
 };
 
 // Backtest

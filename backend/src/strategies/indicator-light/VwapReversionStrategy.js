@@ -47,7 +47,7 @@ const {
   toFixed,
   abs,
 } = require('../../utils/mathUtils');
-const { rsi, atr, sma, vwap } = require('../../utils/indicators');
+const { sma: smafn, vwap } = require('../../utils/indicators');
 const { createLogger } = require('../../utils/logger');
 
 const log = createLogger('VwapReversionStrategy');
@@ -59,6 +59,10 @@ const log = createLogger('VwapReversionStrategy');
 class VwapReversionStrategy extends StrategyBase {
   static metadata = {
     name: 'VwapReversionStrategy',
+    targetRegimes: ['ranging', 'quiet'],
+    riskLevel: 'low',
+    maxConcurrentPositions: 2,
+    cooldownMs: 60000,
     description: 'VWAP 회귀 전략 — 가격이 VWAP에서 크게 이탈했을 때 회귀를 기대',
     defaultConfig: {
       rsiPeriod: 14,
@@ -89,17 +93,8 @@ class VwapReversionStrategy extends StrategyBase {
     // Internal state
     // ------------------------------------------------------------------
 
-    /** @type {Array<{high:string, low:string, close:string, open:string, volume:string}>} full kline history for ATR/RSI */
-    this.klineHistory = [];
-
     /** @type {Array<{high:string, low:string, close:string, volume:string}>} current VWAP session klines */
     this._sessionKlines = [];
-
-    /** @type {string[]} close prices (for RSI) */
-    this.priceHistory = [];
-
-    /** @type {string[]} volume values (for Volume SMA) */
-    this._volumeHistory = [];
 
     /** @type {object|null} most recently generated signal */
     this._lastSignal = null;
@@ -127,9 +122,6 @@ class VwapReversionStrategy extends StrategyBase {
 
     /** @type {number} kline count at session start */
     this._sessionStartKline = 0;
-
-    /** @type {number} max history length */
-    this._maxHistory = 200;
   }
 
   // --------------------------------------------------------------------------
@@ -153,8 +145,10 @@ class VwapReversionStrategy extends StrategyBase {
     const price = this._latestPrice;
     const entry = this._entryPrice;
 
-    // Compute current ATR for SL calculation
-    const atrVal = atr(this.klineHistory, this.config.atrPeriod);
+    // Compute current ATR for SL calculation via IndicatorCache
+    const atrVal = this._indicatorCache
+      ? this._indicatorCache.get(this._symbol, 'atr', { period: this.config.atrPeriod })
+      : null;
     if (atrVal === null) return;
 
     const slDistance = multiply(this.config.slAtrMult, atrVal);
@@ -218,20 +212,10 @@ class VwapReversionStrategy extends StrategyBase {
     const open = kline && kline.open !== undefined ? String(kline.open) : close;
     const volume = kline && kline.volume !== undefined ? String(kline.volume) : '0';
 
-    // 1. Push data to histories and trim
-    this.klineHistory.push({ high, low, close, open, volume });
-    this.priceHistory.push(close);
-    this._volumeHistory.push(volume);
-
-    if (this.klineHistory.length > this._maxHistory) {
-      this.klineHistory = this.klineHistory.slice(-this._maxHistory);
-    }
-    if (this.priceHistory.length > this._maxHistory) {
-      this.priceHistory = this.priceHistory.slice(-this._maxHistory);
-    }
-    if (this._volumeHistory.length > this._maxHistory) {
-      this._volumeHistory = this._volumeHistory.slice(-this._maxHistory);
-    }
+    // 1. Get shared history from IndicatorCache
+    const c = this._indicatorCache;
+    const hist = c.getHistory(this._symbol);
+    if (!hist) return;
 
     // 2. Session reset check (every 96 candles = ~1 day of 15-min candles)
     this._klineCount += 1;
@@ -249,29 +233,29 @@ class VwapReversionStrategy extends StrategyBase {
 
     // Need enough data for indicators
     const minRequired = Math.max(rsiPeriod + 1, atrPeriod + 1, volumeSmaPeriod);
-    if (this.priceHistory.length < minRequired || this._sessionKlines.length < 2) {
+    if (hist.closes.length < minRequired || this._sessionKlines.length < 2) {
       log.debug('Not enough data yet', {
-        have: this.priceHistory.length,
+        have: hist.closes.length,
         need: minRequired,
         sessionKlines: this._sessionKlines.length,
       });
       return;
     }
 
-    // VWAP from session klines
+    // VWAP from session klines (strategy-specific, NOT from cache)
     const vwapVal = vwap(this._sessionKlines);
     if (vwapVal === null) return;
 
-    // RSI
-    const rsiVal = rsi(this.priceHistory, rsiPeriod);
+    // RSI via IndicatorCache
+    const rsiVal = c.get(this._symbol, 'rsi', { period: rsiPeriod });
     if (rsiVal === null) return;
 
-    // ATR
-    const atrVal = atr(this.klineHistory, atrPeriod);
+    // ATR via IndicatorCache
+    const atrVal = c.get(this._symbol, 'atr', { period: atrPeriod });
     if (atrVal === null) return;
 
-    // Volume SMA
-    const volSma = sma(this._volumeHistory, volumeSmaPeriod);
+    // Volume SMA — cache's sma uses close prices, so compute from raw volumes
+    const volSma = smafn(hist.volumes, volumeSmaPeriod);
     if (volSma === null) return;
 
     const {
@@ -298,7 +282,7 @@ class VwapReversionStrategy extends StrategyBase {
     // Price deviation from VWAP
     const deviation = subtract(close, vwapVal);
 
-    const regime = this._marketRegime;
+    const regime = this.getEffectiveRegime();
 
     const marketContext = {
       vwap: vwapVal,

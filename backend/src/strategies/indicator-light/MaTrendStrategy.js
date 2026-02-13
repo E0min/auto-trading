@@ -32,6 +32,10 @@ const log = createLogger('MaTrendStrategy');
 class MaTrendStrategy extends StrategyBase {
   static metadata = {
     name: 'MaTrendStrategy',
+    targetRegimes: ['trending_up', 'trending_down'],
+    riskLevel: 'medium',
+    maxConcurrentPositions: 1,
+    cooldownMs: 300000,
     description: '멀티타임프레임 EMA 추세추종 + 트레일링 스탑',
     defaultConfig: {
       h1FastEma: 9,
@@ -309,7 +313,7 @@ class MaTrendStrategy extends StrategyBase {
 
     if (dailyUptrend && h4Uptrend && h1Uptrend &&
         longPullback && bounceCandle && volumeConfirm &&
-        (this._marketRegime === null || this._marketRegime === MARKET_REGIMES.TRENDING_UP)) {
+        (this.getEffectiveRegime() === null || this.getEffectiveRegime() === MARKET_REGIMES.TRENDING_UP)) {
       log.trade('Long entry signal — multi-TF uptrend + pullback bounce', {
         symbol: this._symbol,
         close,
@@ -330,7 +334,7 @@ class MaTrendStrategy extends StrategyBase {
         leverage: '3',
         positionSizePercent: this._positionSizePercent,
         marketContext: {
-          regime: this._marketRegime,
+          regime: this.getEffectiveRegime(),
           dailyTrend: 'up',
           h4Trend: 'up',
           h1Trend: 'up',
@@ -358,7 +362,7 @@ class MaTrendStrategy extends StrategyBase {
 
     if (dailyDowntrend && h4Downtrend && h1Downtrend &&
         shortRally && dropCandle && volumeConfirm &&
-        (this._marketRegime === null || this._marketRegime === MARKET_REGIMES.TRENDING_DOWN)) {
+        (this.getEffectiveRegime() === null || this.getEffectiveRegime() === MARKET_REGIMES.TRENDING_DOWN)) {
       log.trade('Short entry signal — multi-TF downtrend + rally drop', {
         symbol: this._symbol,
         close,
@@ -379,7 +383,7 @@ class MaTrendStrategy extends StrategyBase {
         leverage: '3',
         positionSizePercent: this._positionSizePercent,
         marketContext: {
-          regime: this._marketRegime,
+          regime: this.getEffectiveRegime(),
           dailyTrend: 'down',
           h4Trend: 'down',
           h1Trend: 'down',
@@ -667,7 +671,7 @@ class MaTrendStrategy extends StrategyBase {
       reason,
       reduceOnly: true,
       marketContext: {
-        regime: this._marketRegime,
+        regime: this.getEffectiveRegime(),
         entryPrice: this._entryPrice,
         exitPrice: price,
         highestSinceEntry: this._highestSinceEntry,

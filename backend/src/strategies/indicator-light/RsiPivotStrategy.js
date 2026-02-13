@@ -36,6 +36,10 @@ class RsiPivotStrategy extends StrategyBase {
 
   static metadata = {
     name: 'RsiPivotStrategy',
+    targetRegimes: ['trending_up', 'trending_down', 'volatile', 'ranging'],
+    riskLevel: 'medium',
+    maxConcurrentPositions: 2,
+    cooldownMs: 60000,
     description: 'RSI + Pivot 역추세 (양방향)',
     defaultConfig: {
       rsiPeriod: 14,
@@ -70,9 +74,6 @@ class RsiPivotStrategy extends StrategyBase {
 
     // Internal state --------------------------------------------------------
 
-    /** @type {string[]} close prices (15 min candle) as Strings */
-    this.priceHistory = [];
-
     /** @type {object|null} most recently generated signal */
     this._lastSignal = null;
 
@@ -103,9 +104,6 @@ class RsiPivotStrategy extends StrategyBase {
      * @type {{ high: string, low: string, open: string, close: string, date: string }|null}
      */
     this._currentDayCandle = null;
-
-    /** Maximum number of close prices kept in memory */
-    this._maxHistory = merged.rsiPeriod + 50;
   }
 
   // -------------------------------------------------------------------------
@@ -144,13 +142,7 @@ class RsiPivotStrategy extends StrategyBase {
     const close = kline && kline.close !== undefined ? String(kline.close) : null;
     if (close === null) return;
 
-    // 1. Push close to price history, trim to max length ----------------------
-    this.priceHistory.push(close);
-    if (this.priceHistory.length > this._maxHistory) {
-      this.priceHistory = this.priceHistory.slice(-this._maxHistory);
-    }
-
-    // 2. Track daily candles for pivot calculation ----------------------------
+    // 1. Track daily candles for pivot calculation ----------------------------
     this._aggregateDailyCandle(kline);
 
     const {
@@ -162,17 +154,19 @@ class RsiPivotStrategy extends StrategyBase {
       slPercent,
     } = this.config;
 
-    // Need at least rsiPeriod + 1 prices for RSI
-    if (this.priceHistory.length < rsiPeriod + 1) {
+    // 2. Check IndicatorCache for sufficient history -------------------------
+    const c = this._indicatorCache;
+    const hist = c.getHistory(this._symbol);
+    if (!hist || hist.closes.length < rsiPeriod + 1) {
       this._log.debug('Not enough data yet', {
-        have: this.priceHistory.length,
+        have: hist ? hist.closes.length : 0,
         needRsi: rsiPeriod + 1,
       });
       return;
     }
 
-    // 3. Calculate RSI --------------------------------------------------------
-    const rsi = this._calculateRsi(rsiPeriod);
+    // 3. Calculate RSI via IndicatorCache ------------------------------------
+    const rsi = c.get(this._symbol, 'rsi', { period: rsiPeriod });
 
     // 4. Evaluate exit signals first (position is open) -----------------------
     if (this._entryPrice !== null && this._positionSide !== null) {
@@ -187,7 +181,7 @@ class RsiPivotStrategy extends StrategyBase {
             suggestedQty: positionSizePercent,
             suggestedPrice: close,
             confidence,
-            marketContext: { rsi, price: close, regime: this._marketRegime, reason: 'rsi_overbought' },
+            marketContext: { rsi, price: close, regime: this.getEffectiveRegime(), reason: 'rsi_overbought' },
           };
           this._lastSignal = signal;
           this.emitSignal(signal);
@@ -203,7 +197,7 @@ class RsiPivotStrategy extends StrategyBase {
             suggestedQty: positionSizePercent,
             suggestedPrice: close,
             confidence: '0.7500',
-            marketContext: { rsi, price: close, pivotR1: this._pivotData.r1, regime: this._marketRegime, reason: 'pivot_r1_reached' },
+            marketContext: { rsi, price: close, pivotR1: this._pivotData.r1, regime: this.getEffectiveRegime(), reason: 'pivot_r1_reached' },
           };
           this._lastSignal = signal;
           this.emitSignal(signal);
@@ -222,7 +216,7 @@ class RsiPivotStrategy extends StrategyBase {
             suggestedQty: positionSizePercent,
             suggestedPrice: close,
             confidence,
-            marketContext: { rsi, price: close, regime: this._marketRegime, reason: 'rsi_oversold' },
+            marketContext: { rsi, price: close, regime: this.getEffectiveRegime(), reason: 'rsi_oversold' },
           };
           this._lastSignal = signal;
           this.emitSignal(signal);
@@ -238,7 +232,7 @@ class RsiPivotStrategy extends StrategyBase {
             suggestedQty: positionSizePercent,
             suggestedPrice: close,
             confidence: '0.7500',
-            marketContext: { rsi, price: close, pivotS1: this._pivotData.s1, regime: this._marketRegime, reason: 'pivot_s1_reached' },
+            marketContext: { rsi, price: close, pivotS1: this._pivotData.s1, regime: this.getEffectiveRegime(), reason: 'pivot_s1_reached' },
           };
           this._lastSignal = signal;
           this.emitSignal(signal);
@@ -254,7 +248,7 @@ class RsiPivotStrategy extends StrategyBase {
     }
 
     // 5. Entry signal logic (no position) -------------------------------------
-    const regime = this._marketRegime;
+    const regime = this.getEffectiveRegime();
 
     // Need pivot data
     if (this._pivotData === null) {
@@ -396,7 +390,7 @@ class RsiPivotStrategy extends StrategyBase {
           symbol: this._symbol, category: this._category,
           suggestedQty: positionSizePercent, suggestedPrice: currentPrice,
           confidence: '0.9500',
-          marketContext: { price: currentPrice, entryPrice: this._entryPrice, tpPrice, regime: this._marketRegime, reason: 'take_profit' },
+          marketContext: { price: currentPrice, entryPrice: this._entryPrice, tpPrice, regime: this.getEffectiveRegime(), reason: 'take_profit' },
         };
       } else if (isLessThanOrEqual(currentPrice, slPrice)) {
         signal = {
@@ -404,7 +398,7 @@ class RsiPivotStrategy extends StrategyBase {
           symbol: this._symbol, category: this._category,
           suggestedQty: positionSizePercent, suggestedPrice: currentPrice,
           confidence: '0.9500',
-          marketContext: { price: currentPrice, entryPrice: this._entryPrice, slPrice, regime: this._marketRegime, reason: 'stop_loss' },
+          marketContext: { price: currentPrice, entryPrice: this._entryPrice, slPrice, regime: this.getEffectiveRegime(), reason: 'stop_loss' },
         };
       }
     } else if (this._positionSide === 'short') {
@@ -417,7 +411,7 @@ class RsiPivotStrategy extends StrategyBase {
           symbol: this._symbol, category: this._category,
           suggestedQty: positionSizePercent, suggestedPrice: currentPrice,
           confidence: '0.9500',
-          marketContext: { price: currentPrice, entryPrice: this._entryPrice, tpPrice, regime: this._marketRegime, reason: 'take_profit' },
+          marketContext: { price: currentPrice, entryPrice: this._entryPrice, tpPrice, regime: this.getEffectiveRegime(), reason: 'take_profit' },
         };
       } else if (isGreaterThanOrEqual(currentPrice, slPrice)) {
         signal = {
@@ -425,7 +419,7 @@ class RsiPivotStrategy extends StrategyBase {
           symbol: this._symbol, category: this._category,
           suggestedQty: positionSizePercent, suggestedPrice: currentPrice,
           confidence: '0.9500',
-          marketContext: { price: currentPrice, entryPrice: this._entryPrice, slPrice, regime: this._marketRegime, reason: 'stop_loss' },
+          marketContext: { price: currentPrice, entryPrice: this._entryPrice, slPrice, regime: this.getEffectiveRegime(), reason: 'stop_loss' },
         };
       }
     }
@@ -507,54 +501,6 @@ class RsiPivotStrategy extends StrategyBase {
         close,
       };
     }
-  }
-
-  /**
-   * Compute RSI over the last `period` price changes.
-   * Same approach as MomentumStrategy._calculateRsi (String-based).
-   *
-   * @param {number} period
-   * @returns {string} RSI as a String (0-100)
-   */
-  _calculateRsi(period) {
-    const prices = this.priceHistory;
-    const len = prices.length;
-
-    // We need period + 1 prices to get period changes
-    const startIdx = len - period - 1;
-    let sumGain = '0';
-    let sumLoss = '0';
-
-    for (let i = startIdx; i < len - 1; i++) {
-      const diff = subtract(prices[i + 1], prices[i]);
-      if (isGreaterThan(diff, '0')) {
-        sumGain = add(sumGain, diff);
-      } else if (isLessThan(diff, '0')) {
-        // losses stored as positive values
-        sumLoss = add(sumLoss, subtract('0', diff));
-      }
-    }
-
-    const avgGain = divide(sumGain, String(period));
-    const avgLoss = divide(sumLoss, String(period));
-
-    // If avgLoss is zero, RSI = 100
-    if (!isGreaterThan(avgLoss, '0')) {
-      return '100';
-    }
-
-    // If avgGain is zero, RSI = 0
-    if (!isGreaterThan(avgGain, '0')) {
-      return '0';
-    }
-
-    const rs = divide(avgGain, avgLoss);
-    // RSI = 100 - (100 / (1 + RS))
-    const onePlusRs = add('1', rs);
-    const rsiDenom = divide('100', onePlusRs);
-    const rsi = subtract('100', rsiDenom);
-
-    return toFixed(rsi, 4);
   }
 
   /**

@@ -57,6 +57,10 @@ class GridStrategy extends StrategyBase {
    */
   static metadata = {
     name: 'GridStrategy',
+    targetRegimes: ['ranging'],
+    riskLevel: 'low',
+    maxConcurrentPositions: 3,
+    cooldownMs: 30000,
     description: 'ATR 기반 그리드 트레이딩 (양방향 헤지)',
     defaultConfig: {
       atrPeriod: 14,
@@ -89,8 +93,6 @@ class GridStrategy extends StrategyBase {
     this._maxDrawdownPercent = merged.maxDrawdownPercent;
 
     // --- Internal state -------------------------------------------------
-    /** @type {{ high: string, low: string, close: string }[]} */
-    this.klineHistory = [];
 
     /** Grid centre price (string | null). */
     this._basePrice = null;
@@ -112,9 +114,6 @@ class GridStrategy extends StrategyBase {
 
     /** Latest ticker price as a string. */
     this._latestPrice = null;
-
-    /** Maximum kline history kept (atrPeriod + small buffer). */
-    this._maxHistory = this._atrPeriod + 5;
 
     /** Timestamp of the most recent grid reset. */
     this._lastResetTime = null;
@@ -153,7 +152,7 @@ class GridStrategy extends StrategyBase {
     if (this._gridLevels.length === 0) return;
 
     // Only generate signals in RANGING regime (allow null for backtest)
-    if (this._marketRegime !== null && this._marketRegime !== MARKET_REGIMES.RANGING) return;
+    if (this.getEffectiveRegime() !== null && this.getEffectiveRegime() !== MARKET_REGIMES.RANGING) return;
 
     // Track out-of-range duration for potential grid reset
     this._trackOutOfRange(price);
@@ -202,39 +201,25 @@ class GridStrategy extends StrategyBase {
   /**
    * Called on every incoming kline (candlestick) update.
    *
-   * 1. Append candle to klineHistory, trim excess.
-   * 2. Calculate ATR.
-   * 3. If grid not yet initialised OR a reset is warranted, call _initGrid().
-   * 4. If regime is not RANGING suppress new grid creation.
+   * 1. Read kline history and ATR from IndicatorCache.
+   * 2. If grid not yet initialised OR a reset is warranted, call _initGrid().
+   * 3. If regime is not RANGING suppress new grid creation.
    *
    * @param {{ high: string, low: string, close: string }} kline
    */
   onKline(kline) {
     if (!this._active) return;
 
-    // Append candle
-    this.klineHistory.push({
-      high: kline.high,
-      low: kline.low,
-      close: kline.close,
-    });
-
-    // Trim history to max
-    if (this.klineHistory.length > this._maxHistory) {
-      this.klineHistory = this.klineHistory.slice(-this._maxHistory);
-    }
-
-    // Need at least atrPeriod + 1 candles to compute ATR
-    if (this.klineHistory.length < this._atrPeriod + 1) {
+    const c = this._indicatorCache;
+    const hist = c.getHistory(this._symbol);
+    if (!hist || hist.klines.length < this._atrPeriod + 1) {
       log.debug('Not enough kline data for ATR', {
-        have: this.klineHistory.length,
+        have: hist ? hist.klines.length : 0,
         need: this._atrPeriod + 1,
       });
       return;
     }
-
-    // Compute ATR
-    this._atrValue = this._calculateAtr(this._atrPeriod);
+    this._atrValue = c.get(this._symbol, 'atr', { period: this._atrPeriod });
 
     log.debug('ATR calculated', {
       atr: this._atrValue,
@@ -242,9 +227,9 @@ class GridStrategy extends StrategyBase {
     });
 
     // Only operate in RANGING regime (allow null for backtest)
-    if (this._marketRegime !== null && this._marketRegime !== MARKET_REGIMES.RANGING) {
+    if (this.getEffectiveRegime() !== null && this.getEffectiveRegime() !== MARKET_REGIMES.RANGING) {
       log.debug('Regime not RANGING — grid signals suppressed', {
-        regime: this._marketRegime,
+        regime: this.getEffectiveRegime(),
       });
       return;
     }
@@ -283,8 +268,11 @@ class GridStrategy extends StrategyBase {
    * `_gridLevelCount` sell levels above it (20 levels total by default).
    */
   _initGrid() {
-    const price = this._latestPrice || (this.klineHistory.length > 0
-      ? this.klineHistory[this.klineHistory.length - 1].close
+    const c = this._indicatorCache;
+    const hist = c ? c.getHistory(this._symbol) : null;
+
+    const price = this._latestPrice || (hist && hist.klines.length > 0
+      ? hist.klines[hist.klines.length - 1].close
       : null);
 
     if (!price) {
@@ -349,41 +337,6 @@ class GridStrategy extends StrategyBase {
       levels: this._gridLevels.length,
       atr: this._atrValue,
     });
-  }
-
-  /**
-   * Calculate the ATR (Average True Range) using String-based arithmetic.
-   *
-   * TR for each bar = max(H-L, |H-prevC|, |L-prevC|).
-   * ATR = simple moving average of TR over `period` bars.
-   *
-   * @param {number} period — number of bars
-   * @returns {string} ATR as a fixed-precision string
-   */
-  _calculateAtr(period) {
-    const history = this.klineHistory;
-    const len = history.length;
-
-    if (len < period + 1) {
-      return '0';
-    }
-
-    let trSum = '0';
-
-    for (let i = len - period; i < len; i++) {
-      const curr = history[i];
-      const prev = history[i - 1];
-
-      const highLow = subtract(curr.high, curr.low);
-      const highPrevClose = abs(subtract(curr.high, prev.close));
-      const lowPrevClose = abs(subtract(curr.low, prev.close));
-
-      // TR = max of the three
-      const tr = max(highLow, max(highPrevClose, lowPrevClose));
-      trSum = add(trSum, tr);
-    }
-
-    return divide(trSum, String(period));
   }
 
   /**
@@ -489,7 +442,7 @@ class GridStrategy extends StrategyBase {
         leverage: this._leverage,
         orderType: 'limit',
         atr: this._atrValue,
-        regime: this._marketRegime,
+        regime: this.getEffectiveRegime(),
       },
     };
   }
@@ -534,7 +487,7 @@ class GridStrategy extends StrategyBase {
         orderType: 'limit',
         reduceOnly: true,
         atr: this._atrValue,
-        regime: this._marketRegime,
+        regime: this.getEffectiveRegime(),
       },
     };
   }

@@ -3,13 +3,14 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { getSocket, disconnectSocket, SOCKET_EVENTS } from '@/lib/socket';
 import type { Socket } from 'socket.io-client';
-import type { Signal, Position, MarketRegimeData, RiskEvent } from '@/types';
+import type { Signal, Position, MarketRegimeData, SymbolRegimeEntry, RiskEvent } from '@/types';
 
 interface SocketState {
   connected: boolean;
   signals: Signal[];
   positions: Position[];
   regime: MarketRegimeData | null;
+  symbolRegimes: Record<string, SymbolRegimeEntry>;
   riskEvents: RiskEvent[];
   lastTicker: Record<string, { lastPrice: string; volume24h: string }>;
 }
@@ -21,6 +22,7 @@ export function useSocket() {
     signals: [],
     positions: [],
     regime: null,
+    symbolRegimes: {},
     riskEvents: [],
     lastTicker: {},
   });
@@ -52,6 +54,20 @@ export function useSocket() {
     // Market events
     socket.on(SOCKET_EVENTS.REGIME_CHANGE, (data: MarketRegimeData) => {
       setState(prev => ({ ...prev, regime: data }));
+    });
+
+    socket.on(SOCKET_EVENTS.SYMBOL_REGIME_UPDATE, (data: { symbol: string; current: string; confidence: number }) => {
+      setState(prev => ({
+        ...prev,
+        symbolRegimes: {
+          ...prev.symbolRegimes,
+          [data.symbol]: {
+            regime: data.current as SymbolRegimeEntry['regime'],
+            confidence: data.confidence,
+            warmedUp: true,
+          },
+        },
+      }));
     });
 
     socket.on(SOCKET_EVENTS.TICKER, (data: { symbol: string; lastPrice: string; volume24h: string }) => {

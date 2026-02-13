@@ -41,6 +41,10 @@ class FundingRateStrategy extends StrategyBase {
 
   static metadata = {
     name: 'FundingRateStrategy',
+    targetRegimes: ['trending_up', 'trending_down', 'volatile'],
+    riskLevel: 'low',
+    maxConcurrentPositions: 2,
+    cooldownMs: 60000,
     description: '펀딩비 역발상 + OI 분석 + 켈리 공식',
     defaultConfig: {
       longFundingThreshold: '-0.01',
@@ -228,7 +232,7 @@ class FundingRateStrategy extends StrategyBase {
           fundingRate: latestFunding,
           oiChange24h: oiChange,
           sma20,
-          regime: this._marketRegime,
+          regime: this.getEffectiveRegime(),
           strategy: 'FundingRateStrategy',
           reason: '펀딩비 극단적 음수 — 숏스퀴즈 기대',
         },
@@ -274,7 +278,7 @@ class FundingRateStrategy extends StrategyBase {
           fundingRate: latestFunding,
           oiChange24h: oiChange,
           sma20,
-          regime: this._marketRegime,
+          regime: this.getEffectiveRegime(),
           strategy: 'FundingRateStrategy',
           reason: '펀딩비 극단적 양수 — 롱스퀴즈 기대',
         },
@@ -674,9 +678,9 @@ class FundingRateStrategy extends StrategyBase {
    */
   _isLongRegime() {
     return (
-      this._marketRegime === null ||
-      this._marketRegime === MARKET_REGIMES.TRENDING_DOWN ||
-      this._marketRegime === MARKET_REGIMES.VOLATILE
+      this.getEffectiveRegime() === null ||
+      this.getEffectiveRegime() === MARKET_REGIMES.TRENDING_DOWN ||
+      this.getEffectiveRegime() === MARKET_REGIMES.VOLATILE
     );
   }
 
@@ -689,9 +693,9 @@ class FundingRateStrategy extends StrategyBase {
    */
   _isShortRegime() {
     return (
-      this._marketRegime === null ||
-      this._marketRegime === MARKET_REGIMES.TRENDING_UP ||
-      this._marketRegime === MARKET_REGIMES.VOLATILE
+      this.getEffectiveRegime() === null ||
+      this.getEffectiveRegime() === MARKET_REGIMES.TRENDING_UP ||
+      this.getEffectiveRegime() === MARKET_REGIMES.VOLATILE
     );
   }
 
@@ -722,7 +726,7 @@ class FundingRateStrategy extends StrategyBase {
     }
 
     // Volatile regime bonus
-    if (this._marketRegime === MARKET_REGIMES.VOLATILE) {
+    if (this.getEffectiveRegime() === MARKET_REGIMES.VOLATILE) {
       confidence += 0.10;
     }
 
@@ -752,7 +756,7 @@ class FundingRateStrategy extends StrategyBase {
     }
 
     // Volatile regime bonus
-    if (this._marketRegime === MARKET_REGIMES.VOLATILE) {
+    if (this.getEffectiveRegime() === MARKET_REGIMES.VOLATILE) {
       confidence += 0.10;
     }
 

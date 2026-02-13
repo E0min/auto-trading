@@ -26,6 +26,16 @@ const StateRecovery = require('./services/stateRecovery');
 const OrphanOrderCleanup = require('./services/orphanOrderCleanup');
 const HealthCheck = require('./services/healthCheck');
 const BotService = require('./services/botService');
+const IndicatorCache = require('./services/indicatorCache');
+const PaperEngine = require('./services/paperEngine');
+const PaperPositionManager = require('./services/paperPositionManager');
+const PaperAccountManager = require('./services/paperAccountManager');
+const StrategyRouter = require('./services/strategyRouter');
+const SignalFilter = require('./services/signalFilter');
+const RegimeParamStore = require('./services/regimeParamStore');
+const RegimeEvaluator = require('./services/regimeEvaluator');
+const RegimeOptimizer = require('./services/regimeOptimizer');
+const SymbolRegimeManager = require('./services/symbolRegimeManager');
 
 // --- Wrapper service imports ---
 const scannerService = require('./services/scannerService');
@@ -42,6 +52,9 @@ const createTradeRoutes = require('./api/tradeRoutes');
 const createAnalyticsRoutes = require('./api/analyticsRoutes');
 const createHealthRoutes = require('./api/healthRoutes');
 const createBacktestRoutes = require('./api/backtestRoutes');
+const createPaperRoutes = require('./api/paperRoutes');
+const createTournamentRoutes = require('./api/tournamentRoutes');
+const createRegimeRoutes = require('./api/regimeRoutes');
 
 const log = createLogger('App');
 
@@ -50,6 +63,11 @@ const log = createLogger('App');
 // ---------------------------------------------------------------------------
 
 const PORT = process.env.PORT || 3001;
+const PAPER_TRADING = process.env.PAPER_TRADING === 'true';
+const PAPER_INITIAL_BALANCE = process.env.PAPER_INITIAL_BALANCE || '10000';
+const PAPER_FEE_RATE = process.env.PAPER_FEE_RATE || '0.0006';
+const PAPER_SLIPPAGE_BPS = process.env.PAPER_SLIPPAGE_BPS || '5';
+const TOURNAMENT_MODE = process.env.TOURNAMENT_MODE === 'true';
 
 // ---------------------------------------------------------------------------
 // Bootstrap
@@ -74,6 +92,35 @@ async function bootstrap() {
     riskEngine,
   });
 
+  // 2b. Paper trading services (conditional)
+  let paperEngine = null;
+  let paperPositionManager = null;
+
+  if (PAPER_TRADING) {
+    log.info('Paper trading mode ENABLED', { tournamentMode: TOURNAMENT_MODE });
+
+    paperEngine = new PaperEngine({
+      marketData: null, // will be set after marketData is created
+      feeRate: PAPER_FEE_RATE,
+      slippageBps: PAPER_SLIPPAGE_BPS,
+    });
+
+    if (TOURNAMENT_MODE) {
+      paperPositionManager = new PaperAccountManager({
+        riskEngine,
+        initialBalance: PAPER_INITIAL_BALANCE,
+        tournamentMode: true,
+      });
+    } else {
+      paperPositionManager = new PaperPositionManager({
+        riskEngine,
+        initialBalance: PAPER_INITIAL_BALANCE,
+      });
+    }
+
+    orderManager.setPaperMode(paperEngine, paperPositionManager);
+  }
+
   const marketData = new MarketData({
     exchangeClient,
   });
@@ -82,9 +129,12 @@ async function bootstrap() {
     marketData,
   });
 
+  const regimeParamStore = new RegimeParamStore();
+
   const marketRegime = new MarketRegime({
     marketData,
     tickerAggregator,
+    regimeParamStore,
   });
 
   const coinSelector = new CoinSelector({
@@ -113,24 +163,53 @@ async function bootstrap() {
     positionManager,
   });
 
+  // Pipeline modules
+  const indicatorCache = new IndicatorCache({ marketData });
+  const strategyRouter = new StrategyRouter({ marketRegime });
+  const signalFilter = new SignalFilter();
+
+  // Backtest services (needed by regimeOptimizer)
+  const dataFetcher = new DataFetcher({ exchangeClient });
+
+  // Regime evaluation and optimization
+  const regimeEvaluator = new RegimeEvaluator({ marketRegime, marketData });
+  const regimeOptimizer = new RegimeOptimizer({ regimeParamStore, regimeEvaluator, dataFetcher });
+
+  // Per-symbol regime tracking
+  const symbolRegimeManager = new SymbolRegimeManager({ marketData });
+
+  // Determine which position manager the rest of the system should use
+  const activePositionManager = PAPER_TRADING ? paperPositionManager : positionManager;
+
+  // Link paperEngine.marketData now that marketData exists
+  if (PAPER_TRADING && paperEngine) {
+    paperEngine.marketData = marketData;
+  }
+
   const botService = new BotService({
     exchangeClient,
     riskEngine,
     orderManager,
-    positionManager,
+    positionManager: PAPER_TRADING ? paperPositionManager : positionManager,
     marketData,
     tickerAggregator,
     coinSelector,
     marketRegime,
+    indicatorCache,
+    strategyRouter,
+    signalFilter,
+    paperEngine: PAPER_TRADING ? paperEngine : null,
+    paperPositionManager: PAPER_TRADING ? paperPositionManager : null,
+    paperMode: PAPER_TRADING,
+    regimeEvaluator,
+    regimeOptimizer,
+    symbolRegimeManager,
   });
 
   // 3. Initialize wrapper services
   scannerService.init({ coinSelector, marketRegime });
   trackerService.init({ performanceTracker, tradeJournal });
   traderService.init({ orderManager });
-
-  // 3b. Backtest services
-  const dataFetcher = new DataFetcher({ exchangeClient });
 
   // 4. Create Express app
   const app = express();
@@ -149,10 +228,20 @@ async function bootstrap() {
 
   // 6. Mount routes
   app.use('/api/bot', createBotRoutes({ botService, riskEngine }));
-  app.use('/api/trades', createTradeRoutes({ traderService, positionManager }));
+  app.use('/api/trades', createTradeRoutes({ traderService, positionManager: activePositionManager }));
   app.use('/api/analytics', createAnalyticsRoutes({ trackerService }));
   app.use('/api/health', createHealthRoutes({ healthCheck }));
   app.use('/api/backtest', createBacktestRoutes({ dataFetcher, backtestStore }));
+
+  app.use('/api/regime', createRegimeRoutes({ marketRegime, regimeParamStore, regimeOptimizer, regimeEvaluator }));
+
+  if (PAPER_TRADING) {
+    app.use('/api/paper', createPaperRoutes({ paperEngine, paperPositionManager }));
+  }
+
+  if (PAPER_TRADING && TOURNAMENT_MODE) {
+    app.use('/api/tournament', createTournamentRoutes({ paperAccountManager: paperPositionManager }));
+  }
 
   // 7. Create HTTP server + Socket.io
   const server = http.createServer(app);
@@ -235,9 +324,34 @@ async function bootstrap() {
     io.emit('market:regime_change', data);
   });
 
+  // Per-symbol regime events
+  symbolRegimeManager.on('symbol:regime_change', (data) => {
+    io.emit('market:symbol_regime_update', data);
+  });
+
   // Coin selection events
   coinSelector.on(MARKET_EVENTS.COIN_SELECTED, (data) => {
     io.emit('market:coin_selected', data);
+  });
+
+  // Strategy router events
+  strategyRouter.on('router:regime_switch', (data) => {
+    io.emit('router:regime_switch', data);
+  });
+
+  // Signal filter events
+  signalFilter.on('signal:blocked', (data) => {
+    io.emit('signal:blocked', data);
+  });
+
+  // Regime optimizer events
+  regimeOptimizer.on('optimizer:cycle_complete', (data) => {
+    io.emit('regime:optimizer_complete', data);
+  });
+
+  // Regime evaluator events
+  regimeEvaluator.on('evaluation:complete', (data) => {
+    io.emit('regime:evaluation_complete', data);
   });
 
   // 9. Socket.io connection handler
@@ -248,6 +362,20 @@ async function bootstrap() {
       log.info('Socket.io client disconnected', { id: socket.id, reason });
     });
   });
+
+  // 9b. Tournament leaderboard push (10s interval)
+  let leaderboardInterval = null;
+  if (PAPER_TRADING && TOURNAMENT_MODE && paperPositionManager) {
+    leaderboardInterval = setInterval(() => {
+      try {
+        const leaderboard = paperPositionManager.getLeaderboard();
+        const info = paperPositionManager.getTournamentInfo();
+        io.emit('tournament:leaderboard', { tournament: info, leaderboard });
+      } catch (err) {
+        log.error('Leaderboard push error', { error: err });
+      }
+    }, 10000);
+  }
 
   // 10. Start HTTP server
   server.listen(PORT, () => {
@@ -263,6 +391,11 @@ async function bootstrap() {
       await botService.stop('server_shutdown');
     } catch (err) {
       log.error('Graceful shutdown — error stopping bot', { error: err });
+    }
+
+    // Clear tournament interval
+    if (leaderboardInterval) {
+      clearInterval(leaderboardInterval);
     }
 
     // Close HTTP server
@@ -301,7 +434,7 @@ async function bootstrap() {
     botService,
     riskEngine,
     orderManager,
-    positionManager,
+    positionManager: activePositionManager,
     marketData,
     tickerAggregator,
     coinSelector,
@@ -311,6 +444,10 @@ async function bootstrap() {
     stateRecovery,
     orphanOrderCleanup,
     healthCheck,
+    paperEngine,
+    paperPositionManager,
+    paperMode: PAPER_TRADING,
+    symbolRegimeManager,
   };
 }
 

@@ -58,5 +58,6 @@ export const SOCKET_EVENTS = {
   KLINE: 'market:kline',
   BOOK: 'market:book',
   REGIME_CHANGE: 'market:regime_change',
+  SYMBOL_REGIME_UPDATE: 'market:symbol_regime_update',
   COIN_SELECTED: 'market:coin_selected',
 } as const;

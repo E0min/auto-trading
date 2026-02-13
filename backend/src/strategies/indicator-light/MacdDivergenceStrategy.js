@@ -32,10 +32,6 @@ const {
   abs,
 } = require('../../utils/mathUtils');
 const {
-  rsi,
-  atr,
-  macdHistogramArray,
-  emaFromArray,
   findPivots,
   detectDivergence,
 } = require('../../utils/indicators');
@@ -48,6 +44,10 @@ class MacdDivergenceStrategy extends StrategyBase {
 
   static metadata = {
     name: 'MacdDivergenceStrategy',
+    targetRegimes: ['trending_up', 'trending_down', 'volatile', 'ranging'],
+    riskLevel: 'medium',
+    maxConcurrentPositions: 1,
+    cooldownMs: 120000,
     description: 'MACD 다이버전스 역추세 전략',
     defaultConfig: {
       macdFast: 12,
@@ -82,18 +82,6 @@ class MacdDivergenceStrategy extends StrategyBase {
 
     // Internal state --------------------------------------------------------
 
-    /** @type {string[]} close prices as Strings */
-    this.priceHistory = [];
-
-    /** @type {Array<{high:string, low:string, close:string}>} kline data for ATR */
-    this.klineHistory = [];
-
-    /** @type {string[]} high prices as Strings */
-    this._highHistory = [];
-
-    /** @type {string[]} low prices as Strings */
-    this._lowHistory = [];
-
     /** @type {object|null} most recently generated signal */
     this._lastSignal = null;
 
@@ -126,9 +114,6 @@ class MacdDivergenceStrategy extends StrategyBase {
 
     /** @type {string|null} lowest price since entry (for short trailing) */
     this._lowestSinceEntry = null;
-
-    /** Maximum number of close prices kept in memory */
-    this._maxHistory = 100;
   }
 
   // -------------------------------------------------------------------------
@@ -225,26 +210,7 @@ class MacdDivergenceStrategy extends StrategyBase {
     const high = kline && kline.high !== undefined ? String(kline.high) : close;
     const low = kline && kline.low !== undefined ? String(kline.low) : close;
 
-    // 1. Push data to histories and trim ------------------------------------
-    this.priceHistory.push(close);
-    this._highHistory.push(high);
-    this._lowHistory.push(low);
-    this.klineHistory.push({ high, low, close });
-
-    if (this.priceHistory.length > this._maxHistory) {
-      this.priceHistory = this.priceHistory.slice(-this._maxHistory);
-    }
-    if (this._highHistory.length > this._maxHistory) {
-      this._highHistory = this._highHistory.slice(-this._maxHistory);
-    }
-    if (this._lowHistory.length > this._maxHistory) {
-      this._lowHistory = this._lowHistory.slice(-this._maxHistory);
-    }
-    if (this.klineHistory.length > this._maxHistory) {
-      this.klineHistory = this.klineHistory.slice(-this._maxHistory);
-    }
-
-    // 2. Need enough data ---------------------------------------------------
+    // 1. Need enough data ---------------------------------------------------
     const {
       macdFast,
       macdSlow,
@@ -261,31 +227,33 @@ class MacdDivergenceStrategy extends StrategyBase {
       trailingDistanceAtr,
     } = this.config;
 
+    const c = this._indicatorCache;
+    const hist = c.getHistory(this._symbol);
     const minRequired = macdSlow + macdSignal + pivotLeftBars + pivotRightBars + 5;
-    if (this.priceHistory.length < minRequired) {
+    if (!hist || hist.closes.length < minRequired) {
       this._log.debug('Not enough data yet', {
-        have: this.priceHistory.length,
+        have: hist ? hist.closes.length : 0,
         need: minRequired,
       });
       return;
     }
 
-    // 3. Compute indicators -------------------------------------------------
-    const histogramArray = macdHistogramArray(this.priceHistory, macdFast, macdSlow, macdSignal);
-    if (histogramArray.length === 0) return;
+    // 2. Compute indicators via cache ---------------------------------------
+    const histogramArray = c.get(this._symbol, 'macdHistogram', { fast: macdFast, slow: macdSlow, signal: macdSignal });
+    if (!histogramArray || histogramArray.length === 0) return;
 
     const currentHistogram = histogramArray[histogramArray.length - 1];
-    const rsiValue = rsi(this.priceHistory, rsiPeriod);
-    const atrValue = atr(this.klineHistory, atrPeriod);
-    const ema50 = emaFromArray(this.priceHistory, emaTpPeriod);
+    const rsiValue = c.get(this._symbol, 'rsi', { period: rsiPeriod });
+    const atrValue = c.get(this._symbol, 'atr', { period: atrPeriod });
+    const ema50 = c.get(this._symbol, 'ema', { period: emaTpPeriod });
 
     if (rsiValue === null || atrValue === null) return;
 
-    // 4. If position is open ------------------------------------------------
+    // 3. If position is open ------------------------------------------------
     if (this._entryPrice !== null && this._positionSide !== null) {
       this._candlesSinceEntry += 1;
 
-      // 4a. Failure check: histogram reverses direction within N candles
+      // 3a. Failure check: histogram reverses direction within N candles
       if (this._candlesSinceEntry <= maxCandlesForFailure) {
         const currentSign = isGreaterThan(currentHistogram, '0') ? 1 : -1;
         if (this._entryHistogramSign !== 0 && currentSign !== this._entryHistogramSign) {
@@ -303,7 +271,7 @@ class MacdDivergenceStrategy extends StrategyBase {
         }
       }
 
-      // 4b. Take-profit check: price reaches EMA(50)
+      // 3b. Take-profit check: price reaches EMA(50)
       if (ema50 !== null) {
         if (this._positionSide === 'long' && isGreaterThan(close, ema50)) {
           this._emitClose(SIGNAL_ACTIONS.CLOSE_LONG, 'tp_ema50', '0.8000');
@@ -315,7 +283,7 @@ class MacdDivergenceStrategy extends StrategyBase {
         }
       }
 
-      // 4c. Activate trailing stop if profit > 1*ATR
+      // 3c. Activate trailing stop if profit > 1*ATR
       if (!this._trailingActive && atrValue !== null) {
         const activationDistance = multiply(trailingActivationAtr, atrValue);
         this._trailingDistance = multiply(trailingDistanceAtr, atrValue);
@@ -348,12 +316,12 @@ class MacdDivergenceStrategy extends StrategyBase {
       return;
     }
 
-    // 5. No position — check for new entry signal ---------------------------
-    const regime = this._marketRegime;
+    // 4. No position — check for new entry signal ---------------------------
+    const regime = this.getEffectiveRegime();
     const prevHist = this._prevHistogram;
 
     // Build pivot data for divergence detection
-    const pricePivots = findPivots(this.priceHistory, pivotLeftBars, pivotRightBars);
+    const pricePivots = findPivots(hist.closes, pivotLeftBars, pivotRightBars);
     const histPivots = findPivots(histogramArray, pivotLeftBars, pivotRightBars);
 
     let signal = null;
@@ -539,13 +507,14 @@ class MacdDivergenceStrategy extends StrategyBase {
   // -------------------------------------------------------------------------
 
   /**
-   * Find the most recent swing low from lowHistory.
+   * Find the most recent swing low from cache history.
    *
    * @param {number} lookback — number of bars to look back
    * @returns {string} — swing low price
    */
   _findRecentSwingLow(lookback) {
-    const lows = this._lowHistory;
+    const hist = this._indicatorCache.getHistory(this._symbol);
+    const lows = hist ? hist.lows : [];
     if (lows.length === 0) return this._latestPrice || '0';
 
     const start = Math.max(0, lows.length - lookback * 3);
@@ -559,13 +528,14 @@ class MacdDivergenceStrategy extends StrategyBase {
   }
 
   /**
-   * Find the most recent swing high from highHistory.
+   * Find the most recent swing high from cache history.
    *
    * @param {number} lookback — number of bars to look back
    * @returns {string} — swing high price
    */
   _findRecentSwingHigh(lookback) {
-    const highs = this._highHistory;
+    const hist = this._indicatorCache.getHistory(this._symbol);
+    const highs = hist ? hist.highs : [];
     if (highs.length === 0) return this._latestPrice || '0';
 
     const start = Math.max(0, highs.length - lookback * 3);
@@ -611,7 +581,7 @@ class MacdDivergenceStrategy extends StrategyBase {
     score += crossoverStrength * 0.2;
 
     // Market regime alignment (0.1)
-    const regime = this._marketRegime;
+    const regime = this.getEffectiveRegime();
     if (regime === MARKET_REGIMES.TRENDING_DOWN || regime === MARKET_REGIMES.TRENDING_UP) {
       score += 0.1;
     } else if (regime === MARKET_REGIMES.VOLATILE) {
@@ -645,7 +615,7 @@ class MacdDivergenceStrategy extends StrategyBase {
         positionSide: this._positionSide,
         candlesSinceEntry: this._candlesSinceEntry,
         trailingActive: this._trailingActive,
-        regime: this._marketRegime,
+        regime: this.getEffectiveRegime(),
       },
     };
 

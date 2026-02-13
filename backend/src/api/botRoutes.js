@@ -104,6 +104,37 @@ module.exports = function createBotRoutes({ botService, riskEngine }) {
   });
 
   // =========================================================================
+  // Trading mode endpoints
+  // =========================================================================
+
+  // GET /api/bot/trading-mode — get current trading mode
+  router.get('/trading-mode', (req, res) => {
+    try {
+      const mode = botService.paperMode ? 'paper' : 'live';
+      res.json({ success: true, data: { mode } });
+    } catch (err) {
+      log.error('GET /trading-mode — error', { error: err });
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/bot/trading-mode — switch trading mode (bot must be stopped)
+  router.post('/trading-mode', (req, res) => {
+    try {
+      const { mode } = req.body || {};
+      if (!mode || !['live', 'paper'].includes(mode)) {
+        return res.status(400).json({ success: false, error: 'mode must be "live" or "paper"' });
+      }
+      botService.setTradingMode(mode);
+      res.json({ success: true, data: { mode } });
+    } catch (err) {
+      log.error('POST /trading-mode — error', { error: err });
+      const statusCode = err.message.includes('실행 중') ? 400 : 500;
+      res.status(statusCode).json({ success: false, error: err.message });
+    }
+  });
+
+  // =========================================================================
   // Strategy management endpoints
   // =========================================================================
 
@@ -117,6 +148,8 @@ module.exports = function createBotRoutes({ botService, riskEngine }) {
         name: meta.name,
         description: meta.description || '',
         defaultConfig: meta.defaultConfig || {},
+        targetRegimes: meta.targetRegimes || [],
+        riskLevel: meta.riskLevel || 'medium',
         active: activeNames.includes(meta.name),
       }));
 

@@ -47,6 +47,10 @@ const log = createLogger('FibonacciRetracementStrategy');
 class FibonacciRetracementStrategy extends StrategyBase {
   static metadata = {
     name: 'FibonacciRetracementStrategy',
+    targetRegimes: ['trending_up', 'trending_down', 'ranging'],
+    riskLevel: 'low',
+    maxConcurrentPositions: 2,
+    cooldownMs: 180000,
     description: '피보나치 되돌림 — 골든 존(0.382-0.618) 바운스 + ATR 기반 리스크 관리',
     defaultConfig: {
       swingPeriod: 50,              // Lookback bars for swing detection
@@ -244,7 +248,7 @@ class FibonacciRetracementStrategy extends StrategyBase {
     else if (minDist === dist500) conf += 0.15;
     else conf += 0.10;
 
-    const regime = this._marketRegime;
+    const regime = this.getEffectiveRegime();
     if (direction === 'up' && regime === MARKET_REGIMES.TRENDING_UP) conf += 0.10;
     else if (direction === 'down' && regime === MARKET_REGIMES.TRENDING_DOWN) conf += 0.10;
 
@@ -451,7 +455,7 @@ class FibonacciRetracementStrategy extends StrategyBase {
     this._swingDirection = direction;
     this._fibLevels = this._computeFibLevels(swingHigh.price, swingLow.price, direction);
 
-    const regime = this._marketRegime;
+    const regime = this.getEffectiveRegime();
     const price = close;
     const { positionSizePercent, slBuffer, fibInvalidation } = this.config;
 

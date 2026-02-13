@@ -39,7 +39,7 @@ const {
   toFixed,
   min,
 } = require('../../utils/mathUtils');
-const { emaFromArray, sma: indicatorSma } = require('../../utils/indicators');
+const { sma: indicatorSma } = require('../../utils/indicators');
 const { createLogger } = require('../../utils/logger');
 
 // ---------------------------------------------------------------------------
@@ -49,6 +49,10 @@ const { createLogger } = require('../../utils/logger');
 class QuietRangeScalpStrategy extends StrategyBase {
   static metadata = {
     name: 'QuietRangeScalpStrategy',
+    targetRegimes: ['quiet'],
+    riskLevel: 'low',
+    maxConcurrentPositions: 1,
+    cooldownMs: 30000,
     description: 'QUIET 장세 Keltner Channel 스캘핑 (양방향)',
     defaultConfig: {
       emaPeriod: 20,
@@ -69,12 +73,6 @@ class QuietRangeScalpStrategy extends StrategyBase {
 
     this._log = createLogger('QuietRangeScalpStrategy');
 
-    /** @type {string[]} close prices */
-    this.priceHistory = [];
-    /** @type {string[]} high prices */
-    this._highHistory = [];
-    /** @type {string[]} low prices */
-    this._lowHistory = [];
     /** @type {string[]} ATR values history for SMA */
     this._atrHistory = [];
 
@@ -84,8 +82,6 @@ class QuietRangeScalpStrategy extends StrategyBase {
     this._positionSide = null;
     this._halfProfitTaken = false;
     this._lastSignal = null;
-
-    this._maxHistory = Math.max(merged.emaPeriod, merged.atrPeriod, merged.atrSmaPeriod) + 20;
   }
 
   // -------------------------------------------------------------------------
@@ -101,7 +97,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
     if (this._entryPrice === null || this._positionSide === null) return;
 
     // Regime change exit — if no longer QUIET, close immediately
-    if (this._marketRegime !== MARKET_REGIMES.QUIET) {
+    if (this.getEffectiveRegime() !== MARKET_REGIMES.QUIET) {
       const action = this._positionSide === 'long'
         ? SIGNAL_ACTIONS.CLOSE_LONG
         : SIGNAL_ACTIONS.CLOSE_SHORT;
@@ -112,7 +108,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
         suggestedQty: this.config.positionSizePercent,
         suggestedPrice: this._latestPrice,
         confidence: '0.9000',
-        marketContext: { reason: 'regime_change_exit', regime: this._marketRegime },
+        marketContext: { reason: 'regime_change_exit', regime: this.getEffectiveRegime() },
       };
       this._lastSignal = signal;
       this.emitSignal(signal);
@@ -136,20 +132,6 @@ class QuietRangeScalpStrategy extends StrategyBase {
     const high = kline && kline.high !== undefined ? String(kline.high) : close;
     const low = kline && kline.low !== undefined ? String(kline.low) : close;
 
-    this.priceHistory.push(close);
-    this._highHistory.push(high);
-    this._lowHistory.push(low);
-
-    if (this.priceHistory.length > this._maxHistory) {
-      this.priceHistory = this.priceHistory.slice(-this._maxHistory);
-    }
-    if (this._highHistory.length > this._maxHistory) {
-      this._highHistory = this._highHistory.slice(-this._maxHistory);
-    }
-    if (this._lowHistory.length > this._maxHistory) {
-      this._lowHistory = this._lowHistory.slice(-this._maxHistory);
-    }
-
     const {
       emaPeriod,
       atrPeriod,
@@ -159,18 +141,22 @@ class QuietRangeScalpStrategy extends StrategyBase {
       positionSizePercent,
     } = this.config;
 
+    // --- IndicatorCache-based indicator retrieval ---
+    const c = this._indicatorCache;
+    const hist = c.getHistory(this._symbol);
+    if (!hist) return;
+
     const minRequired = Math.max(emaPeriod, atrPeriod + 1, atrSmaPeriod);
-    if (this.priceHistory.length < minRequired) return;
+    if (!hist || hist.closes.length < minRequired) return;
 
-    // 1. Calculate EMA (SMA-seeded, from full price history)
-    const emaValue = emaFromArray(this.priceHistory, emaPeriod);
-    if (!emaValue) return;
+    const emaValue = c.get(this._symbol, 'ema', { period: emaPeriod });
+    const atrVal = c.get(this._symbol, 'atr', { period: atrPeriod });
+    if (!emaValue || !atrVal) return;
 
-    // 2. Calculate ATR
-    const atr = this._calculateAtr(atrPeriod);
-    this._atrHistory.push(atr);
-    if (this._atrHistory.length > this._maxHistory) {
-      this._atrHistory = this._atrHistory.slice(-this._maxHistory);
+    // ATR SMA: accumulate cache-provided ATR values for SMA computation
+    this._atrHistory.push(atrVal);
+    if (this._atrHistory.length > 100) {
+      this._atrHistory = this._atrHistory.slice(-100);
     }
 
     // 3. Calculate ATR SMA (volatility baseline)
@@ -179,15 +165,15 @@ class QuietRangeScalpStrategy extends StrategyBase {
     if (!atrSmaValue) return;
 
     // 4. Keltner Channel bands
-    const band = multiply(atr, kcMultiplier);
+    const band = multiply(atrVal, kcMultiplier);
     const kcUpper = add(emaValue, band);
     const kcLower = subtract(emaValue, band);
 
     // 5. Quiet filter: ATR ≤ ATR_SMA * threshold
     const atrThreshold = multiply(atrSmaValue, atrQuietThreshold);
-    const isQuiet = isLessThanOrEqual(atr, atrThreshold);
+    const isQuiet = isLessThanOrEqual(atrVal, atrThreshold);
 
-    const regime = this._marketRegime;
+    const regime = this.getEffectiveRegime();
 
     // Check EMA midpoint exit for open positions
     if (this._entryPrice !== null && this._positionSide !== null) {
@@ -235,7 +221,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
 
     const marketContext = {
       ema: emaValue,
-      atr,
+      atr: atrVal,
       atrSma: atrSmaValue,
       kcUpper,
       kcLower,
@@ -387,38 +373,6 @@ class QuietRangeScalpStrategy extends StrategyBase {
         this._resetPosition();
       }
     }
-  }
-
-  /**
-   * Calculate ATR (Average True Range) over the given period.
-   * TR = max(high - low, |high - prevClose|, |low - prevClose|)
-   * ATR = SMA(TR, period)
-   */
-  _calculateAtr(period) {
-    const len = this.priceHistory.length;
-    if (len < period + 1) return '0';
-
-    const trValues = [];
-    for (let i = len - period; i < len; i++) {
-      const high = this._highHistory[i] || this.priceHistory[i];
-      const low = this._lowHistory[i] || this.priceHistory[i];
-      const prevClose = this.priceHistory[i - 1];
-
-      const hl = subtract(high, low);
-      const hpc = subtract(high, prevClose);
-      const lpc = subtract(low, prevClose);
-      const absHpc = isLessThan(hpc, '0') ? subtract('0', hpc) : hpc;
-      const absLpc = isLessThan(lpc, '0') ? subtract('0', lpc) : lpc;
-
-      // TR = max of hl, absHpc, absLpc
-      let tr = hl;
-      if (isGreaterThan(absHpc, tr)) tr = absHpc;
-      if (isGreaterThan(absLpc, tr)) tr = absLpc;
-
-      trValues.push(tr);
-    }
-
-    return indicatorSma(trValues, trValues.length);
   }
 
   _calcConfidence(price, bandLevel, emaValue, direction) {

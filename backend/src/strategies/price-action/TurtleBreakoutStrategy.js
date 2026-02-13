@@ -58,6 +58,10 @@ const log = createLogger('TurtleBreakoutStrategy');
 class TurtleBreakoutStrategy extends StrategyBase {
   static metadata = {
     name: 'TurtleBreakoutStrategy',
+    targetRegimes: ['trending_up', 'trending_down', 'volatile'],
+    riskLevel: 'medium',
+    maxConcurrentPositions: 1,
+    cooldownMs: 300000,
     description: '터틀 트레이딩 — Donchian 채널 돌파 + ATR 기반 2% 리스크 룰',
     defaultConfig: {
       entryChannel: 20,       // Donchian entry channel period (N-bar high/low)
@@ -329,7 +333,7 @@ class TurtleBreakoutStrategy extends StrategyBase {
     // 5. No position: check entry conditions
 
     // Regime filter: only trending or volatile markets
-    const regime = this._marketRegime;
+    const regime = this.getEffectiveRegime();
     const regimeOk = regime === null ||
       regime === MARKET_REGIMES.TRENDING_UP ||
       regime === MARKET_REGIMES.TRENDING_DOWN ||
@@ -540,7 +544,7 @@ class TurtleBreakoutStrategy extends StrategyBase {
     }
 
     // Regime bonus
-    if (this._marketRegime === MARKET_REGIMES.TRENDING_UP || this._marketRegime === MARKET_REGIMES.TRENDING_DOWN) {
+    if (this.getEffectiveRegime() === MARKET_REGIMES.TRENDING_UP || this.getEffectiveRegime() === MARKET_REGIMES.TRENDING_DOWN) {
       conf += 0.10;
     }
 

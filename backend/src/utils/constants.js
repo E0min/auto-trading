@@ -75,6 +75,7 @@ const MARKET_EVENTS = Object.freeze({
   KLINE_UPDATE: 'market:kline',
   BOOK_UPDATE: 'market:book',
   REGIME_CHANGE: 'market:regime_change',
+  SYMBOL_REGIME_CHANGE: 'symbol:regime_change',
   COIN_SELECTED: 'market:coin_selected',
 });
 
@@ -101,6 +102,13 @@ const WS_INST_TYPES = Object.freeze({
   PRIVATE: 'UTA',
 });
 
+const REGIME_EVENTS = Object.freeze({
+  OPTIMIZER_CYCLE_START: 'optimizer:cycle_start',
+  OPTIMIZER_CYCLE_COMPLETE: 'optimizer:cycle_complete',
+  PARAMS_UPDATED: 'params:updated',
+  EVALUATION_COMPLETE: 'evaluation:complete',
+});
+
 module.exports = {
   CATEGORIES,
   ORDER_SIDES,
@@ -115,4 +123,5 @@ module.exports = {
   TRADE_EVENTS,
   DEFAULT_RISK_PARAMS,
   WS_INST_TYPES,
+  REGIME_EVENTS,
 };
