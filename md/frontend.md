@@ -17,29 +17,30 @@
 
 메인 대시보드. 봇 제어와 모니터링을 위한 단일 페이지.
 
-**레이아웃**:
+**레이아웃 (Sprint R3 재설계)**:
 ```
 ┌─ TradingModeBanner (LIVE=빨강 펄스 / PAPER=초록 배너) ──────┐
 ├─ RiskAlertBanner (심각도 기반 자동 닫기 알림) ─────────────┤
 ├─ 헤더 ─────────────────────────────────────────────────────┤
 │ 봇 제목 | 트레이딩 모드 토글 | 백테스트/토너먼트 링크      │
 ├─────────────────────────────────────────────────────────────┤
-│ 시스템 상태 표시기                                          │
+│ 시스템 상태 표시기 (최우선 표시)                           │
 ├─────────────────────────────────────────────────────────────┤
 │ 봇 제어 패널 (시작/정지/일시정지/재개/긴급정지)            │
 ├─────────────────────────────────────────────────────────────┤
 │ 전략 관리 패널 (필터 + 활성/비활성 토글)                   │
 ├──────────────────────┬──────────────────────────────────────┤
-│ 계정 개요            │ 리스크 상태 패널                     │
+│ 계정 개요            │ 리스크 상태 패널 (낙폭 리셋 버튼)   │
+├──────────────────────┴──────────────────────────────────────┤
+│ 자산 곡선 차트 (봇 실행 중 시그널 피드보다 우선)          │
+├──────────────────────┬──────────────────────────────────────┤
+│ 포지션 테이블        │ 시그널 피드                          │
+│ (수동 청산 버튼)     │                                      │
 ├──────────────────────┴──────────────────────────────────────┤
 │ 시장 레짐 표시기 + 심볼별 레짐 테이블                      │
 ├─────────────────────────────────────────────────────────────┤
 │ 레짐 기반 전략 추천                                        │
 ├─────────────────────────────────────────────────────────────┤
-│ 자산 곡선 차트                                             │
-├──────────────────────┬──────────────────────────────────────┤
-│ 포지션 테이블        │ 시그널 피드                          │
-├──────────────────────┴──────────────────────────────────────┤
 │ 거래 내역 테이블                                           │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -49,6 +50,8 @@
 - REST 폴링 대체 (3~30초 간격)
 - 봇 시작 전 전략 사전 선택 (useRef)
 - 세션 기반 분석 필터링
+- Sprint R3: 우선순위 기반 레이아웃 (시스템 상태 > 봇 제어 > 자산 곡선 > 시장 레짐)
+- Sprint R3: 포지션 수동 청산 기능 (ConfirmDialog 통합)
 
 ---
 
@@ -107,7 +110,7 @@
 | 훅 | 파일 | 폴링 간격 | 용도 |
 |----|------|----------|------|
 | `useBotStatus` | `hooks/useBotStatus.ts` | 5초 | 봇 상태, 전략, 리스크 메트릭 |
-| `useSocket` | `hooks/useSocket.ts` | 이벤트 기반 | 실시간 시그널, 포지션, 레짐, circuit_reset, exposure_adjusted, unhandled_error |
+| `useSocket` | `hooks/useSocket.ts` | 이벤트 기반 | 실시간 시그널, 포지션, 레짐, circuit_reset, exposure_adjusted, unhandled_error, drawdown_reset |
 | `usePositions` | `hooks/usePositions.ts` | 5초 | 오픈 포지션 + 계정 상태 |
 | `useTrades` | `hooks/useTrades.ts` | 10초 | 거래 내역 + 미체결 주문 |
 | `useAnalytics` | `hooks/useAnalytics.ts` | 1회 | 자산 곡선 + 세션 통계 |
@@ -125,6 +128,21 @@ const { connected, signals, positions, regime } = useSocket();
 const { positions: openPositions, accountState } = usePositions();
 ```
 
+### Socket 관리 (Sprint R3)
+
+`useSocket` 훅은 ref-counted socket 관리를 사용합니다:
+
+```typescript
+// lib/socket.ts
+acquireSocket()  // 소켓 인스턴스 획득 (없으면 생성, 있으면 참조 카운트 +1)
+releaseSocket()  // 참조 카운트 -1, 0이 되면 연결 해제
+getSocket()      // 현재 소켓 인스턴스 조회 (없으면 null)
+```
+
+**장점**: 여러 컴포넌트에서 동시 사용 가능, 모든 컴포넌트가 언마운트되면 자동으로 연결 해제
+
+`useSocket` 훅은 이름 있는 핸들러로 이벤트를 등록하여 cleanup 시 정확히 제거합니다.
+
 ---
 
 ## 컴포넌트 목록
@@ -137,7 +155,18 @@ const { positions: openPositions, accountState } = usePositions();
 | `Card` | 카드 레이아웃 래퍼 |
 | `Badge` | 상태/라벨 배지 (success, danger, neutral 등) |
 | `Spinner` | 로딩 표시기 (sm, md, lg) |
-| `ConfirmDialog` | 확인 모달 |
+| `ConfirmDialog` | 확인 모달 (Sprint R3: PositionsTable 청산 확인에도 사용) |
+
+### Error Boundary (Sprint R3)
+
+프론트엔드에 두 레벨의 에러 경계가 추가되었습니다:
+
+| 파일 | 범위 | 기능 |
+|------|------|------|
+| `app/error.tsx` | 페이지 레벨 | 에러 표시 + EmergencyStop 버튼 + 재시도 버튼 |
+| `app/global-error.tsx` | 전역 | 최후 방어선 (layout 에러 포함) |
+
+**EmergencyStop 통합**: `error.tsx`에서 긴급 정지 버튼을 제공하여 에러 발생 시 즉시 봇을 중단할 수 있습니다.
 
 ### 대시보드 컴포넌트
 
@@ -147,12 +176,12 @@ const { positions: openPositions, accountState } = usePositions();
 | `TradingModeToggle` | 라이브/페이퍼 모드 전환 |
 | `StrategyPanel` | 전략 선택기 (3단 필터: 카테고리, 방향, 변동성) |
 | `AccountOverview` | 자산, 잔고, 미실현 PnL |
-| `RiskStatusPanel` | 서킷 브레이커, 노출, 낙폭 지표 |
+| `RiskStatusPanel` | 서킷 브레이커, 노출, 낙폭 지표 (Sprint R3: 낙폭 리셋 버튼 추가) |
 | `MarketRegimeIndicator` | 현재 시장 레짐 배지 + 신뢰도 |
 | `SymbolRegimeTable` | 심볼별 레짐 분류 테이블 |
 | `RegimeStrategyRecommendation` | 현재 레짐에 맞는 전략 추천 |
 | `EquityCurveChart` | Recharts 자산 곡선 |
-| `PositionsTable` | 오픈 포지션 (진입가, 현재가, 미실현 PnL) |
+| `PositionsTable` | 오픈 포지션 (진입가, 현재가, 미실현 PnL, Sprint R3: 수동 청산 버튼 추가) |
 | `SignalFeed` | 실시간 시그널 피드 (최대 50개, 최신순) |
 | `TradesTable` | 거래 내역 + 페이지네이션 |
 | `SystemHealth` | API 상태, 지연, 소켓 연결 |
@@ -198,7 +227,29 @@ const health = await healthApi.check();
 | `healthApi` | check, ping |
 | `tournamentApi` | getInfo, start, stop, reset, getLeaderboard, getStrategyDetail |
 | `backtestApi` | run, list, getResult, getEquityCurve, getTrades, delete, getStrategies |
-| `riskApi` | getEvents, getUnacknowledged, acknowledge, getStatus |
+| `riskApi` | getEvents, getUnacknowledged, acknowledge, getStatus, resetDrawdown |
+
+### API 에러 처리 (Sprint R3)
+
+`api-client.ts`에 `ApiError` 클래스가 추가되어 에러 응답을 구조화합니다:
+
+```typescript
+class ApiError extends Error {
+  statusCode: number
+  response?: any
+}
+
+// 사용 예시
+try {
+  await botApi.start()
+} catch (err) {
+  if (err instanceof ApiError) {
+    console.log(err.statusCode, err.message)
+  }
+}
+```
+
+모든 API 호출은 에러 발생 시 `ApiError`로 래핑되어 throw됩니다.
 
 ---
 

@@ -302,6 +302,43 @@ class BotService extends EventEmitter {
         });
       }
 
+      // 11d. Wire up: ORDER_FILLED / ORDER_CANCELLED -> update SignalFilter position counts
+      if (this.signalFilter) {
+        const updateFilterCounts = () => {
+          setImmediate(() => {
+            const positions = this.paperMode && this.paperPositionManager
+              ? this.paperPositionManager.getPositions()
+              : this.positionManager.getPositions();
+
+            // Count positions per strategy
+            const countsByStrategy = {};
+            for (const pos of positions) {
+              const strat = pos.strategy || 'unknown';
+              countsByStrategy[strat] = (countsByStrategy[strat] || 0) + 1;
+            }
+
+            // Update all registered strategies (set to 0 if no positions)
+            for (const strategy of this.strategies) {
+              const count = countsByStrategy[strategy.name] || 0;
+              this.signalFilter.updatePositionCount(strategy.name, count);
+            }
+          });
+        };
+
+        const onOrderFilled = () => updateFilterCounts();
+        const onOrderCancelled = () => updateFilterCounts();
+
+        this.orderManager.on(TRADE_EVENTS.ORDER_FILLED, onOrderFilled);
+        this.orderManager.on(TRADE_EVENTS.ORDER_CANCELLED, onOrderCancelled);
+        this._eventCleanups.push(() => {
+          this.orderManager.removeListener(TRADE_EVENTS.ORDER_FILLED, onOrderFilled);
+          this.orderManager.removeListener(TRADE_EVENTS.ORDER_CANCELLED, onOrderCancelled);
+        });
+
+        // Initial count after strategy activation
+        updateFilterCounts();
+      }
+
       // 12. Wire up: strategy SIGNAL_GENERATED -> _handleStrategySignal (T0-2 qty resolution + filter + submit)
       for (const strategy of this.strategies) {
         const onSignal = (signal) => {
@@ -472,14 +509,7 @@ class BotService extends EventEmitter {
       log.error('stop — error stopping positionManager', { error: err });
     }
 
-    // 6. Close exchangeClient WebSockets
-    try {
-      this.exchangeClient.closeWebsockets();
-    } catch (err) {
-      log.error('stop — error closing WebSockets', { error: err });
-    }
-
-    // 7. Update BotSession
+    // 6. Save BotSession BEFORE closing WebSockets (ensures DB write completes)
     if (this.currentSession) {
       try {
         this.currentSession.status = BOT_STATES.IDLE;
@@ -489,6 +519,13 @@ class BotService extends EventEmitter {
       } catch (err) {
         log.error('stop — error updating session', { error: err });
       }
+    }
+
+    // 7. Close exchangeClient WebSockets
+    try {
+      this.exchangeClient.closeWebsockets();
+    } catch (err) {
+      log.error('stop — error closing WebSockets', { error: err });
     }
 
     // 7b. Auto-stop tournament if paperPositionManager supports it

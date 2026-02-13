@@ -94,6 +94,22 @@ Bitget 원시 형식: [ts, open, high, low, close, volCoin, volUsdt]
   → metrics 산출
 ```
 
+### BacktestIndicatorCache (Sprint R3)
+
+백테스트 전용 지표 캐시로, `indicatorCache.js`의 `computeIndicator()` 함수를 재사용합니다. 전략이 `feedKline()`을 통해 kline을 주입하면 자동으로 지표를 계산하여 캐시에 저장합니다.
+
+```javascript
+// 백테스트 엔진 내부에서 전략에 주입
+const cache = new BacktestIndicatorCache();
+strategy._backtestIndicatorCache = cache;
+
+// 각 kline마다 지표 사전 계산
+cache.feedKline(symbol, interval, kline);
+// → strategy.onKline() 호출 시 캐시된 지표 즉시 사용 가능
+```
+
+**장점**: 실시간 모드와 동일한 지표 계산 로직 사용, 코드 중복 없음
+
 ### 슬리피지 적용 규칙
 
 | 동작 | 슬리피지 방향 | 이유 |
@@ -166,9 +182,26 @@ fillPrice = close × (1 + slippage)
 |------|------|-----------|
 | `maxDrawdown` | 최대 낙폭 (절대값) | peak - trough |
 | `maxDrawdownPercent` | 최대 낙폭 (%) | (peak - trough) / peak × 100 |
-| `sharpeRatio` | 연간화 샤프 비율 | (평균 일일 수익률 × √365) / 수익률 표준편차 |
+| `sharpeRatio` | 연간화 샤프 비율 | (평균 수익률 × √intervalsPerYear) / 수익률 표준편차 |
 | `totalFees` | 총 수수료 | 모든 거래 수수료 합산 |
 | `finalEquity` | 최종 자산 | 시뮬레이션 종료 시 equity |
+
+#### 샤프 비율 연간화 (Sprint R3)
+
+타임프레임별로 적절한 연간화 계수를 사용합니다:
+
+| 타임프레임 | intervalsPerYear | 연간화 계수 (√) |
+|-----------|------------------|----------------|
+| 1m | 525,600 | 725.2 |
+| 5m | 105,120 | 324.2 |
+| 15m | 35,040 | 187.2 |
+| 30m | 17,520 | 132.4 |
+| 1H | 8,760 | 93.6 |
+| 4H | 2,190 | 46.8 |
+| 1D | 365 | 19.1 |
+| 1W | 52 | 7.2 |
+
+예: 1H 백테스트 → `sharpeRatio = (평균 시간별 수익률 × 93.6) / 표준편차`
 
 ### 거래 0건 시
 모든 지표 0 또는 빈값, `finalEquity = initialCapital`

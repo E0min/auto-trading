@@ -31,17 +31,17 @@
 
 | ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
 |----|--------|------|------|--------|--------|------|
-| T1-1 | P1 | Backend | Backtest: IndicatorCache 주입 (14/18 전략 크래시 해결) | T:C4 | R1 | agreed |
-| T1-2 | P1 | Backend | Backtest: _notifyFill() action 필드 추가 | T:C3 | R1 | agreed |
-| T1-3 | P1 | Backend | Graceful shutdown 순서 수정 (DB write→WS close) | E:C-4 | R1 | agreed |
-| T1-4 | P1 | Backend | PaperEngine 리스너 누적 제거 (removeAllListeners) | E:H-3 | R1 | agreed |
-| T1-5 | P1 | Backend | SignalFilter.updatePositionCount() 연동 | E:4.11 | R1 | agreed |
-| T1-6 | P1 | Backend | Sharpe ratio 연간화 정규화 (캔들간→일간 보정) | T:H1 | R1 | agreed |
-| T1-7 | P1 | Frontend | Dashboard 레이아웃 재설계 (정보 우선순위 정상화) | UI:H1 | R1 | agreed |
-| T1-8 | P1 | Frontend | PositionsTable 수동 청산 버튼 추가 | UI:H4, T:Review | R1 | agreed |
-| T1-9 | P1 | Frontend | Socket.io ref-counted lifecycle 전환 | UI:C3 | R1 | agreed |
-| T1-10 | P1 | Frontend | Error Boundary (app/error.tsx) + api-client 에러 래핑 | UI:FE3 | R1 | agreed |
-| T1-11 | P1 | Backend | DrawdownMonitor 수동 리셋 API + UI 리셋 버튼 | T:H7 | R1 | agreed |
+| T1-1 | P1 | Backend | Backtest: IndicatorCache 주입 (14/18 전략 크래시 해결) | T:C4 | R1 | done |
+| T1-2 | P1 | Backend | Backtest: _notifyFill() action 필드 추가 | T:C3 | R1 | done |
+| T1-3 | P1 | Backend | Graceful shutdown 순서 수정 (DB write→WS close) | E:C-4 | R1 | done |
+| T1-4 | P1 | Backend | PaperEngine 리스너 누적 제거 (removeAllListeners) | E:H-3 | R1 | done |
+| T1-5 | P1 | Backend | SignalFilter.updatePositionCount() 연동 | E:4.11 | R1 | done |
+| T1-6 | P1 | Backend | Sharpe ratio 연간화 정규화 (캔들간→일간 보정) | T:H1 | R1 | done |
+| T1-7 | P1 | Frontend | Dashboard 레이아웃 재설계 (정보 우선순위 정상화) | UI:H1 | R1 | done |
+| T1-8 | P1 | Frontend | PositionsTable 수동 청산 버튼 추가 | UI:H4, T:Review | R1 | done |
+| T1-9 | P1 | Frontend | Socket.io ref-counted lifecycle 전환 | UI:C3 | R1 | done |
+| T1-10 | P1 | Frontend | Error Boundary (app/error.tsx) + api-client 에러 래핑 | UI:FE3 | R1 | done |
+| T1-11 | P1 | Backend | DrawdownMonitor 수동 리셋 API + UI 리셋 버튼 | T:H7 | R1 | done |
 
 ## Tier 2 — 2주 내 수정 (Quality)
 
@@ -77,3 +77,4 @@
 ## 아키텍처 결정 참조
 → `decisions/round_1.md` — AD-1~AD-6 참조
 → `decisions/round_2.md` — AD-7~AD-12 참조 (T0-1~T0-9 구현 세부사항)
+→ `decisions/round_3.md` — AD-13~AD-17 참조 (T1-1~T1-11 구현 세부사항)

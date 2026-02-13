@@ -49,6 +49,35 @@ function sqrt(val) {
 // Main computation
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Interval → periods per year mapping (for Sharpe annualisation)
+// ---------------------------------------------------------------------------
+
+const PERIODS_PER_YEAR = Object.freeze({
+  '1m': 525600,
+  '3m': 175200,
+  '5m': 105120,
+  '15m': 35040,
+  '30m': 17520,
+  '1H': 8760,
+  '4H': 2190,
+  '6H': 1460,
+  '12H': 730,
+  '1D': 365,
+  '1W': 52,
+});
+
+/**
+ * Get the number of periods per year for a given kline interval.
+ * Falls back to 365 (daily) for unknown intervals.
+ *
+ * @param {string} interval — e.g. '1H', '5m', '1D'
+ * @returns {number}
+ */
+function _getPeriodsPerYear(interval) {
+  return PERIODS_PER_YEAR[interval] || 365;
+}
+
 /**
  * Compute comprehensive backtest performance metrics.
  *
@@ -56,9 +85,10 @@ function sqrt(val) {
  * @param {Array<Object>} params.trades        — executed trades
  * @param {Array<Object>} params.equityCurve   — equity snapshots
  * @param {string}        params.initialCapital — starting capital (string)
+ * @param {string}        [params.interval]     — kline interval for Sharpe annualisation (e.g. '1H')
  * @returns {Object} metrics with all monetary values as strings
  */
-function computeMetrics({ trades, equityCurve, initialCapital }) {
+function computeMetrics({ trades, equityCurve, initialCapital, interval }) {
   const totalTrades = trades.length;
 
   // -- Edge case: no trades ------------------------------------------------
@@ -202,44 +232,45 @@ function computeMetrics({ trades, equityCurve, initialCapital }) {
     }
   }
 
-  // -- Sharpe ratio (annualised, 365 trading days, risk-free = 0) ----------
+  // -- Sharpe ratio (annualised, scaled by interval periods/year, risk-free = 0) --
   let sharpeRatio = '0.00';
+  const periodsPerYear = _getPeriodsPerYear(interval);
 
   if (equityCurve.length >= 2) {
-    // Compute daily returns from equity curve
-    const dailyReturns = [];
+    // Compute per-period returns from equity curve
+    const periodReturns = [];
     for (let i = 1; i < equityCurve.length; i++) {
       const prevEquity = equityCurve[i - 1].equity;
       const currEquity = equityCurve[i].equity;
 
       if (!isZero(prevEquity)) {
         const ret = pctChange(prevEquity, currEquity);
-        dailyReturns.push(ret);
+        periodReturns.push(ret);
       }
     }
 
-    if (dailyReturns.length > 0) {
-      // Mean daily return
+    if (periodReturns.length > 0) {
+      // Mean per-period return
       let sumReturns = '0';
-      for (const r of dailyReturns) {
+      for (const r of periodReturns) {
         sumReturns = add(sumReturns, r);
       }
-      const meanReturn = divide(sumReturns, String(dailyReturns.length));
+      const meanReturn = divide(sumReturns, String(periodReturns.length));
 
-      // Standard deviation of daily returns
+      // Standard deviation of per-period returns
       let sumSquaredDiff = '0';
-      for (const r of dailyReturns) {
+      for (const r of periodReturns) {
         const diff = subtract(r, meanReturn);
         const squaredDiff = multiply(diff, diff);
         sumSquaredDiff = add(sumSquaredDiff, squaredDiff);
       }
-      const variance = divide(sumSquaredDiff, String(dailyReturns.length));
+      const variance = divide(sumSquaredDiff, String(periodReturns.length));
       const stdDev = sqrt(variance);
 
-      // Annualise: sharpe = (mean * sqrt(365)) / stdDev
+      // Annualise: sharpe = (mean * sqrt(periodsPerYear)) / stdDev
       if (!isZero(stdDev)) {
-        const sqrtDays = sqrt('365');
-        const annualisedReturn = multiply(meanReturn, sqrtDays);
+        const sqrtPeriods = sqrt(String(periodsPerYear));
+        const annualisedReturn = multiply(meanReturn, sqrtPeriods);
         sharpeRatio = toFixed(divide(annualisedReturn, stdDev), 2);
       }
     }

@@ -102,7 +102,7 @@ exchangeClient (싱글턴) → riskEngine → orderManager/positionManager
 | `/api/backtest` | run(POST), list, :id(GET/DELETE) |
 | `/api/paper` | account, reset (PAPER_TRADING=true일 때만) |
 | `/api/tournament` | info, leaderboard, start, stop, reset, strategy/:name (TOURNAMENT_MODE=true일 때만) |
-| `/api/risk` | events, events/unacknowledged, events/:id/acknowledge, status |
+| `/api/risk` | events, events/unacknowledged, events/:id/acknowledge, status, drawdown/reset |
 | `/api/health` | ping, status |
 
 ## 프론트엔드 구조

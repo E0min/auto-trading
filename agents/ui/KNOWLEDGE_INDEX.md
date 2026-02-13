@@ -13,6 +13,9 @@
 | `proposals/round_2.md` | T0-7~T0-9 구현 제안 (긴급정지 다이얼로그, 리스크배너, 모드배너) | Round 2 | active |
 | `proposals/round_2_review.md` | Round 2 교차 리뷰 | Round 2 | active |
 | `../shared/decisions/round_2.md` | Round 2 합의 결정문서 (T0-1~T0-9, AD-7~AD-12) — **구현 완료** | Round 2 | active |
+| `proposals/round_3.md` | T1-7~T1-11 FE 구현 제안 (Dashboard 레이아웃, 청산 버튼, Socket ref-count, Error Boundary) | Round 3 | active |
+| `proposals/round_3_review.md` | Round 3 교차 리뷰 (Trader+Engineer 제안 검토) | Round 3 | active |
+| `../shared/decisions/round_3.md` | Round 3 합의 결정문서 (T1-1~T1-11, AD-13~AD-17) — **구현 완료** | Round 3 | active |
 
 ## Round 1 Key Findings Summary
 - **C1**: Emergency Stop에 확인 다이얼로그 없음 — 실수로 전포지션 청산 위험

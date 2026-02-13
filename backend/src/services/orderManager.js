@@ -98,6 +98,9 @@ class OrderManager extends EventEmitter {
     /** @type {import('./paperPositionManager')|null} */
     this._paperPositionManager = null;
 
+    /** @type {Function|null} Bound handler for paper:fill event (for cleanup) */
+    this._paperFillHandler = null;
+
     // Bind WS handlers
     this._handleWsOrderUpdate = this._handleWsOrderUpdate.bind(this);
     this._handleWsFillUpdate = this._handleWsFillUpdate.bind(this);
@@ -121,16 +124,22 @@ class OrderManager extends EventEmitter {
    * @param {import('./paperPositionManager')} paperPositionManager
    */
   setPaperMode(paperEngine, paperPositionManager) {
+    // Remove previous listener if exists (prevent accumulation)
+    if (this._paperEngine && this._paperFillHandler) {
+      this._paperEngine.removeListener('paper:fill', this._paperFillHandler);
+    }
+
     this._paperMode = true;
     this._paperEngine = paperEngine;
     this._paperPositionManager = paperPositionManager;
 
-    // Listen for limit order fills from PaperEngine
-    this._paperEngine.on('paper:fill', (fill) => {
+    // Create and store handler reference for cleanup
+    this._paperFillHandler = (fill) => {
       this._handlePaperFill(fill).catch((err) => {
         log.error('setPaperMode — error handling paper fill', { error: err });
       });
-    });
+    };
+    this._paperEngine.on('paper:fill', this._paperFillHandler);
 
     log.info('OrderManager — paper trading mode enabled');
   }
@@ -139,6 +148,10 @@ class OrderManager extends EventEmitter {
    * Switch back to live trading mode. Clears paper engine references.
    */
   setLiveMode() {
+    if (this._paperEngine && this._paperFillHandler) {
+      this._paperEngine.removeListener('paper:fill', this._paperFillHandler);
+      this._paperFillHandler = null;
+    }
     this._paperMode = false;
     this._paperEngine = null;
     this._paperPositionManager = null;

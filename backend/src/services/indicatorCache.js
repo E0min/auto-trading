@@ -211,6 +211,7 @@ class IndicatorCache {
 
   /**
    * Compute an indicator from the symbol's history store.
+   * Delegates to the shared computeIndicator function.
    *
    * @param {object} store — the symbol's data store
    * @param {string} indicator
@@ -219,53 +220,70 @@ class IndicatorCache {
    * @private
    */
   _compute(store, indicator, params) {
-    const { klines, closes, highs, lows, volumes } = store;
+    return computeIndicator(store, indicator, params);
+  }
+}
 
-    switch (indicator) {
-      case 'rsi':
-        return rsi(closes, params.period || 14);
+// ---------------------------------------------------------------------------
+// Shared indicator computation — used by both IndicatorCache and
+// BacktestIndicatorCache to avoid duplicating calculation logic.
+// ---------------------------------------------------------------------------
 
-      case 'atr':
-        return atr(klines, params.period || 14);
+/**
+ * Compute an indicator from a history store object.
+ *
+ * @param {object} store — { klines, closes, highs, lows, volumes }
+ * @param {string} indicator — indicator name
+ * @param {object} params — indicator-specific parameters
+ * @returns {any} computed indicator value or null
+ */
+function computeIndicator(store, indicator, params) {
+  const { klines, closes, highs, lows, volumes } = store;
 
-      case 'adx':
-        return adx(klines, params.period || 14);
+  switch (indicator) {
+    case 'rsi':
+      return rsi(closes, params.period || 14);
 
-      case 'bb':
-        return bollingerBands(closes, params.period || 20, params.stdDev || 2);
+    case 'atr':
+      return atr(klines, params.period || 14);
 
-      case 'ema':
-        return emaFromArray(closes, params.period || 9);
+    case 'adx':
+      return adx(klines, params.period || 14);
 
-      case 'sma':
-        return sma(closes, params.period || 20);
+    case 'bb':
+      return bollingerBands(closes, params.period || 20, params.stdDev || 2);
 
-      case 'macd':
-        return macd(closes, params.fast || 12, params.slow || 26, params.signal || 9);
+    case 'ema':
+      return emaFromArray(closes, params.period || 9);
 
-      case 'macdHistogram':
-        return macdHistogramArray(closes, params.fast || 12, params.slow || 26, params.signal || 9);
+    case 'sma':
+      return sma(closes, params.period || 20);
 
-      case 'stochastic':
-        return stochastic(highs, lows, closes, params.period || 14, params.smooth || 3);
+    case 'macd':
+      return macd(closes, params.fast || 12, params.slow || 26, params.signal || 9);
 
-      case 'vwap':
-        return vwap(klines);
+    case 'macdHistogram':
+      return macdHistogramArray(closes, params.fast || 12, params.slow || 26, params.signal || 9);
 
-      case 'keltner':
-        return keltnerChannel(
-          closes,
-          klines,
-          params.emaPeriod || 20,
-          params.atrPeriod || 10,
-          params.mult || 1.5,
-        );
+    case 'stochastic':
+      return stochastic(highs, lows, closes, params.period || 14, params.smooth || 3);
 
-      default:
-        log.warn('Unknown indicator requested', { indicator });
-        return null;
-    }
+    case 'vwap':
+      return vwap(klines);
+
+    case 'keltner':
+      return keltnerChannel(
+        closes,
+        klines,
+        params.emaPeriod || 20,
+        params.atrPeriod || 10,
+        params.mult || 1.5,
+      );
+
+    default:
+      return null;
   }
 }
 
 module.exports = IndicatorCache;
+module.exports.computeIndicator = computeIndicator;

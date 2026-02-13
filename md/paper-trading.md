@@ -60,6 +60,7 @@ slippageBps = '5'      // 5 bps = 0.05%
   notional: '3271.79',
   reduceOnly: false,
   strategy: 'TurtleBreakoutStrategy',
+  action: 'open_long',        // Sprint R3: 시그널 액션 필드 추가
   filledAt: 1700000000000
 }
 ```
@@ -81,7 +82,8 @@ initialBalance = '10000'  // 기본 10,000 USDT
   markPrice: '65500.00',
   unrealizedPnl: '3.21',
   leverage: '3',
-  margin: '1090.60'
+  margin: '1090.60',
+  strategy: 'TurtleBreakoutStrategy'  // Sprint R3: 전략 필드 추가
 }
 ```
 

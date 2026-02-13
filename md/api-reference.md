@@ -308,6 +308,7 @@
 | GET | `/api/risk/events/unacknowledged` | 미확인 리스크 이벤트 | - |
 | PUT | `/api/risk/events/:id/acknowledge` | 리스크 이벤트 확인 처리 | - |
 | GET | `/api/risk/status` | 현재 리스크 상태 (서킷 브레이커, 낙폭, 노출 종합) | - |
+| POST | `/api/risk/drawdown/reset` | 낙폭 모니터 수동 리셋 (daily/full) | `{ "type": "daily" \| "full" }` |
 
 #### GET /api/risk/events 응답
 
@@ -390,6 +391,7 @@
 | `circuit_break` | `{ reason, trippedAt }` | 서킷 브레이커 발동 |
 | `drawdown_warning` | `{ currentDrawdown, maxDrawdown }` | 낙폭 경고 |
 | `drawdown_halt` | `{ currentDrawdown }` | 낙폭 중단 |
+| `drawdown_reset` | `{ type, resetBy }` | 낙폭 모니터 리셋 |
 | `circuit_reset` | `{ resetAt }` | 서킷 브레이커 해제 |
 | `exposure_adjusted` | `{ symbol, adjustedQty, reason }` | 노출 자동 조정 |
 | `unhandled_error` | `{ error, source }` | 미처리 예외 발생 |

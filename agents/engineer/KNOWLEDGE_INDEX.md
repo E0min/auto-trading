@@ -13,6 +13,9 @@
 | `proposals/round_2.md` | T0-4~T0-6 구현 제안 (크래시핸들러, mutex, equity 방어) | Round 2 | active |
 | `proposals/round_2_review.md` | Round 2 교차 리뷰 | Round 2 | active |
 | `../shared/decisions/round_2.md` | Round 2 합의 결정문서 (T0-1~T0-9, AD-7~AD-12) — **구현 완료** | Round 2 | active |
+| `proposals/round_3.md` | T1-1~T1-11 구현 제안 (graceful shutdown, 리스너 누적, SignalFilter 등) | Round 3 | active |
+| `proposals/round_3_review.md` | Round 3 교차 리뷰 (Trader+UI 제안 검토) | Round 3 | active |
+| `../shared/decisions/round_3.md` | Round 3 합의 결정문서 (T1-1~T1-11, AD-13~AD-17) — **구현 완료** | Round 3 | active |
 
 ## Round 1 Key Findings Summary
 - **C-1**: unhandledRejection/uncaughtException 핸들러 누락 — 프로세스 즉시 종료 위험

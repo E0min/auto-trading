@@ -136,6 +136,7 @@ function createBacktestRoutes({ dataFetcher, backtestStore }) {
             trades: result.trades,
             equityCurve: result.equityCurve,
             initialCapital: String(initialCapital),
+            interval: result.config.interval,
           });
 
           // 4. Save completed result

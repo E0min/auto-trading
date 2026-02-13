@@ -308,6 +308,10 @@ async function bootstrap() {
     io.emit('risk:exposure_adjusted', data);
   });
 
+  riskEngine.on(RISK_EVENTS.DRAWDOWN_RESET, (data) => {
+    io.emit('risk:drawdown_reset', data);
+  });
+
   // Market events
   marketData.on(MARKET_EVENTS.TICKER_UPDATE, (data) => {
     io.emit('market:ticker', data);
@@ -395,9 +399,6 @@ async function bootstrap() {
     isShuttingDown = true;
     log.info(`safeShutdown — starting (reason: ${reason})`);
 
-    // Notify frontend before closing
-    try { io.emit(RISK_EVENTS.UNHANDLED_ERROR, { type: reason, timestamp: new Date().toISOString() }); } catch (_) {}
-
     // Force exit after 10s if graceful shutdown hangs
     const forceExitTimer = setTimeout(() => {
       log.error('safeShutdown — force exit after 10s timeout');
@@ -405,37 +406,43 @@ async function bootstrap() {
     }, 10000);
     forceExitTimer.unref();
 
-    // Stop bot if running
+    // 1. Notify frontend before closing
+    try { io.emit(RISK_EVENTS.UNHANDLED_ERROR, { type: reason, timestamp: new Date().toISOString() }); } catch (_) {}
+
+    // 2. Stop bot if running (saves session, closes WS)
     try {
       await botService.stop('server_shutdown');
     } catch (err) {
       log.error('safeShutdown — error stopping bot', { error: err });
     }
 
-    // Clear tournament interval
+    // 3. Clear tournament interval
     if (leaderboardInterval) {
       clearInterval(leaderboardInterval);
     }
 
-    // Close HTTP server
+    // 4. Close HTTP server
     server.close(() => {
       log.info('HTTP server closed');
     });
 
-    // Close Socket.io
-    try {
-      io.close();
-      log.info('Socket.io server closed');
-    } catch (err) {
-      log.error('safeShutdown — error closing Socket.io', { error: err });
-    }
+    // 5. Flush — wait 500ms for pending writes
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
-    // Disconnect from MongoDB
+    // 6. Disconnect from MongoDB
     try {
       await mongoose.disconnect();
       log.info('MongoDB disconnected');
     } catch (err) {
       log.error('safeShutdown — error disconnecting MongoDB', { error: err });
+    }
+
+    // 7. Close Socket.io LAST (so frontend receives all events)
+    try {
+      io.close();
+      log.info('Socket.io server closed');
+    } catch (err) {
+      log.error('safeShutdown — error closing Socket.io', { error: err });
     }
 
     log.info('safeShutdown complete');

@@ -13,6 +13,9 @@
 | `proposals/round_2.md` | T0-1~T0-9 구현 제안 (포지션 사이징, 심볼 라우팅, 기본전략) | Round 2 | active |
 | `proposals/round_2_review.md` | Round 2 교차 리뷰 | Round 2 | active |
 | `../shared/decisions/round_2.md` | Round 2 합의 결정문서 (T0-1~T0-9, AD-7~AD-12) — **구현 완료** | Round 2 | active |
+| `proposals/round_3.md` | T1-1~T1-11 구현 제안 (백테스트 IndicatorCache, fill action, Sharpe 보정 등) | Round 3 | active |
+| `proposals/round_3_review.md` | Round 3 교차 리뷰 (Engineer+UI 제안 검토) | Round 3 | active |
+| `../shared/decisions/round_3.md` | Round 3 합의 결정문서 (T1-1~T1-11, AD-13~AD-17) — **구현 완료** | Round 3 | active |
 
 ## Round 1 Key Findings Summary
 - **C1**: multi-symbol 라우팅 버그 — `_symbol` 단일 값이라 마지막 심볼만 유효

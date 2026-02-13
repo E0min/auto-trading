@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useBotStatus } from '@/hooks/useBotStatus';
 import { useSocket } from '@/hooks/useSocket';
@@ -24,6 +24,8 @@ import TradesTable from '@/components/TradesTable';
 import SystemHealth from '@/components/SystemHealth';
 import Spinner from '@/components/ui/Spinner';
 import { useRiskEvents } from '@/hooks/useRiskEvents';
+import { tradeApi, riskApi } from '@/lib/api-client';
+import type { Position } from '@/types';
 
 export default function Dashboard() {
   // Track pre-selected strategies for bot start
@@ -63,6 +65,7 @@ export default function Dashboard() {
     positions,
     accountState,
     loading: positionsLoading,
+    refetch: refetchPositions,
   } = usePositions();
 
   const {
@@ -81,6 +84,43 @@ export default function Dashboard() {
     error: healthError,
   } = useHealthCheck();
 
+  // T1-8: Close position handler
+  const [closingSymbol, setClosingSymbol] = useState<string | null>(null);
+
+  const handleClosePosition = useCallback(async (pos: Position) => {
+    const key = `${pos.symbol}-${pos.posSide}`;
+    setClosingSymbol(key);
+    try {
+      const action = pos.posSide === 'long' ? 'close_long' : 'close_short';
+      await tradeApi.submitOrder({
+        symbol: pos.symbol,
+        action,
+        qty: pos.qty,
+        orderType: 'market',
+      });
+      await refetchPositions();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '포지션 청산에 실패했습니다.');
+    } finally {
+      setClosingSymbol(null);
+    }
+  }, [refetchPositions]);
+
+  // T1-11: Drawdown reset handler
+  const [resetLoading, setResetLoading] = useState(false);
+
+  const handleResetDrawdown = useCallback(async (type: 'daily' | 'full') => {
+    setResetLoading(true);
+    try {
+      await riskApi.resetDrawdown(type);
+      await refetchBotStatus();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '드로다운 리셋에 실패했습니다.');
+    } finally {
+      setResetLoading(false);
+    }
+  }, [refetchBotStatus]);
+
   // Initial loading
   if (botLoading && positionsLoading) {
     return (
@@ -97,7 +137,7 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Top Banners */}
+      {/* Row 0: Top Banners */}
       <TradingModeBanner mode={tradingMode} isLoading={botLoading} />
       <RiskAlertBanner events={riskEvents} onDismiss={dismissRisk} onAcknowledge={acknowledgeRisk} />
 
@@ -154,21 +194,55 @@ export default function Dashboard() {
       </header>
 
       <div className="space-y-4">
-        {/* Bot Control */}
-        <BotControlPanel
-          status={botStatus.status}
-          running={botStatus.running}
-          tradingMode={tradingMode}
-          openPositionCount={positions.length}
-          unrealizedPnl={accountState?.unrealizedPnl ?? '0.00'}
-          onStart={handleStartBot}
-          onStop={stopBot}
-          onPause={pauseBot}
-          onResume={resumeBot}
-          onEmergencyStop={emergencyStop}
+        {/* Row 1: BotControlPanel + AccountOverview */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <BotControlPanel
+            status={botStatus.status}
+            running={botStatus.running}
+            tradingMode={tradingMode}
+            openPositionCount={positions.length}
+            unrealizedPnl={accountState?.unrealizedPnl ?? '0.00'}
+            onStart={handleStartBot}
+            onStop={stopBot}
+            onPause={pauseBot}
+            onResume={resumeBot}
+            onEmergencyStop={emergencyStop}
+          />
+          <AccountOverview
+            accountState={accountState}
+            positionCount={positions.length}
+          />
+        </div>
+
+        {/* Row 2: PositionsTable (full width, above the fold) */}
+        <PositionsTable
+          positions={positions}
+          loading={positionsLoading}
+          onClosePosition={handleClosePosition}
+          closingSymbol={closingSymbol}
         />
 
-        {/* Strategy Hub — unified strategy management + regime recommendation + per-strategy detail */}
+        {/* Row 3: RiskStatusPanel + EquityCurveChart */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <RiskStatusPanel
+            riskStatus={botStatus.riskStatus}
+            onResetDrawdown={handleResetDrawdown}
+            resetLoading={resetLoading}
+          />
+          <div className="lg:col-span-2">
+            <EquityCurveChart data={equityCurve} loading={analyticsLoading} />
+          </div>
+        </div>
+
+        {/* Row 4: SignalFeed + TradesTable */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <SignalFeed signals={signals} />
+          <div className="lg:col-span-2">
+            <TradesTable trades={trades} loading={tradesLoading} />
+          </div>
+        </div>
+
+        {/* Row 5: StrategyHub (full width, settings/lower priority) */}
         <StrategyHub
           botRunning={botStatus.running}
           currentRegime={regime?.regime ?? botStatus.regime?.regime ?? null}
@@ -178,18 +252,7 @@ export default function Dashboard() {
           onSelectionChange={handleSelectionChange}
         />
 
-        {/* Account Overview + Risk Status */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2">
-            <AccountOverview
-              accountState={accountState}
-              positionCount={positions.length}
-            />
-          </div>
-          <RiskStatusPanel riskStatus={botStatus.riskStatus} />
-        </div>
-
-        {/* Per-symbol Regimes — prefer socket data, fall back to REST polling */}
+        {/* Row 6: SymbolRegimeTable (full width, reference info) */}
         <SymbolRegimeTable
           symbolRegimes={
             Object.keys(socketSymbolRegimes).length > 0
@@ -197,18 +260,6 @@ export default function Dashboard() {
               : (botStatus.symbolRegimes ?? {})
           }
         />
-
-        {/* Equity Curve */}
-        <EquityCurveChart data={equityCurve} loading={analyticsLoading} />
-
-        {/* Positions + Signals */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <PositionsTable positions={positions} loading={positionsLoading} />
-          <SignalFeed signals={signals} />
-        </div>
-
-        {/* Trades Table */}
-        <TradesTable trades={trades} loading={tradesLoading} />
       </div>
       </div>
     </div>

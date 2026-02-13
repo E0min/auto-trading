@@ -3,9 +3,24 @@ import { io, Socket } from 'socket.io-client';
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
 
 let socket: Socket | null = null;
+let refCount = 0;
 
-export function getSocket(): Socket {
+function debugLog(...args: unknown[]) {
+  if (process.env.NODE_ENV === 'development') {
+    console.debug('[Socket]', ...args);
+  }
+}
+
+/**
+ * Acquire a socket connection, incrementing the reference count.
+ * Creates the socket if it doesn't exist yet.
+ */
+export function acquireSocket(): Socket {
+  refCount++;
+  debugLog(`acquireSocket: refCount=${refCount}`);
+
   if (!socket) {
+    debugLog('새 소켓 연결 생성');
     socket = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
       autoConnect: true,
@@ -16,21 +31,49 @@ export function getSocket(): Socket {
     });
 
     socket.on('connect', () => {
-      console.log('[Socket] 연결됨:', socket?.id);
+      debugLog('연결됨:', socket?.id);
     });
 
     socket.on('disconnect', (reason) => {
-      console.log('[Socket] 연결 해제:', reason);
+      debugLog('연결 해제:', reason);
     });
 
     socket.on('connect_error', (err) => {
       console.error('[Socket] 연결 오류:', err.message);
     });
   }
+
   return socket;
 }
 
+/**
+ * Release a socket reference. Disconnects and cleans up when refCount reaches 0.
+ */
+export function releaseSocket(): void {
+  refCount = Math.max(0, refCount - 1);
+  debugLog(`releaseSocket: refCount=${refCount}`);
+
+  if (refCount === 0 && socket) {
+    debugLog('refCount=0, 소켓 연결 해제');
+    socket.disconnect();
+    socket = null;
+  }
+}
+
+/**
+ * Read-only accessor. Returns the current socket without changing refCount.
+ * Returns null if no socket exists (AD-14).
+ */
+export function getSocket(): Socket | null {
+  return socket;
+}
+
+/**
+ * Force-disconnect regardless of refCount (backwards compat / emergency).
+ */
 export function disconnectSocket(): void {
+  debugLog(`disconnectSocket: 강제 연결 해제 (refCount was ${refCount})`);
+  refCount = 0;
   if (socket) {
     socket.disconnect();
     socket = null;

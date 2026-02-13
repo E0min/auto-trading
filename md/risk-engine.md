@@ -99,6 +99,26 @@
 }
 ```
 
+### 수동 리셋 (Sprint R3)
+
+낙폭 모니터를 수동으로 리셋할 수 있습니다:
+
+```javascript
+// 일일 손실만 리셋 (dailyLoss = 0)
+riskEngine.resetDaily()
+
+// 전체 리셋 (dailyLoss = 0, peakEquity = currentEquity, currentDrawdown = 0, halted = false)
+riskEngine.resetDrawdown()
+```
+
+API:
+```
+POST /api/risk/drawdown/reset
+Body: { "type": "daily" | "full" }
+```
+
+리셋 시 `RISK_EVENTS.DRAWDOWN_RESET` 이벤트가 발생하여 Socket.io를 통해 프론트엔드에 전달됩니다.
+
 ---
 
 ## 3. ExposureGuard — 포지션 크기 제한
@@ -250,3 +270,4 @@ riskEngine.updateAccountState({
 | GET | `/api/risk/events/unacknowledged` | 미확인 리스크 이벤트 |
 | PUT | `/api/risk/events/:id/acknowledge` | 이벤트 확인 처리 |
 | GET | `/api/risk/status` | 현재 리스크 상태 종합 |
+| POST | `/api/risk/drawdown/reset` | 낙폭 모니터 리셋 (`{ "type": "daily" \| "full" }`) |

@@ -67,6 +67,7 @@ const RISK_EVENTS = Object.freeze({
   CIRCUIT_RESET: 'risk:circuit_reset',
   DRAWDOWN_WARNING: 'risk:drawdown_warning',
   DRAWDOWN_HALT: 'risk:drawdown_halt',
+  DRAWDOWN_RESET: 'risk:drawdown_reset',
   EXPOSURE_ADJUSTED: 'risk:exposure_adjusted',
   UNHANDLED_ERROR: 'risk:unhandled_error',
 });

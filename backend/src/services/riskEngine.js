@@ -251,6 +251,23 @@ class RiskEngine extends EventEmitter {
   }
 
   /**
+   * Full reset of drawdown tracking with a new equity baseline.
+   * Lifts any drawdown-related halt and resets peak/daily values.
+   *
+   * @param {string} [equity] — new equity baseline; defaults to current accountState.equity
+   */
+  resetDrawdown(equity) {
+    const resetEquity = equity || this.accountState.equity;
+    this.drawdownMonitor.resetAll(resetEquity);
+
+    log.warn('Drawdown monitor manually reset', { equity: resetEquity });
+    this.emit(RISK_EVENTS.DRAWDOWN_RESET, {
+      equity: resetEquity,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  /**
    * Return a combined status snapshot from all sub-engines.
    *
    * @returns {object}

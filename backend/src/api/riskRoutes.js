@@ -66,6 +66,30 @@ function createRiskRoutes({ riskEngine }) {
     }
   });
 
+  // POST /api/risk/drawdown/reset — manually reset drawdown tracking
+  router.post('/drawdown/reset', (req, res) => {
+    try {
+      const { type } = req.body || {};
+
+      if (type === 'daily') {
+        riskEngine.resetDaily();
+      } else if (type === 'full') {
+        riskEngine.resetDrawdown();
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: 'type 필수: "daily" 또는 "full"',
+        });
+      }
+
+      const status = riskEngine.getStatus();
+      res.json({ success: true, data: status });
+    } catch (err) {
+      log.error('POST /drawdown/reset — error', { error: err });
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // GET /api/risk/status — current risk engine state
   router.get('/status', (req, res) => {
     try {

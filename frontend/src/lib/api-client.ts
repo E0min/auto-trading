@@ -26,14 +26,40 @@ import type {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
+export class ApiError extends Error {
+  public statusCode: number;
+  public endpoint: string;
+  public isNetworkError: boolean;
+
+  constructor(message: string, statusCode: number, endpoint: string, isNetworkError: boolean = false) {
+    super(message);
+    this.name = 'ApiError';
+    this.statusCode = statusCode;
+    this.endpoint = endpoint;
+    this.isNetworkError = isNetworkError;
+  }
+}
+
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${endpoint}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
-  const json = await res.json();
-  if (!json.success) {
-    throw new Error(json.error || '요청 실패');
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${endpoint}`, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options,
+    });
+  } catch {
+    throw new ApiError('서버에 연결할 수 없습니다', 0, endpoint, true);
+  }
+
+  let json: { success: boolean; data: T; error?: string };
+  try {
+    json = await res.json();
+  } catch {
+    throw new ApiError(`서버 응답 파싱 실패 (HTTP ${res.status})`, res.status, endpoint);
+  }
+
+  if (!res.ok || !json.success) {
+    throw new ApiError(json.error || '요청 실패', res.status, endpoint);
   }
   return json.data;
 }
@@ -147,6 +173,11 @@ export const riskApi = {
   acknowledge: (id: string) =>
     request<RiskEvent>(`/api/risk/events/${id}/acknowledge`, { method: 'PUT' }),
   getStatus: () => request<RiskStatus>('/api/risk/status'),
+  resetDrawdown: (type: 'daily' | 'full' = 'daily') =>
+    request<RiskStatus>('/api/risk/drawdown/reset', {
+      method: 'POST',
+      body: JSON.stringify({ type }),
+    }),
 };
 
 // Backtest

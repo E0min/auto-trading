@@ -73,7 +73,7 @@ class PaperPositionManager extends EventEmitter {
    * @returns {{ pnl: string|null, position: object|null }}
    */
   onFill(fill) {
-    const { symbol, side, posSide, qty, fillPrice, fee, reduceOnly } = fill;
+    const { symbol, side, posSide, qty, fillPrice, fee, reduceOnly, strategy } = fill;
     const key = `${symbol}:${posSide}`;
 
     // Deduct fee from balance
@@ -93,6 +93,7 @@ class PaperPositionManager extends EventEmitter {
         posSide,
         qty,
         entryPrice: fillPrice,
+        strategy,
       });
     }
 
@@ -133,7 +134,7 @@ class PaperPositionManager extends EventEmitter {
    * @returns {object} position
    * @private
    */
-  _openPosition(key, { symbol, posSide, qty, entryPrice }) {
+  _openPosition(key, { symbol, posSide, qty, entryPrice, strategy }) {
     const existing = this._positions.get(key);
 
     if (existing) {
@@ -146,6 +147,7 @@ class PaperPositionManager extends EventEmitter {
       existing.qty = totalQty;
       existing.entryPrice = avgEntryPrice;
       existing.updatedAt = new Date();
+      if (strategy) existing.strategy = strategy;
 
       log.info('_openPosition — increased', { key, totalQty, avgEntryPrice });
       return existing;
@@ -162,11 +164,12 @@ class PaperPositionManager extends EventEmitter {
       leverage: '1',
       marginMode: 'crossed',
       liquidationPrice: '0',
+      strategy: strategy || null,
       updatedAt: new Date(),
     };
 
     this._positions.set(key, position);
-    log.info('_openPosition — created', { key, qty, entryPrice });
+    log.info('_openPosition — created', { key, qty, entryPrice, strategy });
     return position;
   }
 

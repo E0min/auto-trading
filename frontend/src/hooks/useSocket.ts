@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { getSocket, disconnectSocket, SOCKET_EVENTS } from '@/lib/socket';
+import { acquireSocket, releaseSocket, SOCKET_EVENTS } from '@/lib/socket';
 import type { Socket } from 'socket.io-client';
 import type { Signal, Position, MarketRegimeData, SymbolRegimeEntry, RiskEvent } from '@/types';
 
@@ -28,35 +28,34 @@ export function useSocket() {
   });
 
   useEffect(() => {
-    const socket = getSocket();
+    const socket = acquireSocket();
     socketRef.current = socket;
 
-    socket.on('connect', () => {
+    // Named handlers so they can be removed with off()
+    const handleConnect = () => {
       setState(prev => ({ ...prev, connected: true }));
-    });
+    };
 
-    socket.on('disconnect', () => {
+    const handleDisconnect = () => {
       setState(prev => ({ ...prev, connected: false }));
-    });
+    };
 
-    // Trade events
-    socket.on(SOCKET_EVENTS.SIGNAL_GENERATED, (signal: Signal) => {
+    const handleSignalGenerated = (signal: Signal) => {
       setState(prev => ({
         ...prev,
         signals: [signal, ...prev.signals].slice(0, 50),
       }));
-    });
+    };
 
-    socket.on(SOCKET_EVENTS.POSITION_UPDATED, (data: { positions: Position[] }) => {
+    const handlePositionUpdated = (data: { positions: Position[] }) => {
       setState(prev => ({ ...prev, positions: data.positions }));
-    });
+    };
 
-    // Market events
-    socket.on(SOCKET_EVENTS.REGIME_CHANGE, (data: MarketRegimeData) => {
+    const handleRegimeChange = (data: MarketRegimeData) => {
       setState(prev => ({ ...prev, regime: data }));
-    });
+    };
 
-    socket.on(SOCKET_EVENTS.SYMBOL_REGIME_UPDATE, (data: { symbol: string; current: string; confidence: number }) => {
+    const handleSymbolRegimeUpdate = (data: { symbol: string; current: string; confidence: number }) => {
       setState(prev => ({
         ...prev,
         symbolRegimes: {
@@ -68,9 +67,9 @@ export function useSocket() {
           },
         },
       }));
-    });
+    };
 
-    socket.on(SOCKET_EVENTS.TICKER, (data: { symbol: string; lastPrice: string; volume24h: string }) => {
+    const handleTicker = (data: { symbol: string; lastPrice: string; volume24h: string }) => {
       setState(prev => ({
         ...prev,
         lastTicker: {
@@ -78,45 +77,44 @@ export function useSocket() {
           [data.symbol]: { lastPrice: data.lastPrice, volume24h: data.volume24h },
         },
       }));
-    });
+    };
 
-    // Risk events
-    socket.on(SOCKET_EVENTS.CIRCUIT_BREAK, (data: RiskEvent) => {
+    const handleCircuitBreak = (data: RiskEvent) => {
       setState(prev => ({
         ...prev,
         riskEvents: [data, ...prev.riskEvents].slice(0, 20),
       }));
-    });
+    };
 
-    socket.on(SOCKET_EVENTS.DRAWDOWN_WARNING, (data: RiskEvent) => {
+    const handleDrawdownWarning = (data: RiskEvent) => {
       setState(prev => ({
         ...prev,
         riskEvents: [data, ...prev.riskEvents].slice(0, 20),
       }));
-    });
+    };
 
-    socket.on(SOCKET_EVENTS.DRAWDOWN_HALT, (data: RiskEvent) => {
+    const handleDrawdownHalt = (data: RiskEvent) => {
       setState(prev => ({
         ...prev,
         riskEvents: [data, ...prev.riskEvents].slice(0, 20),
       }));
-    });
+    };
 
-    socket.on(SOCKET_EVENTS.CIRCUIT_RESET, (data: RiskEvent) => {
+    const handleCircuitReset = (data: RiskEvent) => {
       setState(prev => ({
         ...prev,
         riskEvents: [data, ...prev.riskEvents].slice(0, 20),
       }));
-    });
+    };
 
-    socket.on(SOCKET_EVENTS.EXPOSURE_ADJUSTED, (data: RiskEvent) => {
+    const handleExposureAdjusted = (data: RiskEvent) => {
       setState(prev => ({
         ...prev,
         riskEvents: [data, ...prev.riskEvents].slice(0, 20),
       }));
-    });
+    };
 
-    socket.on(SOCKET_EVENTS.UNHANDLED_ERROR, (data: { type: string; reason?: string; timestamp: string }) => {
+    const handleUnhandledError = (data: { type: string; reason?: string; timestamp: string }) => {
       const errorEvent: RiskEvent = {
         _id: `err_${Date.now()}`,
         eventType: 'process_error',
@@ -130,10 +128,39 @@ export function useSocket() {
         ...prev,
         riskEvents: [errorEvent, ...prev.riskEvents].slice(0, 20),
       }));
-    });
+    };
+
+    // Register all handlers
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on(SOCKET_EVENTS.SIGNAL_GENERATED, handleSignalGenerated);
+    socket.on(SOCKET_EVENTS.POSITION_UPDATED, handlePositionUpdated);
+    socket.on(SOCKET_EVENTS.REGIME_CHANGE, handleRegimeChange);
+    socket.on(SOCKET_EVENTS.SYMBOL_REGIME_UPDATE, handleSymbolRegimeUpdate);
+    socket.on(SOCKET_EVENTS.TICKER, handleTicker);
+    socket.on(SOCKET_EVENTS.CIRCUIT_BREAK, handleCircuitBreak);
+    socket.on(SOCKET_EVENTS.DRAWDOWN_WARNING, handleDrawdownWarning);
+    socket.on(SOCKET_EVENTS.DRAWDOWN_HALT, handleDrawdownHalt);
+    socket.on(SOCKET_EVENTS.CIRCUIT_RESET, handleCircuitReset);
+    socket.on(SOCKET_EVENTS.EXPOSURE_ADJUSTED, handleExposureAdjusted);
+    socket.on(SOCKET_EVENTS.UNHANDLED_ERROR, handleUnhandledError);
 
     return () => {
-      disconnectSocket();
+      // Remove all named handlers BEFORE releasing socket
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off(SOCKET_EVENTS.SIGNAL_GENERATED, handleSignalGenerated);
+      socket.off(SOCKET_EVENTS.POSITION_UPDATED, handlePositionUpdated);
+      socket.off(SOCKET_EVENTS.REGIME_CHANGE, handleRegimeChange);
+      socket.off(SOCKET_EVENTS.SYMBOL_REGIME_UPDATE, handleSymbolRegimeUpdate);
+      socket.off(SOCKET_EVENTS.TICKER, handleTicker);
+      socket.off(SOCKET_EVENTS.CIRCUIT_BREAK, handleCircuitBreak);
+      socket.off(SOCKET_EVENTS.DRAWDOWN_WARNING, handleDrawdownWarning);
+      socket.off(SOCKET_EVENTS.DRAWDOWN_HALT, handleDrawdownHalt);
+      socket.off(SOCKET_EVENTS.CIRCUIT_RESET, handleCircuitReset);
+      socket.off(SOCKET_EVENTS.EXPOSURE_ADJUSTED, handleExposureAdjusted);
+      socket.off(SOCKET_EVENTS.UNHANDLED_ERROR, handleUnhandledError);
+      releaseSocket();
     };
   }, []);
 
