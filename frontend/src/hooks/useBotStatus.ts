@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { botApi } from '@/lib/api-client';
+import { useAdaptivePolling } from './useAdaptivePolling';
 import type { BotStatus } from '@/types';
 
 const DEFAULT_STATUS: BotStatus = {
@@ -19,7 +20,7 @@ const DEFAULT_STATUS: BotStatus = {
   },
 };
 
-export function useBotStatus(pollInterval = 5000) {
+export function useBotStatus() {
   const [status, setStatus] = useState<BotStatus>(DEFAULT_STATUS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,11 +37,8 @@ export function useBotStatus(pollInterval = 5000) {
     }
   }, []);
 
-  useEffect(() => {
-    fetchStatus();
-    const interval = setInterval(fetchStatus, pollInterval);
-    return () => clearInterval(interval);
-  }, [fetchStatus, pollInterval]);
+  const riskHalted = status.riskStatus?.drawdownMonitor?.halted || status.riskStatus?.circuitBreaker?.tripped || false;
+  useAdaptivePolling(fetchStatus, 'botStatus', status.status, riskHalted);
 
   const startBot = useCallback(async (config?: Record<string, unknown>) => {
     try {

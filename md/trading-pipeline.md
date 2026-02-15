@@ -96,6 +96,8 @@ marketData 이벤트 → 전략.onKline(kline) → 지표 계산 → 조건 평�
 - Set 기반 `_symbols` 관리: `addSymbol()`, `removeSymbol()`, `hasSymbol()`, `getSymbols()`
 - `_currentProcessingSymbol`: 현재 처리 중인 심볼 추적
 - `emitSignal()`: 시그널에 symbol이 없으면 `_currentProcessingSymbol`로 폴백
+- `setAccountContext({ getEquity })`: equity DI 주입 (Sprint R4)
+- `onFundingUpdate(data)`: 펀딩비 데이터 수신 콜백 (Sprint R4)
 
 **전략 라우터** (`strategyRouter.js`):
 - 시장 레짐 변경 시 `targetRegimes` 기반으로 전략 자동 활성화/비활성화
@@ -108,7 +110,7 @@ marketData 이벤트 → 전략.onKline(kline) → 지표 계산 → 조건 평�
 
 **담당**: `signalFilter.js`
 
-4가지 체크를 통과해야 주문 단계로 진행합니다.
+5가지 체크를 통과해야 주문 단계로 진행합니다.
 
 | 체크 | 로직 | 기본값 |
 |------|------|--------|
@@ -116,6 +118,7 @@ marketData 이벤트 → 전략.onKline(kline) → 지표 계산 → 조건 평�
 | **중복 방지** | 같은 (전략+심볼+액션) 윈도우 내 중복 차단 | 5초 |
 | **동시 포지션 제한** | 전략별 최대 동시 포지션 수 (OPEN 시그널만 적용) | 2개 |
 | **심볼 충돌 방지** | 같은 심볼에 대해 반대 방향 OPEN 시그널 차단 | - |
+| **신뢰도 필터** (Sprint R4) | confidence < 전략별 최소 임계값 차단 (mathUtils.isLessThan 사용) | low:'0.50', medium:'0.55', high:'0.60' |
 
 ### 포지션 카운트 업데이트 (Sprint R3)
 
@@ -129,7 +132,7 @@ this.on(TRADE_EVENTS.TRADE_COMPLETED, (trade) => {
 ```
 
 ```
-시그널 → 쿨다운? → 중복? → 포지션 한도? → 충돌? → ✅ 통과 / ❌ 차단
+시그널 → 쿨다운? → 중복? → 포지션 한도? → 충돌? → 신뢰도? → ✅ 통과 / ❌ 차단
 ```
 
 ---

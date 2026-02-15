@@ -20,7 +20,7 @@ function pnlColor(pnl: string): string {
 }
 
 export default function TournamentPage() {
-  const { status: botStatus, loading: botStatusLoading } = useBotStatus(10000);
+  const { status: botStatus, loading: botStatusLoading } = useBotStatus();
   const isPaper = botStatus.tradingMode === 'paper' || botStatus.paperMode;
 
   const {

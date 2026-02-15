@@ -16,6 +16,9 @@
 | `proposals/round_3.md` | T1-1~T1-11 구현 제안 (백테스트 IndicatorCache, fill action, Sharpe 보정 등) | Round 3 | active |
 | `proposals/round_3_review.md` | Round 3 교차 리뷰 (Engineer+UI 제안 검토) | Round 3 | active |
 | `../shared/decisions/round_3.md` | Round 3 합의 결정문서 (T1-1~T1-11, AD-13~AD-17) — **구현 완료** | Round 3 | active |
+| `proposals/round_4.md` | T2-1~T2-12 구현 제안 (RSI Wilder, confidence 필터, 포지션 사이징, funding 데이터, equity DI) | Round 4 | active |
+| `proposals/round_4_review.md` | Round 4 교차 리뷰 (Engineer+UI 제안 검토) | Round 4 | active |
+| `../shared/decisions/round_4.md` | Round 4 합의 결정문서 (T2-1~T2-12, AD-18~AD-24) — **구현 완료** | Round 4 | active |
 
 ## Round 1 Key Findings Summary
 - **C1**: multi-symbol 라우팅 버그 — `_symbol` 단일 값이라 마지막 심볼만 유효

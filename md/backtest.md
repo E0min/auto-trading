@@ -133,11 +133,21 @@ fillPrice = close × (1 - slippage)
 fillPrice = close × (1 + slippage)
 ```
 
-### 포지션 사이징
+### 포지션 사이징 (Sprint R4)
+
+전략 메타데이터 기반 동적 포지션 사이징:
+
 ```
-기본: 가용 자금의 95% 사용 (DEFAULT_POSITION_SIZE_PCT = '95')
-수량 = (cash × 0.95) / fillPrice
+우선순위:
+1. positionSizePercent (전략 config)
+2. totalBudgetPercent (Grid 전략 등)
+3. riskLevel 매핑: { low: '10', medium: '15', high: '8' }
+4. 기본값 DEFAULT_POSITION_SIZE_PCT = '15' (이전: '95')
+
+수량 = (cash × positionSizePercent / 100) / fillPrice
 ```
+
+**Equity DI**: 백테스트 엔진은 `strategy.setAccountContext({ getEquity: () => this._cash })`로 현재 가용 자금을 전략에 주입합니다.
 
 ### Equity 계산
 

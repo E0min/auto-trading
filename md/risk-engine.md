@@ -39,14 +39,22 @@
 ```
 거래 체결 → 손실인가?
   ├─ 아니오 → 연속 손실 카운터 리셋
-  └─ 예 → 카운터 +1
-         └─ 카운터 ≥ consecutiveLossLimit (5)?
-            ├─ 아니오 → 계속 허용
-            └─ 예 → 서킷 발동!
-                   → cooldownMinutes (30분) 동안 모든 OPEN 주문 차단
-                   → RISK_EVENTS.CIRCUIT_BREAK 이벤트 발생
-                   → 30분 후 자동 해제 (RISK_EVENTS.CIRCUIT_RESET)
+  └─ 예 → 카운터 +1 + rapidLosses 타임스탬프 추가
+         ├─ rapidLosses 윈도우(5분) 외 항목 trim
+         ├─ 체크 1: 카운터 ≥ consecutiveLossLimit (5)?
+         │  └─ 예 → 서킷 발동! (consecutive_loss_limit)
+         └─ 체크 2: rapidLosses.length ≥ rapidLossThreshold (3)?
+            └─ 예 → 서킷 발동! (rapid_loss_threshold)
+
+발동 시:
+  → cooldownMinutes (30분) 동안 모든 OPEN 주문 차단
+  → RISK_EVENTS.CIRCUIT_BREAK 이벤트 발생
+  → 30분 후 자동 해제 (RISK_EVENTS.CIRCUIT_RESET)
 ```
+
+### 메모리 안전장치 (Sprint R4)
+
+`rapidLosses` 배열에 절대 상한 `MAX_RAPID_LOSSES = 500`이 적용됩니다. 이 한계를 초과하면 가장 최근 500개만 유지하여 메모리 누수를 방지합니다.
 
 ### 상태
 

@@ -214,6 +214,30 @@ export function getStrategyCategory(name: string): StrategyCategory {
 }
 
 /**
+ * Translate reject reason to Korean
+ */
+export function translateRejectReason(reason: string): string {
+  // Prefix matching for dynamic reasons
+  if (reason.startsWith('cooldown:')) return '쿨다운 대기';
+  if (reason.startsWith('duplicate:')) return '중복 시그널';
+  if (reason.startsWith('max_concurrent:')) return '최대 동시 포지션 초과';
+  if (reason.startsWith('conflict:')) return '반대 시그널 충돌';
+  if (reason.startsWith('low_confidence:')) return '신뢰도 부족';
+  if (reason.startsWith('Risk validation error:')) return '리스크 검증 오류';
+  if (reason.startsWith('Exchange error:')) return '거래소 오류';
+
+  const map: Record<string, string> = {
+    circuit_breaker_active: '서킷 브레이커 발동',
+    daily_loss_exceeded: '일일 손실 한도 초과',
+    max_drawdown_exceeded: '최대 드로다운 초과',
+    total_exposure_exceeded: '총 노출 한도 초과',
+    equity_not_initialized: '자산 미초기화',
+    qty_resolution_failed: '수량 산출 실패',
+  };
+  return map[reason] || reason;
+}
+
+/**
  * cn - simple class name merger (no clsx dependency needed)
  */
 export function cn(...classes: (string | undefined | null | false)[]): string {

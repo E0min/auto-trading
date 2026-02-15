@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { healthApi } from '@/lib/api-client';
+import { useAdaptivePolling } from './useAdaptivePolling';
 import type { HealthReport } from '@/types';
 
-export function useHealthCheck(pollInterval = 30000) {
+export function useHealthCheck() {
   const [health, setHealth] = useState<HealthReport | null>(null);
   const [latency, setLatency] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -23,11 +24,7 @@ export function useHealthCheck(pollInterval = 30000) {
     }
   }, []);
 
-  useEffect(() => {
-    checkHealth();
-    const interval = setInterval(checkHealth, pollInterval);
-    return () => clearInterval(interval);
-  }, [checkHealth, pollInterval]);
+  useAdaptivePolling(checkHealth, 'health');
 
   return { health, latency, error, refetch: checkHealth };
 }

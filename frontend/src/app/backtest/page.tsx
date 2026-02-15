@@ -13,7 +13,7 @@ import BacktestListPanel from '@/components/backtest/BacktestListPanel';
 import Spinner from '@/components/ui/Spinner';
 
 export default function BacktestPage() {
-  const { status: botStatus, loading: botStatusLoading } = useBotStatus(10000);
+  const { status: botStatus, loading: botStatusLoading } = useBotStatus();
 
   const isPaper = botStatus.tradingMode === 'paper' || botStatus.paperMode;
 

@@ -21,6 +21,11 @@ class StrategyBase extends EventEmitter {
   getConfig()        // 현재 설정 반환
   getEffectiveRegime() // 현재 적용 레짐 반환
   getTargetRegimes() // 메타데이터의 targetRegimes 반환
+
+  // Sprint R4 추가
+  setAccountContext({ getEquity }) // equity DI 주입 (콜백 패턴)
+  getEquity()        // 주입된 equity 조회 (fallback: config.equity || '0')
+  onFundingUpdate(data) // 펀딩비 데이터 수신 (no-op, 오버라이드 가능)
 }
 ```
 
@@ -189,6 +194,8 @@ registry.register(TurtleBreakoutStrategy);
 | **쿨다운** | 60초 |
 
 **로직**: 펀딩비 극단값 감지 → 반대 포지션 진입 (과열 시 역방향).
+
+**데이터 소스** (Sprint R4): `FundingDataService`가 REST polling (5분 간격)으로 펀딩비/OI 데이터를 수집하여 `onFundingUpdate(data)` 콜백으로 전달합니다.
 
 **핵심 설정**:
 - `longFundingThreshold: '-0.01'` — 롱 진입 펀딩비 임계값
@@ -401,7 +408,7 @@ registry.register(TurtleBreakoutStrategy);
 
 | 지표 | 파라미터 | 반환값 |
 |------|---------|--------|
-| `rsi` | `{ period: 14 }` | number |
+| `rsi` | `{ period: 14, smoothing: 'wilder' }` | number |
 | `atr` | `{ period: 14 }` | string |
 | `adx` | `{ period: 14 }` | number |
 | `bb` | `{ period: 20, stdDev: 2 }` | { upper, middle, lower } |
@@ -415,3 +422,15 @@ registry.register(TurtleBreakoutStrategy);
 - 심볼당 최대 500 캔들 히스토리 유지
 - 새 캔들 도착 시 캐시 무효화 후 재계산
 - 캐시 키: `indicator|param1=val1,param2=val2` (결정적)
+
+### RSI Wilder Smoothing (Sprint R4)
+
+RSI 계산에 Wilder smoothing이 기본 적용됩니다:
+- `smoothing: 'wilder'` (기본): Wilder 평활화 — SMA seed 후 재귀적 평활 (업계 표준)
+- `smoothing: 'sma'`: Cutler's RSI — 매 구간 SMA 기반 (레거시)
+
+```javascript
+// 사용 예
+cache.get('BTCUSDT', 'rsi', { period: 14, smoothing: 'wilder' }); // Wilder (기본)
+cache.get('BTCUSDT', 'rsi', { period: 14, smoothing: 'sma' });    // Cutler
+```

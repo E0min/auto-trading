@@ -5,6 +5,7 @@ import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import Spinner from '@/components/ui/Spinner';
 import { formatPercent, formatCurrency } from '@/lib/utils';
+import { computeRiskScore, getRiskBarColor } from '@/lib/risk';
 import type { RiskStatus } from '@/types';
 
 interface RiskStatusPanelProps {
@@ -18,6 +19,7 @@ export default function RiskStatusPanel({ riskStatus, onResetDrawdown, resetLoad
 
   const drawdownPct = parseFloat(drawdownMonitor.currentDrawdown) || 0;
   const exposurePct = parseFloat(exposureGuard.utilizationPercent) || 0;
+  const riskScore = computeRiskScore(riskStatus);
 
   // Full reset 2-step confirmation state
   const [showFullResetConfirm, setShowFullResetConfirm] = useState(false);
@@ -45,6 +47,19 @@ export default function RiskStatusPanel({ riskStatus, onResetDrawdown, resetLoad
   return (
     <Card title="리스크 상태">
       <div className="space-y-4">
+        {/* Composite Risk Score */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <span className={`text-2xl font-bold ${riskScore.color}`}>
+              {riskScore.score}%
+            </span>
+            <span className={`text-sm ${riskScore.color}`}>
+              {riskScore.label}
+            </span>
+          </div>
+          <span className="text-xs text-zinc-500">종합 리스크</span>
+        </div>
+
         {/* Circuit Breaker */}
         <div>
           <div className="flex items-center justify-between mb-1">
@@ -66,9 +81,9 @@ export default function RiskStatusPanel({ riskStatus, onResetDrawdown, resetLoad
               {formatPercent(drawdownMonitor.currentDrawdown)}
             </span>
           </div>
-          <div className="w-full bg-zinc-800 rounded-full h-1.5">
+          <div className="w-full bg-zinc-800 rounded-full h-2.5" role="meter" aria-label="드로다운" aria-valuenow={drawdownPct} aria-valuemin={0} aria-valuemax={10}>
             <div
-              className={`h-1.5 rounded-full transition-all ${drawdownPct > 5 ? 'bg-red-500' : drawdownPct > 3 ? 'bg-yellow-500' : 'bg-emerald-500'}`}
+              className={`h-2.5 rounded-full transition-all ${getRiskBarColor(drawdownPct * 10)}`}
               style={{ width: `${Math.min(drawdownPct * 10, 100)}%` }}
             />
           </div>
@@ -86,9 +101,9 @@ export default function RiskStatusPanel({ riskStatus, onResetDrawdown, resetLoad
               {formatPercent(exposureGuard.utilizationPercent)}
             </span>
           </div>
-          <div className="w-full bg-zinc-800 rounded-full h-1.5">
+          <div className="w-full bg-zinc-800 rounded-full h-2.5" role="meter" aria-label="노출도" aria-valuenow={exposurePct} aria-valuemin={0} aria-valuemax={100}>
             <div
-              className={`h-1.5 rounded-full transition-all ${exposurePct > 80 ? 'bg-red-500' : exposurePct > 60 ? 'bg-yellow-500' : 'bg-emerald-500'}`}
+              className={`h-2.5 rounded-full transition-all ${getRiskBarColor(exposurePct)}`}
               style={{ width: `${Math.min(exposurePct, 100)}%` }}
             />
           </div>

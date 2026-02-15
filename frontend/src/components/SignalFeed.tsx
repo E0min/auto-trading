@@ -2,7 +2,7 @@
 
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
-import { formatSymbol, formatTime, translateSide } from '@/lib/utils';
+import { formatSymbol, formatTime, translateSide, translateRejectReason } from '@/lib/utils';
 import type { Signal } from '@/types';
 
 interface SignalFeedProps {
@@ -44,9 +44,19 @@ export default function SignalFeed({ signals }: SignalFeedProps) {
                   {Math.round(signal.confidence * 100)}%
                 </span>
                 {signal.riskApproved !== null && (
-                  <Badge variant={signal.riskApproved ? 'success' : 'danger'} dot>
-                    {signal.riskApproved ? '승인' : '거부'}
-                  </Badge>
+                  <div className="flex items-center gap-1.5">
+                    <Badge variant={signal.riskApproved ? 'success' : 'danger'} dot>
+                      {signal.riskApproved ? '승인' : '거부'}
+                    </Badge>
+                    {!signal.riskApproved && signal.rejectReason && (
+                      <span
+                        className="text-[10px] text-red-400/70 max-w-[160px] truncate"
+                        title={signal.rejectReason}
+                      >
+                        {translateRejectReason(signal.rejectReason)}
+                      </span>
+                    )}
+                  </div>
                 )}
                 <span className="text-zinc-600">
                   {formatTime(signal.createdAt)}

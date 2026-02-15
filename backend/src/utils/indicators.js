@@ -122,12 +122,81 @@ function emaStep(prevEma, price, period, k) {
 // ---------------------------------------------------------------------------
 
 /**
- * Relative Strength Index.
+ * Relative Strength Index with selectable smoothing method.
+ *
+ * Default is Wilder's smoothing (exponential), which is the industry standard.
+ * Pass `{ smoothing: 'sma' }` in opts to use the legacy Cutler's RSI (SMA-based).
+ *
  * @param {string[]} prices — at least period + 1 values
  * @param {number}   period — default 14
+ * @param {object}   [opts={}]
+ * @param {string}   [opts.smoothing='wilder'] — 'wilder' (default) or 'sma'
  * @returns {string|null} RSI as String (0–100)
  */
-function rsi(prices, period = 14) {
+function rsi(prices, period = 14, opts = {}) {
+  const smoothing = opts.smoothing || 'wilder';
+
+  if (prices.length < period + 1) return null;
+
+  if (smoothing === 'sma') {
+    // Legacy Cutler's RSI
+    return _rsiCutler(prices, period);
+  }
+
+  // --- Wilder's RSI ---
+  // 1. Seed with SMA of first period changes
+  let avgGain = '0';
+  let avgLoss = '0';
+
+  for (let i = 0; i < period; i++) {
+    const diff = subtract(prices[i + 1], prices[i]);
+    if (isGreaterThan(diff, '0')) {
+      avgGain = add(avgGain, diff);
+    } else if (isLessThan(diff, '0')) {
+      avgLoss = add(avgLoss, abs(diff));
+    }
+  }
+
+  avgGain = divide(avgGain, String(period));
+  avgLoss = divide(avgLoss, String(period));
+
+  // 2. Wilder smoothing over remaining prices
+  const pMinus1 = String(period - 1);
+  const pStr = String(period);
+
+  for (let i = period + 1; i < prices.length; i++) {
+    const diff = subtract(prices[i], prices[i - 1]);
+    let currentGain = '0';
+    let currentLoss = '0';
+
+    if (isGreaterThan(diff, '0')) {
+      currentGain = diff;
+    } else if (isLessThan(diff, '0')) {
+      currentLoss = abs(diff);
+    }
+
+    avgGain = divide(add(multiply(avgGain, pMinus1), currentGain), pStr);
+    avgLoss = divide(add(multiply(avgLoss, pMinus1), currentLoss), pStr);
+  }
+
+  if (!isGreaterThan(avgLoss, '0')) return '100';
+  if (!isGreaterThan(avgGain, '0')) return '0';
+
+  const rs = divide(avgGain, avgLoss);
+  const rsiVal = subtract('100', divide('100', add('1', rs)));
+  return toFixed(rsiVal, 4);
+}
+
+/**
+ * Cutler's RSI — SMA-based (legacy implementation).
+ * Uses only the last `period` price changes.
+ *
+ * @param {string[]} prices
+ * @param {number}   period
+ * @returns {string|null}
+ * @private
+ */
+function _rsiCutler(prices, period) {
   if (prices.length < period + 1) return null;
 
   const startIdx = prices.length - period - 1;

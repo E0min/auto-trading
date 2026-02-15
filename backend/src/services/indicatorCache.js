@@ -242,7 +242,7 @@ function computeIndicator(store, indicator, params) {
 
   switch (indicator) {
     case 'rsi':
-      return rsi(closes, params.period || 14);
+      return rsi(closes, params.period || 14, { smoothing: params.smoothing || 'wilder' });
 
     case 'atr':
       return atr(klines, params.period || 14);

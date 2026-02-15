@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { tradeApi } from '@/lib/api-client';
+import { useAdaptivePolling } from './useAdaptivePolling';
 import type { Trade } from '@/types';
+import type { BotState } from '@/types';
 
-export function useTrades(sessionId?: string | null, pollInterval = 10000) {
+export function useTrades(sessionId?: string | null, botState: BotState = 'idle') {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [openTrades, setOpenTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,11 +28,7 @@ export function useTrades(sessionId?: string | null, pollInterval = 10000) {
     }
   }, [sessionId]);
 
-  useEffect(() => {
-    fetchTrades();
-    const interval = setInterval(fetchTrades, pollInterval);
-    return () => clearInterval(interval);
-  }, [fetchTrades, pollInterval]);
+  useAdaptivePolling(fetchTrades, 'trades', botState);
 
   return { trades, openTrades, loading, error, refetch: fetchTrades };
 }

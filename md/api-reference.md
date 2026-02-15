@@ -6,6 +6,7 @@
 - **응답 규약**: `{ success: boolean, data: T, error?: string }`
 - **인증**: 없음 (로컬 전용)
 - **Content-Type**: `application/json`
+- **Rate Limiting** (Sprint R4): 인메모리 슬라이딩 윈도우. Critical(10/분), Standard(60/분), Heavy(3/분). 초과 시 429 응답 + `retryAfter` 헤더. `/api/bot/emergency-stop`, `/api/health/*` 제외.
 
 ---
 

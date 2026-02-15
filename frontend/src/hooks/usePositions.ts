@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { tradeApi } from '@/lib/api-client';
+import { useAdaptivePolling } from './useAdaptivePolling';
 import type { Position, AccountState } from '@/types';
+import type { BotState } from '@/types';
 
 const DEFAULT_ACCOUNT: AccountState = {
   equity: '0',
@@ -10,7 +12,7 @@ const DEFAULT_ACCOUNT: AccountState = {
   unrealizedPnl: '0',
 };
 
-export function usePositions(pollInterval = 5000) {
+export function usePositions(botState: BotState = 'idle') {
   const [positions, setPositions] = useState<Position[]>([]);
   const [accountState, setAccountState] = useState<AccountState>(DEFAULT_ACCOUNT);
   const [loading, setLoading] = useState(true);
@@ -29,11 +31,7 @@ export function usePositions(pollInterval = 5000) {
     }
   }, []);
 
-  useEffect(() => {
-    fetchPositions();
-    const interval = setInterval(fetchPositions, pollInterval);
-    return () => clearInterval(interval);
-  }, [fetchPositions, pollInterval]);
+  useAdaptivePolling(fetchPositions, 'positions', botState);
 
   return { positions, accountState, loading, error, refetch: fetchPositions };
 }

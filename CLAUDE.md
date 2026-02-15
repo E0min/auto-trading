@@ -48,7 +48,7 @@ npm run lint     # ESLint
 ```
 exchangeClient (싱글턴) → riskEngine → orderManager/positionManager
 → marketData → tickerAggregator → coinSelector/marketRegime
-→ indicatorCache/strategyRouter/signalFilter → botService (오케스트레이터)
+→ indicatorCache/fundingDataService/strategyRouter/signalFilter → botService (오케스트레이터)
 ```
 모든 API 라우트 파일은 팩토리 함수를 export: `createBotRoutes({ botService, riskEngine })`
 

@@ -17,6 +17,7 @@ interface SocketState {
 
 export function useSocket() {
   const socketRef = useRef<Socket | null>(null);
+  const tickerRef = useRef<Record<string, { lastPrice: string; volume24h: string }>>({});
   const [state, setState] = useState<SocketState>({
     connected: false,
     signals: [],
@@ -40,15 +41,13 @@ export function useSocket() {
       setState(prev => ({ ...prev, connected: false }));
     };
 
-    const handleSignalGenerated = (signal: Signal) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handleSignalGenerated = (data: any) => {
+      const signal: Signal = data.signal || data;
       setState(prev => ({
         ...prev,
         signals: [signal, ...prev.signals].slice(0, 50),
       }));
-    };
-
-    const handlePositionUpdated = (data: { positions: Position[] }) => {
-      setState(prev => ({ ...prev, positions: data.positions }));
     };
 
     const handleRegimeChange = (data: MarketRegimeData) => {
@@ -69,14 +68,12 @@ export function useSocket() {
       }));
     };
 
+    // T2-6: Use ref for ticker to prevent re-renders on every tick
     const handleTicker = (data: { symbol: string; lastPrice: string; volume24h: string }) => {
-      setState(prev => ({
-        ...prev,
-        lastTicker: {
-          ...prev.lastTicker,
-          [data.symbol]: { lastPrice: data.lastPrice, volume24h: data.volume24h },
-        },
-      }));
+      tickerRef.current = {
+        ...tickerRef.current,
+        [data.symbol]: { lastPrice: data.lastPrice, volume24h: data.volume24h },
+      };
     };
 
     const handleCircuitBreak = (data: RiskEvent) => {
@@ -134,7 +131,6 @@ export function useSocket() {
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
     socket.on(SOCKET_EVENTS.SIGNAL_GENERATED, handleSignalGenerated);
-    socket.on(SOCKET_EVENTS.POSITION_UPDATED, handlePositionUpdated);
     socket.on(SOCKET_EVENTS.REGIME_CHANGE, handleRegimeChange);
     socket.on(SOCKET_EVENTS.SYMBOL_REGIME_UPDATE, handleSymbolRegimeUpdate);
     socket.on(SOCKET_EVENTS.TICKER, handleTicker);
@@ -150,7 +146,6 @@ export function useSocket() {
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
       socket.off(SOCKET_EVENTS.SIGNAL_GENERATED, handleSignalGenerated);
-      socket.off(SOCKET_EVENTS.POSITION_UPDATED, handlePositionUpdated);
       socket.off(SOCKET_EVENTS.REGIME_CHANGE, handleRegimeChange);
       socket.off(SOCKET_EVENTS.SYMBOL_REGIME_UPDATE, handleSymbolRegimeUpdate);
       socket.off(SOCKET_EVENTS.TICKER, handleTicker);
@@ -172,5 +167,5 @@ export function useSocket() {
     setState(prev => ({ ...prev, riskEvents: [] }));
   }, []);
 
-  return { ...state, clearSignals, clearRiskEvents };
+  return { ...state, tickerRef, clearSignals, clearRiskEvents };
 }

@@ -325,6 +325,37 @@ class FundingRateStrategy extends StrategyBase {
   }
 
   /**
+   * Called when funding data is received from FundingDataService (T2-4).
+   * Updates _fundingRateHistory and _oiHistory with dedicated polling data.
+   *
+   * @param {{ symbol: string, fundingRate: string|null, openInterest: string|null, timestamp: number }} data
+   */
+  onFundingUpdate(data) {
+    if (data.symbol !== this._symbol) return; // Only process relevant symbol
+
+    if (data.fundingRate !== null && data.fundingRate !== undefined) {
+      this._fundingRateHistory.push({
+        rate: String(data.fundingRate),
+        timestamp: new Date(data.timestamp || Date.now()),
+      });
+      // Trim history
+      while (this._fundingRateHistory.length > this._maxHistory) {
+        this._fundingRateHistory.shift();
+      }
+    }
+
+    if (data.openInterest !== null && data.openInterest !== undefined) {
+      this._oiHistory.push({
+        oi: String(data.openInterest),
+        timestamp: new Date(data.timestamp || Date.now()),
+      });
+      while (this._oiHistory.length > this._maxHistory) {
+        this._oiHistory.shift();
+      }
+    }
+  }
+
+  /**
    * Return the most recent signal or null.
    * @returns {object|null}
    */

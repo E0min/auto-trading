@@ -7,6 +7,9 @@ const { createLogger } = require('../utils/logger');
 
 const log = createLogger('CircuitBreaker');
 
+/** Absolute cap on rapidLosses array to prevent unbounded memory growth */
+const MAX_RAPID_LOSSES = 500;
+
 /**
  * Circuit Breaker — detects consecutive losses and rapid loss clusters,
  * then triggers an automatic trading halt with a cooldown period.
@@ -57,7 +60,21 @@ class CircuitBreaker extends EventEmitter {
     if (isLessThan(trade.pnl, '0')) {
       // ---------- loss ----------
       this.consecutiveLosses += 1;
-      this.rapidLosses.push(Date.now());
+      const now = Date.now();
+      this.rapidLosses.push(now);
+
+      // In-place trim: remove entries outside the rapid-loss window
+      const windowMs = this.params.rapidLossWindow * 60 * 1000;
+      const cutoff = now - windowMs;
+      while (this.rapidLosses.length > 0 && this.rapidLosses[0] < cutoff) {
+        this.rapidLosses.shift();
+      }
+
+      // Absolute cap to prevent unbounded memory growth
+      if (this.rapidLosses.length > MAX_RAPID_LOSSES) {
+        log.warn('rapidLosses exceeded MAX_RAPID_LOSSES, forced trim', { count: this.rapidLosses.length });
+        this.rapidLosses = this.rapidLosses.slice(-MAX_RAPID_LOSSES);
+      }
 
       log.warn('Loss recorded', {
         pnl: trade.pnl,
@@ -72,14 +89,10 @@ class CircuitBreaker extends EventEmitter {
         return;
       }
 
-      // Check 2: rapid loss cluster within the defined window
-      const windowMs = this.params.rapidLossWindow * 60 * 1000;
-      const cutoff = Date.now() - windowMs;
-      const recentLosses = this.rapidLosses.filter((ts) => ts >= cutoff);
-
-      if (recentLosses.length >= this.params.rapidLossThreshold) {
+      // Check 2: rapid loss cluster (already trimmed to window above)
+      if (this.rapidLosses.length >= this.params.rapidLossThreshold) {
         this.trip(
-          `rapid_loss_threshold (${recentLosses.length} losses in ${this.params.rapidLossWindow} min)`,
+          `rapid_loss_threshold (${this.rapidLosses.length} losses in ${this.params.rapidLossWindow} min)`,
         );
       }
     } else {

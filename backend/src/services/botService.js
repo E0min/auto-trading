@@ -59,6 +59,7 @@ class BotService extends EventEmitter {
     regimeEvaluator,
     regimeOptimizer,
     symbolRegimeManager,
+    fundingDataService,
   }) {
     super();
 
@@ -106,6 +107,9 @@ class BotService extends EventEmitter {
 
     /** @type {import('./symbolRegimeManager')|null} */
     this.symbolRegimeManager = symbolRegimeManager || null;
+
+    /** @type {import('./fundingDataService')|null} */
+    this.fundingDataService = fundingDataService || null;
 
     /** @type {object|null} Current BotSession Mongoose document */
     this.currentSession = null;
@@ -206,7 +210,7 @@ class BotService extends EventEmitter {
       // 8. Initialize strategies from config
       this.strategies = this._createStrategies(config);
 
-      // 9. Register strategies with SignalFilter (metadata for cooldown/maxConcurrent)
+      // 9. Register strategies with SignalFilter (metadata for cooldown/maxConcurrent/confidence)
       if (this.signalFilter) {
         this.signalFilter.reset();
         for (const strategy of this.strategies) {
@@ -214,6 +218,8 @@ class BotService extends EventEmitter {
           this.signalFilter.registerStrategy(strategy.name, {
             cooldownMs: meta.cooldownMs,
             maxConcurrentPositions: meta.maxConcurrentPositions,
+            riskLevel: meta.riskLevel,
+            minConfidence: meta.minConfidence,
           });
         }
       }
@@ -247,6 +253,27 @@ class BotService extends EventEmitter {
         this.symbolRegimeManager.on('symbol:regime_change', onSymbolRegimeChange);
         this._eventCleanups.push(() => {
           this.symbolRegimeManager.removeListener('symbol:regime_change', onSymbolRegimeChange);
+        });
+      }
+
+      // 10c. Start FundingDataService and wire funding updates to strategies (T2-4)
+      if (this.fundingDataService) {
+        this.fundingDataService.start(this._selectedSymbols);
+
+        const onFundingUpdate = (data) => {
+          for (const strategy of this.strategies) {
+            if (typeof strategy.onFundingUpdate === 'function') {
+              try {
+                strategy.onFundingUpdate(data);
+              } catch (err) {
+                log.error('Strategy onFundingUpdate error', { strategy: strategy.name, error: err.message });
+              }
+            }
+          }
+        };
+        this.fundingDataService.on(MARKET_EVENTS.FUNDING_UPDATE, onFundingUpdate);
+        this._eventCleanups.push(() => {
+          this.fundingDataService.removeListener(MARKET_EVENTS.FUNDING_UPDATE, onFundingUpdate);
         });
       }
 
@@ -466,7 +493,16 @@ class BotService extends EventEmitter {
       }
     }
 
-    // 3c. Stop symbolRegimeManager
+    // 3c. Stop fundingDataService (T2-4)
+    if (this.fundingDataService) {
+      try {
+        this.fundingDataService.stop();
+      } catch (err) {
+        log.error('stop — error stopping fundingDataService', { error: err });
+      }
+    }
+
+    // 3d. Stop symbolRegimeManager
     if (this.symbolRegimeManager) {
       try {
         this.symbolRegimeManager.stop();
@@ -797,6 +833,10 @@ class BotService extends EventEmitter {
       if (this.indicatorCache) {
         strategy.setIndicatorCache(this.indicatorCache);
       }
+      // Inject account context so strategies can access live equity (T2-5)
+      strategy.setAccountContext({
+        getEquity: () => this.riskEngine ? this.riskEngine.getAccountState().equity || '0' : '0',
+      });
 
       // Register with SignalFilter
       if (this.signalFilter) {
@@ -804,6 +844,8 @@ class BotService extends EventEmitter {
         this.signalFilter.registerStrategy(name, {
           cooldownMs: meta.cooldownMs,
           maxConcurrentPositions: meta.maxConcurrentPositions,
+          riskLevel: meta.riskLevel,
+          minConfidence: meta.minConfidence,
         });
       }
 
@@ -912,6 +954,10 @@ class BotService extends EventEmitter {
         if (this.indicatorCache) {
           strategy.setIndicatorCache(this.indicatorCache);
         }
+        // Inject account context so strategies can access live equity (T2-5)
+        strategy.setAccountContext({
+          getEquity: () => this.riskEngine ? this.riskEngine.getAccountState().equity || '0' : '0',
+        });
         strategies.push(strategy);
         log.info('_createStrategies — strategy created', { name });
       } catch (err) {

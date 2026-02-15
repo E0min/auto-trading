@@ -19,6 +19,7 @@
 
 const { EventEmitter } = require('events');
 const { createLogger } = require('../utils/logger');
+const { isLessThan } = require('../utils/mathUtils');
 
 const log = createLogger('SignalFilter');
 
@@ -88,6 +89,7 @@ class SignalFilter extends EventEmitter {
     this._strategyMeta.set(name, {
       cooldownMs: meta.cooldownMs || DEFAULT_COOLDOWN_MS,
       maxConcurrentPositions: meta.maxConcurrentPositions || DEFAULT_MAX_CONCURRENT,
+      minConfidence: meta.minConfidence || this._getDefaultMinConfidence(meta.riskLevel),
     });
   }
 
@@ -145,6 +147,13 @@ class SignalFilter extends EventEmitter {
     if (!conflictResult.passed) {
       this._block(signal, conflictResult.reason);
       return conflictResult;
+    }
+
+    // --- Filter 5: Confidence threshold (T2-2) ---
+    const confidenceResult = this._checkConfidence(strategy, signal.confidence);
+    if (!confidenceResult.passed) {
+      this._block(signal, confidenceResult.reason);
+      return confidenceResult;
     }
 
     // All checks passed
@@ -255,6 +264,47 @@ class SignalFilter extends EventEmitter {
       }
     }
 
+    return { passed: true, reason: null };
+  }
+
+  /**
+   * Return a default minimum confidence threshold based on risk level.
+   * @param {string|undefined} riskLevel
+   * @returns {string}
+   * @private
+   */
+  _getDefaultMinConfidence(riskLevel) {
+    switch (riskLevel) {
+      case 'low': return '0.50';
+      case 'high': return '0.60';
+      case 'medium':
+      default: return '0.55';
+    }
+  }
+
+  /**
+   * Check signal confidence against strategy's minimum threshold.
+   * Signals without confidence values pass through (backward compatible).
+   * @param {string} strategy
+   * @param {string|number|undefined} confidence
+   * @returns {{ passed: boolean, reason: string|null }}
+   * @private
+   */
+  _checkConfidence(strategy, confidence) {
+    const meta = this._strategyMeta.get(strategy);
+    const minConfidence = meta ? (meta.minConfidence || '0.55') : '0.55';
+
+    if (confidence === undefined || confidence === null) {
+      return { passed: true, reason: null };
+    }
+
+    const confStr = String(confidence);
+    if (isLessThan(confStr, minConfidence)) {
+      return {
+        passed: false,
+        reason: `low_confidence: ${strategy} confidence ${confStr} < threshold ${minConfidence}`,
+      };
+    }
     return { passed: true, reason: null };
   }
 

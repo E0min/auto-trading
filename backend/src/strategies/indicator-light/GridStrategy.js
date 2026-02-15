@@ -506,7 +506,7 @@ class GridStrategy extends StrategyBase {
    * @returns {string} quantity as a fixed-precision string
    */
   _calculatePerLevelQty(price) {
-    const equity = this.config.equity || '0';
+    const equity = this.getEquity();
     if (equity === '0' || !price || price === '0') {
       return '0';
     }

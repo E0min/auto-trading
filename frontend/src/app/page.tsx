@@ -18,6 +18,7 @@ import AccountOverview from '@/components/AccountOverview';
 import RiskStatusPanel from '@/components/RiskStatusPanel';
 import SymbolRegimeTable from '@/components/SymbolRegimeTable';
 import EquityCurveChart from '@/components/EquityCurveChart';
+import DrawdownChart from '@/components/DrawdownChart';
 import PositionsTable from '@/components/PositionsTable';
 import SignalFeed from '@/components/SignalFeed';
 import TradesTable from '@/components/TradesTable';
@@ -66,12 +67,12 @@ export default function Dashboard() {
     accountState,
     loading: positionsLoading,
     refetch: refetchPositions,
-  } = usePositions();
+  } = usePositions(botStatus.status);
 
   const {
     trades,
     loading: tradesLoading,
-  } = useTrades(botStatus.sessionId);
+  } = useTrades(botStatus.sessionId, botStatus.status);
 
   const {
     equityCurve,
@@ -229,8 +230,13 @@ export default function Dashboard() {
             onResetDrawdown={handleResetDrawdown}
             resetLoading={resetLoading}
           />
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 space-y-4">
             <EquityCurveChart data={equityCurve} loading={analyticsLoading} />
+            {/* Drawdown Chart — synced below equity curve */}
+            <DrawdownChart
+              equityPoints={equityCurve || []}
+              maxDrawdownPercent={10}
+            />
           </div>
         </div>
 

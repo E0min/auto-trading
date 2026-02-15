@@ -33,8 +33,8 @@ const log = createLogger('BacktestEngine');
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Percentage of available cash used per trade (backtest simplification) */
-const DEFAULT_POSITION_SIZE_PCT = '95';
+/** Percentage of available cash used per trade (strategy-metadata aware) */
+const DEFAULT_POSITION_SIZE_PCT = '15';
 
 /** Max kline history kept in the backtest indicator cache */
 const BT_MAX_HISTORY = 500;
@@ -255,6 +255,9 @@ class BacktestEngine {
     // 2. Create and configure strategy instance
     this._strategy = this._createStrategy();
 
+    // 2b. Cache position-size percentage from strategy metadata (T2-3)
+    this._positionSizePct = this._getPositionSizePercent();
+
     // 3. Bind signal listener
     const onSignal = (signal) => {
       this._pendingSignals.push(signal);
@@ -387,6 +390,11 @@ class BacktestEngine {
     this._backtestCache = new BacktestIndicatorCache();
     strategy.setIndicatorCache(this._backtestCache);
 
+    // Inject account context so strategies can access backtest equity (T2-5)
+    strategy.setAccountContext({
+      getEquity: () => this._cash,
+    });
+
     // Activate for the backtest symbol
     strategy.activate(this.symbol);
 
@@ -396,6 +404,37 @@ class BacktestEngine {
     }
 
     return strategy;
+  }
+
+  /**
+   * Determine position-size percentage from strategy metadata (T2-3).
+   *
+   * Priority:
+   *   1. Explicit positionSizePercent in defaultConfig
+   *   2. totalBudgetPercent (grid strategies)
+   *   3. riskLevel-based fallback
+   *   4. DEFAULT_POSITION_SIZE_PCT
+   *
+   * @returns {string} position-size percentage
+   * @private
+   */
+  _getPositionSizePercent() {
+    const metadata = registry.getMetadata(this.strategyName);
+    if (!metadata) return DEFAULT_POSITION_SIZE_PCT;
+
+    const config = metadata.defaultConfig || {};
+
+    // Priority 1: explicit positionSizePercent
+    if (config.positionSizePercent) return String(config.positionSizePercent);
+    // Priority 2: totalBudgetPercent (grid strategies)
+    if (config.totalBudgetPercent) return String(config.totalBudgetPercent);
+    // Priority 3: riskLevel-based fallback
+    switch (metadata.riskLevel) {
+      case 'low': return '10';
+      case 'medium': return '15';
+      case 'high': return '8';
+      default: return DEFAULT_POSITION_SIZE_PCT;
+    }
   }
 
   // =========================================================================
@@ -419,7 +458,7 @@ class BacktestEngine {
    * Execute a virtual order based on the strategy signal.
    *
    * Applies slippage to simulate realistic fills and deducts taker fees.
-   * Position sizing uses a fixed percentage (95%) of available cash.
+   * Position sizing uses a metadata-based percentage of available cash.
    *
    * @param {Object} signal — { action, symbol, ... }
    * @param {Object} kline  — current kline for price and timestamp
@@ -465,7 +504,7 @@ class BacktestEngine {
    *
    * - Skips if already in a position
    * - Applies upward slippage (unfavorable for buyer)
-   * - Uses 95% of available cash for position sizing
+   * - Uses strategy-metadata-based % of available cash for position sizing
    * - Deducts notional cost + taker fee from cash
    *
    * @param {Object} kline — current kline
@@ -488,8 +527,8 @@ class BacktestEngine {
     // Fill price: slippage applied upward (worse for buyer)
     const fillPrice = math.multiply(kline.close, math.add('1', this.slippage));
 
-    // Position value: 95% of available cash
-    const positionValue = math.multiply(this._cash, math.divide(DEFAULT_POSITION_SIZE_PCT, '100'));
+    // Position value: metadata-based % of available cash (T2-3)
+    const positionValue = math.multiply(this._cash, math.divide(this._positionSizePct, '100'));
 
     // Quantity
     const qty = math.divide(positionValue, fillPrice);
@@ -528,7 +567,7 @@ class BacktestEngine {
    *
    * - Skips if already in a position
    * - Applies downward slippage (unfavorable for short seller)
-   * - Uses 95% of available cash as margin/collateral
+   * - Uses strategy-metadata-based % of available cash as margin/collateral
    * - Deducts notional cost + taker fee from cash
    *
    * @param {Object} kline — current kline
@@ -551,8 +590,8 @@ class BacktestEngine {
     // Fill price: slippage applied downward (worse for short seller)
     const fillPrice = math.multiply(kline.close, math.subtract('1', this.slippage));
 
-    // Position value: 95% of available cash
-    const positionValue = math.multiply(this._cash, math.divide(DEFAULT_POSITION_SIZE_PCT, '100'));
+    // Position value: metadata-based % of available cash (T2-3)
+    const positionValue = math.multiply(this._cash, math.divide(this._positionSizePct, '100'));
 
     // Quantity
     const qty = math.divide(positionValue, fillPrice);

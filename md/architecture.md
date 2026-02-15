@@ -16,15 +16,16 @@
 7. coinSelector                 ← { exchangeClient, tickerAggregator }
 8. marketRegime                 ← { marketData, tickerAggregator }
 9. indicatorCache               ← { marketData }
-10. strategyRouter              ← { marketRegime }
-11. signalFilter                ← (독립)
-12. regimeParamStore            ← (독립)
-13. regimeEvaluator             ← { marketRegime, marketData }
-14. regimeOptimizer             ← { exchangeClient, regimeParamStore }
-15. paperEngine                 ← { marketData } (페이퍼 모드 시)
-16. paperPositionManager        ← (페이퍼 모드 시)
-17. paperAccountManager         ← { paperEngine } (토너먼트 모드 시)
-18. botService (오케스트레이터) ← { 위 모든 서비스 }
+10. fundingDataService          ← { exchangeClient }
+11. strategyRouter              ← { marketRegime }
+12. signalFilter                ← (독립)
+13. regimeParamStore            ← (독립)
+14. regimeEvaluator             ← { marketRegime, marketData }
+15. regimeOptimizer             ← { exchangeClient, regimeParamStore }
+16. paperEngine                 ← { marketData } (페이퍼 모드 시)
+17. paperPositionManager        ← (페이퍼 모드 시)
+18. paperAccountManager         ← { paperEngine } (토너먼트 모드 시)
+19. botService (오케스트레이터) ← { 위 모든 서비스 }
 ```
 
 ### API 라우트 팩토리
@@ -43,6 +44,18 @@ module.exports = function createBotRoutes({ botService, riskEngine }) {
 app.use('/api/bot', createBotRoutes({ botService, riskEngine }));
 app.use('/api/risk', createRiskRoutes({ riskEngine }));
 ```
+
+### API Rate Limiting (Sprint R4)
+
+3-tier 인메모리 슬라이딩 윈도우 rate limiter가 적용되어 있습니다:
+
+| Tier | 대상 | 제한 |
+|------|------|------|
+| Critical | `/api/bot/start`, `/api/bot/stop`, `/api/bot/emergency-stop`, `/api/bot/trading-mode` (POST) | 10/분 |
+| Standard | 기타 모든 API | 60/분 |
+| Heavy | `/api/backtest/run` | 3/분 |
+
+**제외**: `/api/bot/emergency-stop`은 항상 통과 (안전을 위해), `/api/health/*`도 제외.
 
 ### 프로세스 안정성 (Sprint R3)
 
@@ -120,6 +133,7 @@ process.on('uncaughtException', (err) => { /* 로깅 후 safeShutdown() */ });
 | `market:regime_change` | marketRegime | strategyRouter, botService, regimeEvaluator | 시장 레짐 변경 |
 | `symbol:regime_change` | marketRegime | botService (→ Socket.io) | 개별 심볼 레짐 변경 |
 | `market:coin_selected` | coinSelector | botService | 코인 선정 완료 |
+| `funding:update` | fundingDataService | strategies (onFundingUpdate) | 펀딩비/OI 데이터 업데이트 (Sprint R4) |
 
 #### TRADE_EVENTS — 매매 이벤트
 | 이벤트 | 발신 서비스 | 수신 서비스 | 설명 |

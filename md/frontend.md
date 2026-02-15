@@ -109,12 +109,13 @@
 
 | 훅 | 파일 | 폴링 간격 | 용도 |
 |----|------|----------|------|
-| `useBotStatus` | `hooks/useBotStatus.ts` | 5초 | 봇 상태, 전략, 리스크 메트릭 |
-| `useSocket` | `hooks/useSocket.ts` | 이벤트 기반 | 실시간 시그널, 포지션, 레짐, circuit_reset, exposure_adjusted, unhandled_error, drawdown_reset |
-| `usePositions` | `hooks/usePositions.ts` | 5초 | 오픈 포지션 + 계정 상태 |
-| `useTrades` | `hooks/useTrades.ts` | 10초 | 거래 내역 + 미체결 주문 |
+| `useBotStatus` | `hooks/useBotStatus.ts` | 적응형 (5~60초) | 봇 상태, 전략, 리스크 메트릭 |
+| `useSocket` | `hooks/useSocket.ts` | 이벤트 기반 | 실시간 시그널, 레짐, circuit_reset, exposure_adjusted, unhandled_error, drawdown_reset (ticker는 useRef) |
+| `usePositions` | `hooks/usePositions.ts` | 적응형 (3~60초) | 오픈 포지션 + 계정 상태 |
+| `useTrades` | `hooks/useTrades.ts` | 적응형 (10~60초) | 거래 내역 + 미체결 주문 |
 | `useAnalytics` | `hooks/useAnalytics.ts` | 1회 | 자산 곡선 + 세션 통계 |
-| `useHealthCheck` | `hooks/useHealthCheck.ts` | 30초 | API 지연, 서비스 상태 |
+| `useHealthCheck` | `hooks/useHealthCheck.ts` | 적응형 (30~120초) | API 지연, 서비스 상태 |
+| `useAdaptivePolling` | `hooks/useAdaptivePolling.ts` | 봇 상태별 동적 | 적응형 폴링 코어 (Sprint R4) |
 | `useBacktest` | `hooks/useBacktest.ts` | 1초 (실행 중) | 백테스트 CRUD + 결과 폴링 |
 | `useTournament` | `hooks/useTournament.ts` | 3초 | 토너먼트 정보 + 순위표 |
 | `useRiskEvents` | `hooks/useRiskEvents.ts` | 이벤트 기반 | 리스크 이벤트 조회/확인 처리 |
@@ -176,13 +177,14 @@ getSocket()      // 현재 소켓 인스턴스 조회 (없으면 null)
 | `TradingModeToggle` | 라이브/페이퍼 모드 전환 |
 | `StrategyPanel` | 전략 선택기 (3단 필터: 카테고리, 방향, 변동성) |
 | `AccountOverview` | 자산, 잔고, 미실현 PnL |
-| `RiskStatusPanel` | 서킷 브레이커, 노출, 낙폭 지표 (Sprint R3: 낙폭 리셋 버튼 추가) |
+| `RiskStatusPanel` | 서킷 브레이커, 노출, 낙폭 지표 + 복합 리스크 점수 (Sprint R4: DD 40% + Exp 30% + CB 30%, 색상 코딩) |
 | `MarketRegimeIndicator` | 현재 시장 레짐 배지 + 신뢰도 |
 | `SymbolRegimeTable` | 심볼별 레짐 분류 테이블 |
 | `RegimeStrategyRecommendation` | 현재 레짐에 맞는 전략 추천 |
 | `EquityCurveChart` | Recharts 자산 곡선 |
+| `DrawdownChart` | Drawdown 시각화 차트 (Sprint R4: 접기/펼치기 토글, 경고/한계선 참조선, 빨간 그래디언트) |
 | `PositionsTable` | 오픈 포지션 (진입가, 현재가, 미실현 PnL, Sprint R3: 수동 청산 버튼 추가) |
-| `SignalFeed` | 실시간 시그널 피드 (최대 50개, 최신순) |
+| `SignalFeed` | 실시간 시그널 피드 (최대 50개, 최신순, Sprint R4: rejectReason 표시) |
 | `TradesTable` | 거래 내역 + 페이지네이션 |
 | `SystemHealth` | API 상태, 지연, 소켓 연결 |
 | `ClientGate` | 서버/클라이언트 경계 안전 컴포넌트 |
@@ -263,6 +265,7 @@ translateSide('buy')               // → '매수'
 translateRegime('trending_up')     // → '상승장'
 translateStrategyName('TurtleBreakoutStrategy') // → '터틀 돌파'
 getStrategyCategory('GridStrategy') // → 'indicator-light'
+translateRejectReason('confidence_too_low')     // → '신뢰도 부족' (Sprint R4)
 ```
 
 ### 전략 카테고리 매핑
@@ -328,14 +331,28 @@ getStrategyCategory('GridStrategy') // → 'indicator-light'
 
 ### 우선순위
 
-1. **Socket.io** — 시그널, 포지션, 레짐 변경 (실시간)
-2. **REST 폴링** — 봇 상태(5초), 포지션(5초), 거래(10초), 헬스(30초)
+1. **Socket.io** — 시그널, 레짐 변경 (실시간, ticker는 useRef로 렌더링 최적화)
+2. **적응형 REST 폴링 (Sprint R4)** — 봇 상태별 간격 자동 조절 + Page Visibility API
 3. **1회성 조회** — 분석 데이터 (세션 변경 시)
+
+### 적응형 폴링 (Sprint R4)
+
+`useAdaptivePolling` 훅이 봇 상태와 탭 가시성에 따라 폴링 간격을 자동 조절합니다:
+
+| 훅 | idle | running | riskHalted | 탭 비활성 |
+|----|------|---------|------------|----------|
+| botStatus | 30초 | 5초 | 10초 | 60초 |
+| positions | 30초 | 3초 | 10초 | 60초 |
+| trades | 30초 | 10초 | 15초 | 60초 |
+| health | 60초 | 30초 | 30초 | 120초 |
+
+- 탭 복귀 시 즉시 fetch 실행
+- Page Visibility API로 백그라운드 탭 감지
 
 ### 데이터 흐름
 
 ```
 훅(useSocket) → Socket.io 이벤트 수신 → state 업데이트 → 컴포넌트 리렌더링
-훅(useBotStatus) → setInterval 폴링 → API 호출 → state 업데이트 → 리렌더링
+훅(useBotStatus) → useAdaptivePolling → API 호출 → state 업데이트 → 리렌더링
 페이지 → 훅 사용 → 직접 API 호출 없음
 ```

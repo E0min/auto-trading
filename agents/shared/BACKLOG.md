@@ -47,18 +47,18 @@
 
 | ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
 |----|--------|------|------|--------|--------|------|
-| T2-1 | P2 | Backend | RSI Wilder smoothing 구현 (smoothing param 추가) | T:H2 | R1 | agreed |
-| T2-2 | P2 | Backend | Confidence-based signal filtering (전략별 임계값) | T:H3 | R1 | agreed |
-| T2-3 | P2 | Backend | Backtest default position size 95%→전략 메타 기반 | T:H5 | R1 | agreed |
-| T2-4 | P2 | Backend | FundingRateStrategy 데이터 소스 구축 (REST polling) | T:E6 | R1 | agreed |
-| T2-5 | P2 | Backend | GridStrategy equity 주입 (DI context 패턴) | T:4.6 | R1 | agreed |
-| T2-6 | P2 | Frontend | useSocket 목적별 분리 (tickers/signals/risk/regime) | UI:FE2 | R1 | agreed |
-| T2-7 | P2 | Backend | API rate limiting (express-rate-limit) | E:E-2 | R1 | agreed |
-| T2-8 | P2 | Frontend | SignalFeed rejectReason 표시 | UI:H5 | R1 | agreed |
-| T2-9 | P2 | Backend | CircuitBreaker rapidLosses 배열 크기 제한 | E:H-4 | R1 | agreed |
-| T2-10 | P2 | Frontend | Drawdown 시각화 차트 (신규 컴포넌트) | UI:V1 | R1 | agreed |
-| T2-11 | P2 | Frontend | Risk Gauge 대시보드 (시각적 게이지) | UI:V3 | R1 | agreed |
-| T2-12 | P2 | Frontend | 적응형 폴링 (봇 상태별 간격 조절) | UI:H8 | R1 | agreed |
+| T2-1 | P2 | Backend | RSI Wilder smoothing 구현 (smoothing param 추가) | T:H2 | R1 | done |
+| T2-2 | P2 | Backend | Confidence-based signal filtering (전략별 임계값) | T:H3 | R1 | done |
+| T2-3 | P2 | Backend | Backtest default position size 95%→전략 메타 기반 | T:H5 | R1 | done |
+| T2-4 | P2 | Backend | FundingRateStrategy 데이터 소스 구축 (REST polling) | T:E6 | R1 | done |
+| T2-5 | P2 | Backend | GridStrategy equity 주입 (DI context 패턴) | T:4.6 | R1 | done |
+| T2-6 | P2 | Frontend | useSocket 목적별 분리 (tickers/signals/risk/regime) | UI:FE2 | R1 | done |
+| T2-7 | P2 | Backend | API rate limiting (express-rate-limit) | E:E-2 | R1 | done |
+| T2-8 | P2 | Frontend | SignalFeed rejectReason 표시 | UI:H5 | R1 | done |
+| T2-9 | P2 | Backend | CircuitBreaker rapidLosses 배열 크기 제한 | E:H-4 | R1 | done |
+| T2-10 | P2 | Frontend | Drawdown 시각화 차트 (신규 컴포넌트) | UI:V1 | R1 | done |
+| T2-11 | P2 | Frontend | Risk Gauge 대시보드 (시각적 게이지) | UI:V3 | R1 | done |
+| T2-12 | P2 | Frontend | 적응형 폴링 (봇 상태별 간격 조절) | UI:H8 | R1 | done |
 
 ## Tier 3 — 장기 (Enhancement)
 
@@ -78,3 +78,4 @@
 → `decisions/round_1.md` — AD-1~AD-6 참조
 → `decisions/round_2.md` — AD-7~AD-12 참조 (T0-1~T0-9 구현 세부사항)
 → `decisions/round_3.md` — AD-13~AD-17 참조 (T1-1~T1-11 구현 세부사항)
+→ `decisions/round_4.md` — AD-18~AD-24 참조 (T2-1~T2-12 구현 세부사항)

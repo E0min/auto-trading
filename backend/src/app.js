@@ -36,6 +36,7 @@ const RegimeParamStore = require('./services/regimeParamStore');
 const RegimeEvaluator = require('./services/regimeEvaluator');
 const RegimeOptimizer = require('./services/regimeOptimizer');
 const SymbolRegimeManager = require('./services/symbolRegimeManager');
+const FundingDataService = require('./services/fundingDataService');
 
 // --- Wrapper service imports ---
 const scannerService = require('./services/scannerService');
@@ -56,6 +57,7 @@ const createPaperRoutes = require('./api/paperRoutes');
 const createTournamentRoutes = require('./api/tournamentRoutes');
 const createRegimeRoutes = require('./api/regimeRoutes');
 const createRiskRoutes = require('./api/riskRoutes');
+const { createRateLimiter, stopCleanup } = require('./middleware/rateLimiter');
 
 const log = createLogger('App');
 
@@ -179,6 +181,9 @@ async function bootstrap() {
   // Per-symbol regime tracking
   const symbolRegimeManager = new SymbolRegimeManager({ marketData });
 
+  // Funding data polling service (T2-4)
+  const fundingDataService = new FundingDataService({ exchangeClient });
+
   // Determine which position manager the rest of the system should use
   const activePositionManager = PAPER_TRADING ? paperPositionManager : positionManager;
 
@@ -205,6 +210,7 @@ async function bootstrap() {
     regimeEvaluator,
     regimeOptimizer,
     symbolRegimeManager,
+    fundingDataService,
   });
 
   // 3. Initialize wrapper services
@@ -226,6 +232,44 @@ async function bootstrap() {
     if (req.method === 'OPTIONS') return res.sendStatus(200);
     next();
   });
+
+  // 5b. Rate limiters (T2-7)
+  const criticalLimiter = createRateLimiter({
+    windowMs: 60000,
+    max: 10,
+    keyPrefix: 'critical',
+    message: '봇 제어/주문 API는 분당 10회로 제한됩니다.',
+  });
+  const standardLimiter = createRateLimiter({
+    windowMs: 60000,
+    max: 60,
+    keyPrefix: 'standard',
+    message: '데이터 조회 API는 분당 60회로 제한됩니다.',
+  });
+  const heavyLimiter = createRateLimiter({
+    windowMs: 60000,
+    max: 3,
+    keyPrefix: 'heavy',
+    message: '백테스트 실행은 분당 3회로 제한됩니다.',
+  });
+
+  // 5c. Apply per-path rate limiters for critical operations
+  //     Bot control endpoints
+  app.post('/api/bot/start', criticalLimiter);
+  app.post('/api/bot/stop', criticalLimiter);
+  app.put('/api/bot/risk-params', criticalLimiter);
+  //     Trade order endpoint
+  app.post('/api/trades/order', criticalLimiter);
+  //     Backtest run (heavy)
+  app.post('/api/backtest/run', heavyLimiter);
+  //     Standard data-query limiters (applied at router level)
+  app.use('/api/bot/status', standardLimiter);
+  app.use('/api/trades', standardLimiter);
+  app.use('/api/analytics', standardLimiter);
+  app.use('/api/risk', standardLimiter);
+  app.use('/api/regime', standardLimiter);
+  //     /api/bot/emergency-stop — NO rate limit (safety)
+  //     /api/health — NO rate limit (monitoring)
 
   // 6. Mount routes
   app.use('/api/bot', createBotRoutes({ botService, riskEngine }));
@@ -416,10 +460,11 @@ async function bootstrap() {
       log.error('safeShutdown — error stopping bot', { error: err });
     }
 
-    // 3. Clear tournament interval
+    // 3. Clear tournament interval and rate-limiter cleanup
     if (leaderboardInterval) {
       clearInterval(leaderboardInterval);
     }
+    stopCleanup();
 
     // 4. Close HTTP server
     server.close(() => {

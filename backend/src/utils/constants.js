@@ -79,6 +79,7 @@ const MARKET_EVENTS = Object.freeze({
   REGIME_CHANGE: 'market:regime_change',
   SYMBOL_REGIME_CHANGE: 'symbol:regime_change',
   COIN_SELECTED: 'market:coin_selected',
+  FUNDING_UPDATE: 'funding:update',
 });
 
 const TRADE_EVENTS = Object.freeze({

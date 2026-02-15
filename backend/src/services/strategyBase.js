@@ -49,6 +49,9 @@ class StrategyBase extends EventEmitter {
     /** @type {import('./indicatorCache')|null} */
     this._indicatorCache = null;
 
+    /** @type {{ getEquity: () => string }|null} Account context for equity injection */
+    this._accountContext = null;
+
     this._log = createLogger(`Strategy:${name}`);
   }
 
@@ -203,6 +206,39 @@ class StrategyBase extends EventEmitter {
    */
   setIndicatorCache(cache) {
     this._indicatorCache = cache;
+  }
+
+  /**
+   * Inject account context for equity access via DI.
+   * Called by BotService / BacktestEngine after strategy creation.
+   *
+   * @param {{ getEquity: () => string }} context
+   */
+  setAccountContext(context) {
+    this._accountContext = context;
+  }
+
+  /**
+   * Get current equity from injected account context, falling back
+   * to config.equity.
+   *
+   * @returns {string} equity value
+   */
+  getEquity() {
+    if (this._accountContext && typeof this._accountContext.getEquity === 'function') {
+      return this._accountContext.getEquity();
+    }
+    return this.config.equity || '0';
+  }
+
+  /**
+   * Called when funding rate data is received from FundingDataService.
+   * Override in strategies that need funding data.
+   *
+   * @param {{ symbol: string, fundingRate: string|null, openInterest: string|null, timestamp: number }} data
+   */
+  onFundingUpdate(data) {
+    // No-op by default; sub-classes may override.
   }
 
   /**
