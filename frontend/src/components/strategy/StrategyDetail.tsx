@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Tabs, TabList, Tab, TabPanel } from '@/components/ui/Tabs';
 import Spinner from '@/components/ui/Spinner';
 import { useStrategyDetail } from '@/hooks/useStrategyDetail';
@@ -29,6 +29,13 @@ export default function StrategyDetail({
   positions,
 }: StrategyDetailProps) {
   const { stats, loading, error } = useStrategyDetail(strategyName, sessionId);
+  const [showAll, setShowAll] = useState(false);
+
+  // Filter positions for this strategy
+  const filteredPositions = useMemo(() => {
+    if (showAll) return positions;
+    return positions.filter((p) => p.strategy === strategyName);
+  }, [positions, strategyName, showAll]);
 
   // Filter realtime signals for this strategy and merge with API signals
   const mergedSignals = useMemo(() => {
@@ -81,7 +88,7 @@ export default function StrategyDetail({
 
         {/* Positions tab */}
         <TabPanel value="positions">
-          {positions.length > 0 ? (
+          {filteredPositions.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
@@ -95,7 +102,7 @@ export default function StrategyDetail({
                   </tr>
                 </thead>
                 <tbody>
-                  {positions.map((p) => (
+                  {filteredPositions.map((p) => (
                     <tr key={`${p.symbol}-${p.posSide}`} className="border-b border-[var(--border-subtle)]/30">
                       <td className="py-1.5 pr-2 text-[var(--text-primary)] font-medium">
                         {formatSymbol(p.symbol)}
@@ -126,12 +133,29 @@ export default function StrategyDetail({
                   ))}
                 </tbody>
               </table>
-              <p className="text-[10px] text-[var(--text-muted)] mt-1.5">
-                * 전략별 포지션 구분 불가 — 전체 활성 포지션 표시
-              </p>
+              <button
+                type="button"
+                onClick={() => setShowAll((v) => !v)}
+                className="text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] mt-1.5 transition-colors"
+              >
+                {showAll
+                  ? `* 전체 포지션 표시 중 (${positions.length}건) — 이 전략만 보기`
+                  : `* 이 전략의 포지션만 표시 (${filteredPositions.length}/${positions.length}건) — 전체 보기`}
+              </button>
             </div>
           ) : (
-            <p className="text-xs text-[var(--text-muted)] py-3 text-center">활성 포지션이 없습니다.</p>
+            <div className="py-3 text-center">
+              <p className="text-xs text-[var(--text-muted)]">이 전략의 활성 포지션이 없습니다.</p>
+              {positions.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAll(true)}
+                  className="text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] mt-1 transition-colors"
+                >
+                  전체 포지션 보기 ({positions.length}건)
+                </button>
+              )}
+            </div>
           )}
         </TabPanel>
 

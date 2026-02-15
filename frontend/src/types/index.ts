@@ -94,6 +94,7 @@ export interface Position {
   liquidationPrice: string;
   margin: string;
   stopLossPrice?: string;
+  strategy?: string | null;
 }
 
 // Account types

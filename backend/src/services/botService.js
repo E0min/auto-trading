@@ -932,11 +932,78 @@ class BotService extends EventEmitter {
       strategy.removeAllListeners(TRADE_EVENTS.SIGNAL_GENERATED);
       this.strategies.splice(idx, 1);
 
+      // Close all positions opened by this strategy
+      this._closeStrategyPositions(name);
+
       log.info('disableStrategy — strategy disabled', { name });
       return true;
     } catch (err) {
       log.error('disableStrategy — failed', { name, error: err });
       return false;
+    }
+  }
+
+  /**
+   * Close all positions belonging to a strategy by placing market close orders.
+   * Also cancels any pending limit orders and stop-loss triggers for the strategy.
+   *
+   * @param {string} strategyName
+   * @private
+   */
+  _closeStrategyPositions(strategyName) {
+    const positionManager = this.paperMode ? this.paperPositionManager : this.positionManager;
+    if (!positionManager) return;
+
+    const positions = positionManager.getPositions();
+    const strategyPositions = positions.filter((p) => p.strategy === strategyName);
+
+    if (strategyPositions.length === 0) {
+      log.info('_closeStrategyPositions — no open positions for strategy', { strategyName });
+      return;
+    }
+
+    log.info('_closeStrategyPositions — closing positions', {
+      strategyName,
+      count: strategyPositions.length,
+    });
+
+    // Cancel pending limit orders and SL triggers for this strategy (paper mode)
+    if (this.paperMode && this.paperEngine) {
+      for (const order of this.paperEngine.getPendingOrders()) {
+        if (order.strategy === strategyName) {
+          this.paperEngine.cancelOrder(order.clientOid);
+        }
+      }
+      for (const pos of strategyPositions) {
+        this.paperEngine.cancelStopLoss(pos.symbol, pos.posSide);
+      }
+    }
+
+    // Place market close orders for each position
+    for (const pos of strategyPositions) {
+      const closeSide = pos.posSide === 'long' ? 'sell' : 'buy';
+      const signal = {
+        symbol: pos.symbol,
+        action: pos.posSide === 'long' ? SIGNAL_ACTIONS.CLOSE_LONG : SIGNAL_ACTIONS.CLOSE_SHORT,
+        side: closeSide,
+        posSide: pos.posSide,
+        qty: pos.qty,
+        orderType: 'market',
+        reduceOnly: true,
+        strategy: strategyName,
+        confidence: 1,
+        reason: `Strategy "${strategyName}" disabled — auto-close`,
+        sessionId: this.currentSession ? this.currentSession._id.toString() : null,
+      };
+
+      this.orderManager.submitOrder(signal).catch((err) => {
+        log.error('_closeStrategyPositions — failed to close position', {
+          strategyName,
+          symbol: pos.symbol,
+          posSide: pos.posSide,
+          error: err.message,
+        });
+      });
     }
   }
 
