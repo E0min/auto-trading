@@ -73,7 +73,7 @@ class PaperPositionManager extends EventEmitter {
    * @returns {{ pnl: string|null, position: object|null }}
    */
   onFill(fill) {
-    const { symbol, side, posSide, qty, fillPrice, fee, reduceOnly, strategy } = fill;
+    const { symbol, side, posSide, qty, fillPrice, fee, reduceOnly, strategy, leverage } = fill;
     const key = `${symbol}:${posSide}`;
 
     // Deduct fee from balance
@@ -94,6 +94,7 @@ class PaperPositionManager extends EventEmitter {
         qty,
         entryPrice: fillPrice,
         strategy,
+        leverage,
       });
     }
 
@@ -134,7 +135,7 @@ class PaperPositionManager extends EventEmitter {
    * @returns {object} position
    * @private
    */
-  _openPosition(key, { symbol, posSide, qty, entryPrice, strategy }) {
+  _openPosition(key, { symbol, posSide, qty, entryPrice, strategy, leverage }) {
     const existing = this._positions.get(key);
 
     if (existing) {
@@ -161,7 +162,7 @@ class PaperPositionManager extends EventEmitter {
       entryPrice,
       markPrice: entryPrice,
       unrealizedPnl: '0',
-      leverage: '1',
+      leverage: leverage || '1',
       marginMode: 'crossed',
       liquidationPrice: '0',
       strategy: strategy || null,

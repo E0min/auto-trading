@@ -89,6 +89,9 @@ class OrderManager extends EventEmitter {
     /** @type {Map<string, Promise>} Per-symbol lock promises (T0-5) */
     this._symbolLocks = new Map();
 
+    /** @type {Map<string, string>} Per-symbol leverage cache (AD-36) */
+    this._leverageCache = new Map();
+
     /** @type {boolean} Paper trading mode flag */
     this._paperMode = false;
 
@@ -248,13 +251,20 @@ class OrderManager extends EventEmitter {
     // ------------------------------------------------------------------
     // Step 1: Risk validation
     // ------------------------------------------------------------------
+
+    // AD-34: Inject market price for risk validation
+    let riskPrice = price;
+    if (!riskPrice || riskPrice === '0') {
+      riskPrice = signal.suggestedPrice || signal.price || '0';
+    }
+
     let riskResult;
     try {
       riskResult = this.riskEngine.validateOrder({
         symbol,
         side: actionMapping.side,
         qty,
-        price: price || '0',
+        price: riskPrice,
         category,
       });
     } catch (err) {
@@ -351,6 +361,24 @@ class OrderManager extends EventEmitter {
     // ----------------------------------------------------------------
     // LIVE TRADING PATH
     // ----------------------------------------------------------------
+
+    // AD-36: Set leverage per-signal with cache
+    if (signal.leverage && !actionMapping.reduceOnly) {
+      const cachedLev = this._leverageCache.get(symbol);
+      if (cachedLev !== String(signal.leverage)) {
+        try {
+          await this.exchangeClient.setLeverage({
+            symbol, category, leverage: signal.leverage,
+          });
+          this._leverageCache.set(symbol, String(signal.leverage));
+        } catch (err) {
+          log.warn('submitOrder — failed to set leverage (continuing with current)', {
+            symbol, leverage: signal.leverage, error: err.message,
+          });
+        }
+      }
+    }
+
     const orderParams = {
       category,
       symbol,

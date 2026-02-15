@@ -26,6 +26,9 @@ const log = createLogger('SignalFilter');
 /** Default cooldown if strategy metadata doesn't specify */
 const DEFAULT_COOLDOWN_MS = 60000;
 
+/** Maximum age for active signal entries before stale cleanup */
+const MAX_ACTIVE_SIGNAL_AGE_MS = 30 * 60 * 1000;
+
 /** Window for duplicate detection */
 const DUPLICATE_WINDOW_MS = 5000;
 
@@ -63,6 +66,13 @@ class SignalFilter extends EventEmitter {
      * @type {Map<string, Set<string>>}
      */
     this._activeSignals = new Map();
+
+    /**
+     * Timestamps for active signal entries, for stale cleanup.
+     * Key: "symbol:strategy:action", Value: timestamp (ms)
+     * @type {Map<string, number>}
+     */
+    this._activeSignalTimestamps = new Map();
 
     /**
      * Strategy metadata cache (cooldownMs, maxConcurrentPositions).
@@ -333,7 +343,9 @@ class SignalFilter extends EventEmitter {
       if (!this._activeSignals.has(symbol)) {
         this._activeSignals.set(symbol, new Set());
       }
-      this._activeSignals.get(symbol).add(`${strategy}:${action}`);
+      const entry = `${strategy}:${action}`;
+      this._activeSignals.get(symbol).add(entry);
+      this._activeSignalTimestamps.set(`${symbol}:${entry}`, now);
     }
 
     // Remove tracking on close signals
@@ -342,7 +354,9 @@ class SignalFilter extends EventEmitter {
       if (activeSet) {
         // Remove the matching open signal
         const matchingOpen = action === 'close_long' ? 'open_long' : 'open_short';
-        activeSet.delete(`${strategy}:${matchingOpen}`);
+        const entry = `${strategy}:${matchingOpen}`;
+        activeSet.delete(entry);
+        this._activeSignalTimestamps.delete(`${symbol}:${entry}`);
         if (activeSet.size === 0) {
           this._activeSignals.delete(symbol);
         }
@@ -383,6 +397,26 @@ class SignalFilter extends EventEmitter {
     // Prune recentSignals older than duplicate window
     const cutoff = now - DUPLICATE_WINDOW_MS * 2;
     this._recentSignals = this._recentSignals.filter((entry) => entry.ts > cutoff);
+
+    // Prune stale activeSignals older than MAX_ACTIVE_SIGNAL_AGE_MS
+    for (const [tsKey, ts] of this._activeSignalTimestamps) {
+      if (now - ts > MAX_ACTIVE_SIGNAL_AGE_MS) {
+        // tsKey format: "symbol:strategy:action"
+        const firstColon = tsKey.indexOf(':');
+        const symbol = tsKey.slice(0, firstColon);
+        const entry = tsKey.slice(firstColon + 1);
+
+        const activeSet = this._activeSignals.get(symbol);
+        if (activeSet) {
+          activeSet.delete(entry);
+          if (activeSet.size === 0) {
+            this._activeSignals.delete(symbol);
+          }
+        }
+        this._activeSignalTimestamps.delete(tsKey);
+        log.warn('Stale activeSignal removed', { symbol, entry, ageMs: now - ts });
+      }
+    }
   }
 
   // =========================================================================
@@ -432,6 +466,8 @@ class SignalFilter extends EventEmitter {
     this._recentSignals = [];
     this._positionCounts.clear();
     this._activeSignals.clear();
+    this._activeSignalTimestamps.clear();
+    this._strategyMeta.clear();
     this._stats = { total: 0, passed: 0, blocked: 0 };
 
     log.info('SignalFilter reset');

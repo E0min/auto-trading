@@ -379,8 +379,15 @@ async function bootstrap() {
     io.emit('risk:drawdown_reset', data);
   });
 
-  // Market events
+  // Market events (throttled to 1 emit per symbol per second)
+  const _lastTickerEmit = new Map();
+  const TICKER_THROTTLE_MS = 1000;
+
   marketData.on(MARKET_EVENTS.TICKER_UPDATE, (data) => {
+    const now = Date.now();
+    const lastEmit = _lastTickerEmit.get(data.symbol) || 0;
+    if (now - lastEmit < TICKER_THROTTLE_MS) return;
+    _lastTickerEmit.set(data.symbol, now);
     io.emit('market:ticker', data);
   });
 

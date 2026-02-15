@@ -12,7 +12,7 @@ export default function AccountOverview({ accountState, positionCount }: Account
   const { equity, availableBalance, unrealizedPnl } = accountState;
 
   return (
-    <div className="grid grid-cols-4 gap-8 py-2">
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-8 py-2">
       {/* Total Equity — Hero */}
       <div className="animate-number-up">
         <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--text-muted)] mb-1">

@@ -44,27 +44,27 @@ export default function StrategyDetail({
     return (
       <div className="flex items-center justify-center py-4">
         <Spinner size="sm" />
-        <span className="ml-2 text-xs text-zinc-500">로딩 중...</span>
+        <span className="ml-2 text-xs text-[var(--text-muted)]">로딩 중...</span>
       </div>
     );
   }
 
   if (error && !stats) {
     return (
-      <p className="text-xs text-red-400 py-3 text-center">{error}</p>
+      <p className="text-xs text-[var(--loss)] py-3 text-center">{error}</p>
     );
   }
 
   return (
-    <div className="mt-2 border-t border-zinc-800 pt-2">
+    <div className="mt-2 border-t border-[var(--border-subtle)] pt-2">
       {/* Summary bar */}
       {stats && (
         <div className="flex items-center gap-4 mb-2 text-xs">
-          <span className="text-zinc-400">
-            거래 <span className="text-zinc-200 font-medium">{stats.totalTrades}</span>
+          <span className="text-[var(--text-secondary)]">
+            거래 <span className="text-[var(--text-primary)] font-medium">{stats.totalTrades}</span>
           </span>
-          <span className="text-zinc-400">
-            승률 <span className="text-zinc-200 font-medium">{stats.winRate}%</span>
+          <span className="text-[var(--text-secondary)]">
+            승률 <span className="text-[var(--text-primary)] font-medium">{stats.winRate}%</span>
           </span>
           <span className={cn('font-medium', getPnlColor(stats.totalPnl))}>
             PnL {getPnlSign(stats.totalPnl)}{formatCurrency(stats.totalPnl)} USDT
@@ -85,7 +85,7 @@ export default function StrategyDetail({
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-zinc-500 border-b border-zinc-800/50">
+                  <tr className="text-[var(--text-muted)] border-b border-[var(--border-subtle)]/50">
                     <th className="text-left py-1 pr-2 font-medium">심볼</th>
                     <th className="text-left py-1 pr-2 font-medium">방향</th>
                     <th className="text-right py-1 pr-2 font-medium">수량</th>
@@ -96,8 +96,8 @@ export default function StrategyDetail({
                 </thead>
                 <tbody>
                   {positions.map((p) => (
-                    <tr key={`${p.symbol}-${p.posSide}`} className="border-b border-zinc-800/30">
-                      <td className="py-1.5 pr-2 text-zinc-300 font-medium">
+                    <tr key={`${p.symbol}-${p.posSide}`} className="border-b border-[var(--border-subtle)]/30">
+                      <td className="py-1.5 pr-2 text-[var(--text-primary)] font-medium">
                         {formatSymbol(p.symbol)}
                       </td>
                       <td className="py-1.5 pr-2">
@@ -112,11 +112,11 @@ export default function StrategyDetail({
                           {translateSide(p.posSide)}
                         </span>
                       </td>
-                      <td className="py-1.5 pr-2 text-right text-zinc-400">{p.qty}</td>
-                      <td className="py-1.5 pr-2 text-right text-zinc-300">
+                      <td className="py-1.5 pr-2 text-right text-[var(--text-secondary)]">{p.qty}</td>
+                      <td className="py-1.5 pr-2 text-right text-[var(--text-primary)]">
                         {formatCurrency(p.entryPrice, 4)}
                       </td>
-                      <td className="py-1.5 pr-2 text-right text-zinc-300">
+                      <td className="py-1.5 pr-2 text-right text-[var(--text-primary)]">
                         {formatCurrency(p.markPrice, 4)}
                       </td>
                       <td className={cn('py-1.5 text-right font-medium', getPnlColor(p.unrealizedPnl))}>
@@ -126,12 +126,12 @@ export default function StrategyDetail({
                   ))}
                 </tbody>
               </table>
-              <p className="text-[10px] text-zinc-600 mt-1.5">
+              <p className="text-[10px] text-[var(--text-muted)] mt-1.5">
                 * 전략별 포지션 구분 불가 — 전체 활성 포지션 표시
               </p>
             </div>
           ) : (
-            <p className="text-xs text-zinc-500 py-3 text-center">활성 포지션이 없습니다.</p>
+            <p className="text-xs text-[var(--text-muted)] py-3 text-center">활성 포지션이 없습니다.</p>
           )}
         </TabPanel>
 
@@ -141,7 +141,7 @@ export default function StrategyDetail({
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-zinc-500 border-b border-zinc-800/50">
+                  <tr className="text-[var(--text-muted)] border-b border-[var(--border-subtle)]/50">
                     <th className="text-left py-1 pr-2 font-medium">심볼</th>
                     <th className="text-left py-1 pr-2 font-medium">방향</th>
                     <th className="text-left py-1 pr-2 font-medium">타입</th>
@@ -154,8 +154,8 @@ export default function StrategyDetail({
                 </thead>
                 <tbody>
                   {stats.recentTrades.map((t) => (
-                    <tr key={t._id} className="border-b border-zinc-800/30">
-                      <td className="py-1.5 pr-2 text-zinc-300 font-medium">
+                    <tr key={t._id} className="border-b border-[var(--border-subtle)]/30">
+                      <td className="py-1.5 pr-2 text-[var(--text-primary)] font-medium">
                         {formatSymbol(t.symbol)}
                       </td>
                       <td className="py-1.5 pr-2">
@@ -170,13 +170,13 @@ export default function StrategyDetail({
                           {translateSide(t.posSide)}
                         </span>
                       </td>
-                      <td className="py-1.5 pr-2 text-zinc-500">
+                      <td className="py-1.5 pr-2 text-[var(--text-muted)]">
                         {t.reduceOnly ? '청산' : '진입'}
                       </td>
-                      <td className="py-1.5 pr-2 text-right text-zinc-400">
+                      <td className="py-1.5 pr-2 text-right text-[var(--text-secondary)]">
                         {t.filledQty || t.qty}
                       </td>
-                      <td className="py-1.5 pr-2 text-right text-zinc-300">
+                      <td className="py-1.5 pr-2 text-right text-[var(--text-primary)]">
                         {t.avgFilledPrice
                           ? formatCurrency(t.avgFilledPrice, 4)
                           : t.price
@@ -189,14 +189,14 @@ export default function StrategyDetail({
                       <td className="py-1.5 pr-2 text-center">
                         <TradeStatusBadge status={t.status} />
                       </td>
-                      <td className="py-1.5 text-right text-zinc-500">{formatTime(t.createdAt)}</td>
+                      <td className="py-1.5 text-right text-[var(--text-muted)]">{formatTime(t.createdAt)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           ) : (
-            <p className="text-xs text-zinc-500 py-3 text-center">거래 내역이 없습니다.</p>
+            <p className="text-xs text-[var(--text-muted)] py-3 text-center">거래 내역이 없습니다.</p>
           )}
         </TabPanel>
 
@@ -207,9 +207,9 @@ export default function StrategyDetail({
               {mergedSignals.map((s) => (
                 <div
                   key={s._id}
-                  className="flex items-center gap-2 px-2 py-1.5 rounded bg-zinc-800/40 text-xs"
+                  className="flex items-center gap-2 px-2 py-1.5 rounded bg-[var(--bg-surface)] text-xs"
                 >
-                  <span className="text-zinc-300 font-medium">{formatSymbol(s.symbol)}</span>
+                  <span className="text-[var(--text-primary)] font-medium">{formatSymbol(s.symbol)}</span>
                   <span
                     className={
                       s.action.includes('long')
@@ -220,12 +220,12 @@ export default function StrategyDetail({
                     {translateSide(s.action)}
                   </span>
                   {s.suggestedPrice && (
-                    <span className="text-zinc-400">
+                    <span className="text-[var(--text-secondary)]">
                       @{formatCurrency(s.suggestedPrice, 4)}
                     </span>
                   )}
                   {s.confidence != null && (
-                    <span className="text-zinc-500">
+                    <span className="text-[var(--text-muted)]">
                       {Math.round(s.confidence * 100)}%
                     </span>
                   )}
@@ -239,12 +239,12 @@ export default function StrategyDetail({
                   >
                     {s.riskApproved ? '승인' : '거부'}
                   </span>
-                  <span className="text-zinc-600">{formatTime(s.createdAt)}</span>
+                  <span className="text-[var(--text-muted)]">{formatTime(s.createdAt)}</span>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-xs text-zinc-500 py-3 text-center">시그널이 없습니다.</p>
+            <p className="text-xs text-[var(--text-muted)] py-3 text-center">시그널이 없습니다.</p>
           )}
         </TabPanel>
       </Tabs>

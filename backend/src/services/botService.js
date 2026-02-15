@@ -557,6 +557,22 @@ class BotService extends EventEmitter {
       }
     }
 
+    // 6b. AD-38: Destroy managers to remove WS listeners from singleton exchangeClient
+    if (this.orderManager && typeof this.orderManager.destroy === 'function') {
+      try {
+        this.orderManager.destroy();
+      } catch (err) {
+        log.error('stop — error destroying orderManager', { error: err.message });
+      }
+    }
+    if (!this.paperMode && this.positionManager && typeof this.positionManager.destroy === 'function') {
+      try {
+        this.positionManager.destroy();
+      } catch (err) {
+        log.error('stop — error destroying positionManager', { error: err.message });
+      }
+    }
+
     // 7. Close exchangeClient WebSockets
     try {
       this.exchangeClient.closeWebsockets();
@@ -564,7 +580,14 @@ class BotService extends EventEmitter {
       log.error('stop — error closing WebSockets', { error: err });
     }
 
-    // 7b. Auto-stop tournament if paperPositionManager supports it
+    // 7b. Reset PaperEngine to clear pending orders and cached state
+    if (this.paperMode && this.paperEngine) {
+      try { this.paperEngine.reset(); } catch (err) {
+        log.error('stop — error resetting paperEngine', { error: err.message });
+      }
+    }
+
+    // 7c. Auto-stop tournament if paperPositionManager supports it
     if (this.paperMode && this.paperPositionManager && typeof this.paperPositionManager.stopTournament === 'function') {
       this.paperPositionManager.stopTournament();
     }
@@ -982,8 +1005,17 @@ class BotService extends EventEmitter {
    * @private
    */
   async _resolveSignalQuantity(signal) {
-    // CLOSE signals bypass percentage conversion (AD-7)
+    // AD-35: Use actual position quantity for CLOSE signals
     if (signal.action === SIGNAL_ACTIONS.CLOSE_LONG || signal.action === SIGNAL_ACTIONS.CLOSE_SHORT) {
+      const posSide = signal.action === SIGNAL_ACTIONS.CLOSE_LONG ? 'long' : 'short';
+      if (this.paperMode && this.paperPositionManager) {
+        const pos = this.paperPositionManager.getPosition(signal.symbol, posSide);
+        if (pos) return pos.qty;
+      } else if (this.positionManager) {
+        const pos = this.positionManager.getPosition(signal.symbol, posSide);
+        if (pos) return pos.qty;
+      }
+      // Fallback: use signal value as-is
       return signal.suggestedQty || signal.qty || null;
     }
 
@@ -992,12 +1024,21 @@ class BotService extends EventEmitter {
     if (this.paperMode && this.paperPositionManager) {
       equity = String(this.paperPositionManager.getEquity());
     } else {
-      try {
-        const accountInfo = await this.exchangeClient.getAccountInfo();
-        equity = accountInfo.equity || accountInfo.totalEquity || '0';
-      } catch (err) {
-        log.error('_resolveSignalQuantity — failed to fetch equity', { error: err.message });
-        return null;
+      // AD-33: Cached first, REST fallback
+      equity = this.riskEngine.getAccountState().equity;
+      if (!equity || equity === '0') {
+        try {
+          const category = this.currentSession?.config?.category || CATEGORIES.USDT_FUTURES;
+          const balanceResponse = await this.exchangeClient.getBalances(category);
+          const rawAccounts = Array.isArray(balanceResponse?.data) ? balanceResponse.data : [];
+          if (rawAccounts.length > 0) {
+            const account = rawAccounts[0];
+            equity = String(account.equity ?? account.accountEquity ?? account.usdtEquity ?? '0');
+          }
+        } catch (err) {
+          log.error('_resolveSignalQuantity — fallback equity fetch failed', { error: err.message });
+          return null;
+        }
       }
     }
 
@@ -1069,19 +1110,21 @@ class BotService extends EventEmitter {
     }
 
     // Submit with resolved qty
-    this.orderManager.submitOrder({
-      ...signal,
-      qty: resolvedQty,
-      price: signal.suggestedPrice || signal.price,
-      positionSizePercent: signal.suggestedQty,
-      resolvedQty,
-      sessionId,
-    }).catch((err) => {
+    try {
+      await this.orderManager.submitOrder({
+        ...signal,
+        qty: resolvedQty,
+        price: signal.suggestedPrice || signal.price,
+        positionSizePercent: signal.suggestedQty,
+        resolvedQty,
+        sessionId,
+      });
+    } catch (err) {
       log.error('orderManager.submitOrder error from strategy signal', {
         strategy: signal.strategy,
         error: err,
       });
-    });
+    }
   }
 }
 

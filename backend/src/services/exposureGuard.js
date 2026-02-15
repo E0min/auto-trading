@@ -82,7 +82,14 @@ class ExposureGuard extends EventEmitter {
       return { approved: false, reason: 'equity_not_initialized', adjustedQty: '0' };
     }
 
-    const effectivePrice = order.price || '1';
+    // AD-34: Reject orders with no price data (defense-in-depth)
+    const effectivePrice = order.price && order.price !== '0' ? order.price : null;
+    if (!effectivePrice) {
+      log.warn('Order rejected — no price available for exposure calculation', {
+        symbol: order.symbol, orderPrice: order.price,
+      });
+      return { approved: false, reason: 'no_price_for_exposure_check' };
+    }
     let qty = order.qty;
 
     // ---- 0. Risk-per-trade check (2% rule) ----

@@ -19,6 +19,10 @@
 | `proposals/round_4.md` | T2-1~T2-12 구현 제안 (CircuitBreaker 메모리, rate limiting, confidence 필터링, DI 패턴) | Round 4 | active |
 | `proposals/round_4_review.md` | Round 4 교차 리뷰 (Trader+UI 제안 검토) | Round 4 | active |
 | `../shared/decisions/round_4.md` | Round 4 합의 결정문서 (T2-1~T2-12, AD-18~AD-24) — **구현 완료** | Round 4 | active |
+| `../shared/decisions/round_5.md` | Round 5 합의 결정문서 (T3-1~T3-7, BUG-1, AD-25~AD-31) — **구현 완료** | Round 5 | active |
+| `proposals/round_6.md` | 실거래 준비도 강화: 14개 이슈 (T0 2건, T1 3건, T2 5건, T3 4건) — 시스템 안정성/관측성 분석 | Round 6 | active |
+| `proposals/round_6_review.md` | Round 6 교차 리뷰 (Trader+UI 제안 검토) | Round 6 | active |
+| `../shared/decisions/round_6.md` | Round 6 합의 결정문서 (25개 항목, AD-32~AD-39) — **구현 완료** | Round 6 | active |
 
 ## Round 1 Key Findings Summary
 - **C-1**: unhandledRejection/uncaughtException 핸들러 누락 — 프로세스 즉시 종료 위험

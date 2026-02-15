@@ -394,6 +394,23 @@ class PaperEngine extends EventEmitter {
   }
 
   // =========================================================================
+  // Reset
+  // =========================================================================
+
+  /**
+   * Reset all pending orders, SL triggers, and cached prices.
+   * Called on bot stop to ensure clean state for next start.
+   */
+  reset() {
+    const pendingCount = this._pendingOrders.size;
+    const slCount = this._pendingSLOrders.size;
+    this._pendingOrders.clear();
+    this._pendingSLOrders.clear();
+    this._lastPrices.clear();
+    log.info('PaperEngine reset', { clearedOrders: pendingCount, clearedSL: slCount });
+  }
+
+  // =========================================================================
   // Queries
   // =========================================================================
 

@@ -74,34 +74,34 @@ export default function BacktestTradeList({ trades, loading }: BacktestTradeList
       title="거래 내역"
       className="col-span-full overflow-hidden"
       headerRight={
-        <span className="text-xs text-zinc-500">
+        <span className="text-xs text-[var(--text-muted)]">
           총 {trades.length}건
         </span>
       }
     >
-      <div className="overflow-x-auto -mx-4 -mb-4">
+      <div className="overflow-x-auto -mx-6 -mb-6">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-zinc-800 text-zinc-500 text-xs">
+            <tr className="border-b border-[var(--border-subtle)] text-[var(--text-muted)] text-xs">
               <th className="text-left px-4 py-2 font-medium">#</th>
               <th className="text-left px-4 py-2 font-medium">방향</th>
               <th className="text-right px-4 py-2 font-medium">진입가</th>
               <th className="text-right px-4 py-2 font-medium">청산가</th>
               <th
-                className="text-right px-4 py-2 font-medium cursor-pointer select-none hover:text-zinc-300"
+                className="text-right px-4 py-2 font-medium cursor-pointer select-none hover:text-[var(--text-secondary)]"
                 onClick={() => handleSort('qty')}
               >
                 수량{sortIndicator('qty')}
               </th>
               <th
-                className="text-right px-4 py-2 font-medium cursor-pointer select-none hover:text-zinc-300"
+                className="text-right px-4 py-2 font-medium cursor-pointer select-none hover:text-[var(--text-secondary)]"
                 onClick={() => handleSort('pnl')}
               >
                 손익{sortIndicator('pnl')}
               </th>
               <th className="text-right px-4 py-2 font-medium">수수료</th>
               <th
-                className="text-right px-4 py-2 font-medium cursor-pointer select-none hover:text-zinc-300"
+                className="text-right px-4 py-2 font-medium cursor-pointer select-none hover:text-[var(--text-secondary)]"
                 onClick={() => handleSort('holdTime')}
               >
                 보유시간{sortIndicator('holdTime')}
@@ -111,13 +111,13 @@ export default function BacktestTradeList({ trades, loading }: BacktestTradeList
           <tbody>
             {loading && trades.length === 0 ? (
               <tr>
-                <td colSpan={8} className="text-center text-zinc-500 py-8">
+                <td colSpan={8} className="text-center text-[var(--text-muted)] py-8">
                   로딩 중...
                 </td>
               </tr>
             ) : trades.length === 0 ? (
               <tr>
-                <td colSpan={8} className="text-center text-zinc-500 py-8">
+                <td colSpan={8} className="text-center text-[var(--text-muted)] py-8">
                   거래 내역이 없습니다
                 </td>
               </tr>
@@ -129,38 +129,36 @@ export default function BacktestTradeList({ trades, loading }: BacktestTradeList
                 return (
                   <tr
                     key={`${trade.entryTime}-${idx}`}
-                    className={`border-b border-zinc-800/50 hover:bg-zinc-800/30 ${
-                      idx % 2 === 0 ? '' : 'bg-zinc-800/50'
-                    }`}
+                    className="border-b border-[var(--border-subtle)]/50 hover:bg-[var(--bg-surface)]/50"
                   >
-                    <td className="px-4 py-2 text-zinc-500 font-mono text-xs">
+                    <td className="px-4 py-2 text-[var(--text-muted)] font-mono text-xs">
                       {rowIndex}
                     </td>
                     <td className="px-4 py-2">
                       <span
                         className={`text-xs font-medium ${
-                          isLong ? 'text-emerald-400' : 'text-red-400'
+                          isLong ? 'text-[var(--profit)]' : 'text-[var(--loss)]'
                         }`}
                       >
                         {isLong ? '롱' : '숏'}
                       </span>
                     </td>
-                    <td className="px-4 py-2 text-right font-mono text-zinc-200">
+                    <td className="px-4 py-2 text-right font-mono text-[var(--text-primary)]">
                       ${formatCurrency(trade.entryPrice)}
                     </td>
-                    <td className="px-4 py-2 text-right font-mono text-zinc-200">
+                    <td className="px-4 py-2 text-right font-mono text-[var(--text-primary)]">
                       ${formatCurrency(trade.exitPrice)}
                     </td>
-                    <td className="px-4 py-2 text-right font-mono text-zinc-300">
+                    <td className="px-4 py-2 text-right font-mono text-[var(--text-secondary)]">
                       {formatCurrency(trade.qty, 4)}
                     </td>
                     <td className={`px-4 py-2 text-right font-mono font-medium ${getPnlColor(trade.pnl)}`}>
                       {getPnlSign(trade.pnl)}${formatCurrency(String(Math.abs(pnlNum)))}
                     </td>
-                    <td className="px-4 py-2 text-right font-mono text-zinc-500">
+                    <td className="px-4 py-2 text-right font-mono text-[var(--text-muted)]">
                       ${formatCurrency(trade.fee)}
                     </td>
-                    <td className="px-4 py-2 text-right text-zinc-400 text-xs whitespace-nowrap">
+                    <td className="px-4 py-2 text-right text-[var(--text-secondary)] text-xs whitespace-nowrap">
                       {formatHoldTime(trade.entryTime, trade.exitTime)}
                     </td>
                   </tr>
@@ -171,11 +169,11 @@ export default function BacktestTradeList({ trades, loading }: BacktestTradeList
         </table>
 
         {hasMore && (
-          <div className="flex justify-center py-3 border-t border-zinc-800">
+          <div className="flex justify-center py-3 border-t border-[var(--border-subtle)]">
             <button
               type="button"
               onClick={() => setShowAll(true)}
-              className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors px-4 py-1.5 rounded-md border border-zinc-700 hover:border-zinc-600"
+              className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors px-4 py-1.5 rounded-md border border-[var(--border-subtle)] hover:border-[var(--border-muted)]"
             >
               더 보기 ({trades.length - PAGE_SIZE}건 남음)
             </button>

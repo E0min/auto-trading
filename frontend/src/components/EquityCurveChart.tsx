@@ -4,15 +4,8 @@ import { useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import Card from '@/components/ui/Card';
 import { formatCurrency } from '@/lib/utils';
+import { CHART_TOOLTIP_STYLE } from '@/lib/chart-config';
 import type { EquityPoint } from '@/types';
-
-const TOOLTIP_STYLE = {
-  backgroundColor: 'var(--bg-elevated)',
-  border: '1px solid var(--border-muted)',
-  borderRadius: '6px',
-  fontSize: '11px',
-  padding: '8px 12px',
-};
 
 interface EquityCurveChartProps {
   data: EquityPoint[];
@@ -53,7 +46,7 @@ export default function EquityCurveChart({ data, loading }: EquityCurveChartProp
                 tickFormatter={(v) => `$${formatCurrency(String(v), 0)}`}
               />
               <Tooltip
-                contentStyle={TOOLTIP_STYLE}
+                contentStyle={CHART_TOOLTIP_STYLE}
                 labelStyle={{ color: 'var(--text-secondary)' }}
                 formatter={((value?: number, name?: string) => [
                   `$${formatCurrency(String(value ?? 0))}`,

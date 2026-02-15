@@ -133,11 +133,16 @@ Body: { "type": "daily" | "full" }
 
 개별 포지션과 총 노출을 equity 대비 비율로 제한합니다.
 
+### 가격 방어 (Sprint R6, AD-34)
+
+ExposureGuard는 `order.price`가 `'0'`이거나 falsy인 경우 **즉시 거부**합니다 (`reason: 'no_price_for_exposure_check'`). 시장가 주문의 경우, OrderManager가 사전에 최신 틱 가격을 `riskPrice`로 주입하여 ExposureGuard에 전달합니다.
+
 ### 검증 로직
 
 ```
 주문 요청 (qty, price, side) →
 
+0. price가 없거나 '0'이면 즉시 거부
 1. orderValue = qty × price
 2. positionSizePercent = orderValue / equity × 100
    → positionSizePercent > maxPositionSizePercent (5%)?
@@ -191,6 +196,17 @@ riskEngine.updateAccountState({
   ]
 });
 ```
+
+### 계정 상태 조회 (Sprint R6)
+
+`riskEngine.getAccountState()`로 캐시된 계정 상태를 조회할 수 있습니다. REST API 호출 없이 equity와 포지션 정보를 반환합니다:
+
+```javascript
+const { equity, positions } = riskEngine.getAccountState();
+// equity: '10500', positions: [...] (방어적 복사)
+```
+
+botService는 봇 시작 시 이 메서드를 사용하여 equity를 확인합니다 (REST fallback 포함).
 
 ### 동기화 시점
 - **라이브 모드**: WebSocket 포지션/계정 이벤트 수신 시

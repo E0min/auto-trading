@@ -80,6 +80,10 @@ class ExchangeClient extends EventEmitter {
   constructor() {
     super();
 
+    // Increase max listeners to prevent warnings from multiple services
+    // (OrderManager, PositionManager, MarketData, etc.) attaching WS handlers
+    this.setMaxListeners(20);
+
     /** @type {boolean} Whether WebSocket connections have been initialised */
     this._wsConnected = false;
   }
@@ -494,6 +498,35 @@ class ExchangeClient extends EventEmitter {
       log.debug(`${label} — response received`, { symbol });
       return response;
     }, label);
+  }
+
+  /**
+   * Set leverage for a symbol.
+   *
+   * @param {Object} params
+   * @param {string} params.symbol    — trading pair (e.g. 'BTCUSDT')
+   * @param {string} params.category  — product type
+   * @param {string|number} params.leverage — desired leverage
+   * @param {string} [params.marginCoin='USDT'] — margin coin
+   * @returns {Promise<Object>}
+   */
+  async setLeverage({ symbol, category, leverage, marginCoin = 'USDT' }) {
+    const label = 'setLeverage';
+    const restClient = getRestClient();
+
+    return this._withRetry(async () => {
+      const params = {
+        symbol,
+        productType: category,
+        leverage: String(leverage),
+        marginCoin,
+      };
+
+      log.trade(`${label} — setting`, { symbol, leverage });
+      const response = await restClient.setFuturesLeverage(params);
+      log.trade(`${label} — done`, { symbol, leverage });
+      return response;
+    }, label, 2);
   }
 
   /**

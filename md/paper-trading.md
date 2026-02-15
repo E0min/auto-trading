@@ -51,6 +51,10 @@ PaperEngine에 거래소 사이드 SL 시뮬레이션이 추가되었습니다:
 - SL 체결 시 `paper:fill` (reduceOnly, reason: 'stop_loss_triggered') + `paper:sl_triggered` 이벤트 발생
 - `getPendingSLOrders()`: 대기 중 SL 주문 조회
 
+#### reset() (Sprint R6)
+
+`paperEngine.reset()`으로 대기 주문(`_pendingOrders`, `_pendingSLOrders`)과 가격 캐시(`_lastPrices`)를 초기화합니다. `botService.stop()` 시 자동 호출됩니다.
+
 #### 기본 설정
 ```javascript
 feeRate = '0.0006'     // 0.06% 테이커 수수료
@@ -91,7 +95,7 @@ initialBalance = '10000'  // 기본 10,000 USDT
   entryPrice: '65435.77',
   markPrice: '65500.00',
   unrealizedPnl: '3.21',
-  leverage: '3',
+  leverage: '3',                         // Sprint R6: fill에서 전달된 레버리지 반영
   margin: '1090.60',
   strategy: 'TurtleBreakoutStrategy'  // Sprint R3: 전략 필드 추가
 }

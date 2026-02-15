@@ -19,6 +19,11 @@
 | `proposals/round_4.md` | T2-1~T2-12 구현 제안 (RSI Wilder, confidence 필터, 포지션 사이징, funding 데이터, equity DI) | Round 4 | active |
 | `proposals/round_4_review.md` | Round 4 교차 리뷰 (Engineer+UI 제안 검토) | Round 4 | active |
 | `../shared/decisions/round_4.md` | Round 4 합의 결정문서 (T2-1~T2-12, AD-18~AD-24) — **구현 완료** | Round 4 | active |
+| `../shared/decisions/round_5.md` | Round 5 합의 결정문서 (T3-1~T3-7, BUG-1, AD-25~AD-31) — **구현 완료** | Round 5 | active |
+| `proposals/solo_1.md` | Post-R5 종합 트레이딩 품질 분석: HIGH 4건, MEDIUM 7건, LOW 4건. Overall 7.1/10 | Solo S1 | active |
+| `proposals/round_6.md` | 실거래 준비도 강화: CRITICAL 1건(getAccountInfo crash), HIGH 4건, MEDIUM 1건 | Round 6 | active |
+| `proposals/round_6_review.md` | Round 6 교차 리뷰 (Engineer+UI 제안 검토) | Round 6 | active |
+| `../shared/decisions/round_6.md` | Round 6 합의 결정문서 (25개 항목, AD-32~AD-39) — **구현 완료** | Round 6 | active |
 
 ## Round 1 Key Findings Summary
 - **C1**: multi-symbol 라우팅 버그 — `_symbol` 단일 값이라 마지막 심볼만 유효

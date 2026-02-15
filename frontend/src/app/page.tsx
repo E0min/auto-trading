@@ -16,6 +16,7 @@ import RiskAlertBanner from '@/components/RiskAlertBanner';
 import StrategyHub from '@/components/strategy/StrategyHub';
 import AccountOverview from '@/components/AccountOverview';
 import RiskStatusPanel from '@/components/RiskStatusPanel';
+import StrategySymbolMap from '@/components/StrategySymbolMap';
 import SymbolRegimeTable from '@/components/SymbolRegimeTable';
 import PerformanceTabs from '@/components/analytics/PerformanceTabs';
 import MarketIntelligence from '@/components/market-intel/MarketIntelligence';
@@ -85,6 +86,9 @@ export default function Dashboard() {
     error: healthError,
   } = useHealthCheck();
 
+  // Inline error message (replaces alert())
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
   // T1-8: Close position handler
   const [closingSymbol, setClosingSymbol] = useState<string | null>(null);
 
@@ -101,7 +105,8 @@ export default function Dashboard() {
       });
       await refetchPositions();
     } catch (err) {
-      alert(err instanceof Error ? err.message : '포지션 청산에 실패했습니다.');
+      setErrorMsg(err instanceof Error ? err.message : '포지션 청산에 실패했습니다.');
+      setTimeout(() => setErrorMsg(null), 5000);
     } finally {
       setClosingSymbol(null);
     }
@@ -116,7 +121,8 @@ export default function Dashboard() {
       await riskApi.resetDrawdown(type);
       await refetchBotStatus();
     } catch (err) {
-      alert(err instanceof Error ? err.message : '드로다운 리셋에 실패했습니다.');
+      setErrorMsg(err instanceof Error ? err.message : '드로다운 리셋에 실패했습니다.');
+      setTimeout(() => setErrorMsg(null), 5000);
     } finally {
       setResetLoading(false);
     }
@@ -176,13 +182,17 @@ export default function Dashboard() {
                 <>
                   <span
                     className="text-[11px] text-[var(--text-muted)] border border-[var(--border-subtle)] rounded-md px-3 py-1.5 cursor-not-allowed select-none"
-                    title="가상거래 모드에서만 사용 가능"
+                    role="link"
+                    aria-disabled="true"
+                    aria-label="백테스트 - 가상거래 모드에서만 사용 가능"
                   >
                     백테스트
                   </span>
                   <span
                     className="text-[11px] text-[var(--text-muted)] border border-[var(--border-subtle)] rounded-md px-3 py-1.5 cursor-not-allowed select-none"
-                    title="가상거래 모드에서만 사용 가능"
+                    role="link"
+                    aria-disabled="true"
+                    aria-label="토너먼트 - 가상거래 모드에서만 사용 가능"
                   >
                     토너먼트
                   </span>
@@ -275,6 +285,18 @@ export default function Dashboard() {
             onSelectionChange={handleSelectionChange}
           />
 
+          {/* Row 5.5: Strategy-Symbol Mapping */}
+          <StrategySymbolMap
+            strategies={botStatus.strategies}
+            symbols={botStatus.symbols}
+            symbolRegimes={
+              Object.keys(socketSymbolRegimes).length > 0
+                ? socketSymbolRegimes
+                : (botStatus.symbolRegimes ?? {})
+            }
+            currentRegime={regime ?? botStatus.regime ?? null}
+          />
+
           {/* Row 6: SymbolRegimeTable (collapsible) */}
           <SymbolRegimeTable
             symbolRegimes={
@@ -285,6 +307,13 @@ export default function Dashboard() {
           />
         </div>
       </div>
+
+      {/* Inline error toast */}
+      {errorMsg && (
+        <div className="fixed bottom-4 right-4 z-50 bg-[var(--loss)]/10 border border-[var(--loss)]/30 text-[var(--loss)] text-sm px-4 py-3 rounded-lg backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2">
+          {errorMsg}
+        </div>
+      )}
     </div>
   );
 }

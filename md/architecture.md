@@ -196,6 +196,10 @@ process.on('uncaughtException', (err) => { /* 로깅 후 safeShutdown() */ });
 | `params:updated` | regimeOptimizer | marketRegime | 파라미터 갱신 |
 | `evaluation:complete` | regimeEvaluator | (로깅) | 정확도 평가 완료 |
 
+### Ticker Throttle (Sprint R6)
+
+`app.js`의 Socket.io ticker 릴레이에 심볼별 1000ms 쓰로틀이 적용됩니다. 같은 심볼의 ticker 이벤트가 1초 이내에 반복 발생하면 프론트엔드로의 전달을 건너뜁니다.
+
 ### Socket.io → 프론트엔드 전달
 
 botService가 백엔드 이벤트를 수신하여 Socket.io로 프론트엔드에 전달합니다:

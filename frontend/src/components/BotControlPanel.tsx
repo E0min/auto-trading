@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
 import EmergencyStopDialog from '@/components/EmergencyStopDialog';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { translateBotState } from '@/lib/utils';
 import type { BotState } from '@/types';
 
@@ -61,11 +62,6 @@ export default function BotControlPanel({
     } else {
       handleAction('start', onStart);
     }
-  };
-
-  const handleLiveConfirm = () => {
-    setShowLiveConfirm(false);
-    handleAction('start', onStart);
   };
 
   const handleEmergencyConfirm = () => {
@@ -131,34 +127,18 @@ export default function BotControlPanel({
       />
 
       {/* LIVE mode start confirmation */}
-      {showLiveConfirm && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md"
-          role="alertdialog"
-          aria-modal="true"
-        >
-          <div className="bg-[var(--bg-elevated)] border border-[var(--loss)]/30 rounded-lg p-8 max-w-sm w-full mx-4 shadow-2xl animate-fade-in">
-            <h3 className="text-base font-semibold text-[var(--loss)] mb-3">실거래 모드 확인</h3>
-            <p className="text-sm text-[var(--text-secondary)] mb-6 leading-relaxed">
-              현재 <span className="text-[var(--loss)] font-medium">LIVE 모드</span>입니다. 실제 자금으로 거래가 실행됩니다. 봇을 시작하시겠습니까?
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setShowLiveConfirm(false)}
-                className="px-4 py-2 text-sm font-medium rounded-md border border-[var(--border-muted)] text-[var(--text-secondary)] hover:bg-[var(--bg-surface)] transition-colors"
-              >
-                취소
-              </button>
-              <button
-                onClick={handleLiveConfirm}
-                className="px-4 py-2 text-sm font-medium rounded-md border border-[var(--loss)] text-[var(--loss)] hover:bg-red-500/10 transition-colors"
-              >
-                실거래 시작
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={showLiveConfirm}
+        onCancel={() => setShowLiveConfirm(false)}
+        onConfirm={() => {
+          setShowLiveConfirm(false);
+          handleAction('start', onStart);
+        }}
+        title="실거래 모드 시작"
+        message="실제 자금으로 거래를 시작합니다. 계속하시겠습니까?"
+        confirmLabel="시작"
+        variant="danger"
+      />
     </>
   );
 }

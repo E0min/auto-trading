@@ -8,11 +8,11 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  CartesianGrid,
   Cell,
 } from 'recharts';
 import Card from '@/components/ui/Card';
 import { formatCurrency } from '@/lib/utils';
+import { CHART_TOOLTIP_STYLE } from '@/lib/chart-config';
 import type { BacktestTrade } from '@/types/backtest';
 
 interface BacktestPriceChartProps {
@@ -28,10 +28,8 @@ interface ScatterPoint {
   pnl: number;
 }
 
-const ENTRY_COLOR_LONG = '#34d399';
-const ENTRY_COLOR_SHORT = '#ef4444';
-const EXIT_COLOR_WIN = '#34d399';
-const EXIT_COLOR_LOSS = '#ef4444';
+const COLOR_PROFIT = '#4ADE80';
+const COLOR_LOSS = '#F87171';
 
 function TriangleUp(props: { cx?: number; cy?: number; fill?: string }) {
   const { cx = 0, cy = 0, fill } = props;
@@ -105,24 +103,23 @@ export default function BacktestPriceChart({ trades, loading }: BacktestPriceCha
   return (
     <Card title="매매 포인트" className="col-span-full">
       {loading ? (
-        <div className="h-[300px] flex items-center justify-center text-zinc-500 text-sm">
+        <div className="h-[300px] flex items-center justify-center text-[var(--text-muted)] text-sm">
           로딩 중...
         </div>
       ) : trades.length === 0 ? (
-        <div className="h-[300px] flex items-center justify-center text-zinc-500 text-sm">
+        <div className="h-[300px] flex items-center justify-center text-[var(--text-muted)] text-sm">
           거래 없음
         </div>
       ) : (
         <div className="h-[300px] -mx-2">
           <ResponsiveContainer width="100%" height="100%">
             <ScatterChart>
-              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
               <XAxis
                 type="number"
                 dataKey="time"
                 domain={domain.x as [number, number]}
-                tick={{ fill: '#71717a', fontSize: 11 }}
-                axisLine={{ stroke: '#27272a' }}
+                tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                axisLine={{ stroke: 'var(--border-subtle)' }}
                 tickLine={false}
                 tickFormatter={formatTickDate}
               />
@@ -130,20 +127,15 @@ export default function BacktestPriceChart({ trades, loading }: BacktestPriceCha
                 type="number"
                 dataKey="price"
                 domain={domain.y as [number, number]}
-                tick={{ fill: '#71717a', fontSize: 11 }}
-                axisLine={{ stroke: '#27272a' }}
+                tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                axisLine={{ stroke: 'var(--border-subtle)' }}
                 tickLine={false}
                 tickFormatter={(v) => `$${formatCurrency(String(v), 0)}`}
               />
               <Tooltip
                 cursor={false}
-                contentStyle={{
-                  backgroundColor: '#18181b',
-                  border: '1px solid #27272a',
-                  borderRadius: '8px',
-                  fontSize: '12px',
-                }}
-                labelStyle={{ color: '#a1a1aa' }}
+                contentStyle={CHART_TOOLTIP_STYLE}
+                labelStyle={{ color: 'var(--text-secondary)' }}
                 formatter={((value?: number, name?: string) => {
                   if (name === 'price') return [`$${formatCurrency(String(value ?? 0))}`, '가격'];
                   return [value, name];
@@ -156,7 +148,7 @@ export default function BacktestPriceChart({ trades, loading }: BacktestPriceCha
                 {entries.map((entry, i) => (
                   <Cell
                     key={`entry-${i}`}
-                    fill={entry.side === 'long' ? ENTRY_COLOR_LONG : ENTRY_COLOR_SHORT}
+                    fill={entry.side === 'long' ? COLOR_PROFIT : COLOR_LOSS}
                   />
                 ))}
               </Scatter>
@@ -166,7 +158,7 @@ export default function BacktestPriceChart({ trades, loading }: BacktestPriceCha
                 {exits.map((exit, i) => (
                   <Cell
                     key={`exit-${i}`}
-                    fill={exit.pnl >= 0 ? EXIT_COLOR_WIN : EXIT_COLOR_LOSS}
+                    fill={exit.pnl >= 0 ? COLOR_PROFIT : COLOR_LOSS}
                   />
                 ))}
               </Scatter>

@@ -84,6 +84,7 @@ marketData 이벤트 → 전략.onKline(kline) → 지표 계산 → 조건 평�
   suggestedQty: '3',               // 포지션 크기 (% of equity)
   suggestedPrice: '65432.50',
   stopLossPrice: '64000.00',       // Sprint R5: 거래소 SL 가격 (presetStopLossPrice)
+  leverage: '5',                    // Sprint R6: 전략별 레버리지 (기본 1)
   confidence: '0.7500',            // 0~1 신뢰도
   marketContext: {                  // 시그널 시점의 시장 상태
     rsi: '28.5',
@@ -162,8 +163,12 @@ suggestedQty (% of equity)
 모든 전략 시그널은 이 공통 핸들러를 거칩니다:
 
 ```
-시그널 수신 → _resolveSignalQuantity() → 수량 0이면 SIGNAL_SKIPPED 이벤트 → 리스크 검증 → 주문 제출
+시그널 수신 → _resolveSignalQuantity() → 수량 0이면 SIGNAL_SKIPPED 이벤트 → 리스크 검증 → 주문 제출 (await)
 ```
+
+**CLOSE 시그널 수량 (Sprint R6, AD-35)**: CLOSE 시그널의 경우 `suggestedQty` 퍼센트 대신 `positionManager`에서 실제 포지션 수량을 조회하여 사용합니다.
+
+**주문 제출 await (Sprint R6)**: `submitOrder()` 호출이 fire-and-forget(`.catch()`)에서 `await` + `try/catch`로 변경되어, 주문 실패 시 에러가 올바르게 처리됩니다.
 
 ---
 
@@ -212,6 +217,14 @@ suggestedQty (% of equity)
 ### Per-Symbol Mutex (Sprint R2)
 
 `orderManager.submitOrder()`에 심볼별 Promise-chaining 뮤텍스가 적용되어 있습니다. 같은 심볼에 대한 동시 주문 요청은 순차적으로 처리됩니다 (30초 타임아웃).
+
+### 시장가 주문 가격 주입 (Sprint R6, AD-34)
+
+시장가 주문의 경우 `order.price`가 없으므로, `orderManager`가 최신 틱 가격(`tickerAggregator` 또는 `marketData` 캐시)을 `riskPrice`로 주입하여 ExposureGuard에 전달합니다. ExposureGuard는 가격이 없거나 `'0'`인 주문을 즉시 거부합니다.
+
+### Per-Signal 레버리지 설정 (Sprint R6, AD-36)
+
+`orderManager`에 `_leverageCache` Map이 추가되었습니다. 주문 전 심볼+포지션 방향별로 레버리지가 캐시에 없으면 `exchangeClient.setLeverage()`를 호출하고 캐시합니다. 이를 통해 전략별로 다른 레버리지를 사용할 수 있습니다.
 
 ```
 BTCUSDT 주문 A → 실행 중

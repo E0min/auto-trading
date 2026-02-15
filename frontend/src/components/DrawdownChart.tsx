@@ -11,14 +11,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { computeDrawdownSeries } from '@/lib/drawdown';
-
-const TOOLTIP_STYLE = {
-  backgroundColor: 'var(--bg-elevated)',
-  border: '1px solid var(--border-muted)',
-  borderRadius: '6px',
-  fontSize: '11px',
-  padding: '8px 12px',
-};
+import { CHART_TOOLTIP_STYLE } from '@/lib/chart-config';
 
 interface DrawdownChartProps {
   equityPoints: { timestamp: string; equity: string }[];
@@ -88,7 +81,7 @@ export default function DrawdownChart({ equityPoints, maxDrawdownPercent = 10 }:
                 axisLine={false}
               />
               <Tooltip
-                contentStyle={TOOLTIP_STYLE}
+                contentStyle={CHART_TOOLTIP_STYLE}
                 labelFormatter={(label) => formatTime(String(label))}
                 formatter={((value?: number) => [`${(value ?? 0).toFixed(2)}%`, '드로다운']) as never}
               />

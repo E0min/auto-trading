@@ -23,9 +23,9 @@ const INTERVALS = [
 ] as const;
 
 const inputClass =
-  'w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 transition-colors';
+  'w-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] transition-colors';
 
-const labelClass = 'block text-xs text-zinc-400 mb-1';
+const labelClass = 'block text-xs text-[var(--text-muted)] mb-1';
 
 function toDateInputValue(date: Date): string {
   return date.toISOString().split('T')[0];
@@ -144,7 +144,7 @@ export default function BacktestForm({ strategies, running, onSubmit }: Backtest
 
         {/* Strategy description */}
         {selectedStrategy && (
-          <p className="text-xs text-zinc-500 -mt-1 px-1">
+          <p className="text-xs text-[var(--text-muted)] -mt-1 px-1">
             {selectedStrategy.description}
           </p>
         )}
@@ -199,7 +199,7 @@ export default function BacktestForm({ strategies, running, onSubmit }: Backtest
           <button
             type="button"
             onClick={() => setShowAdvanced((prev) => !prev)}
-            className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+            className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
           >
             <svg
               className={cn(

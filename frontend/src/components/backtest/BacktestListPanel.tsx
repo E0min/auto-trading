@@ -1,8 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
-import Button from '@/components/ui/Button';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import {
   formatCurrency,
   formatSymbol,
@@ -45,11 +46,13 @@ export default function BacktestListPanel({
   onSelect,
   onDelete,
 }: BacktestListPanelProps) {
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+
   return (
     <Card title="백테스트 기록">
       {backtests.length === 0 ? (
         <div className="flex items-center justify-center py-10">
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-[var(--text-muted)]">
             아직 실행된 백테스트가 없습니다.
           </p>
         </div>
@@ -61,34 +64,40 @@ export default function BacktestListPanel({
             const hasPnl = bt.status === 'completed' && bt.metrics;
 
             return (
-              <button
+              <div
                 key={bt.id}
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={() => onSelect(bt.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelect(bt.id);
+                  }
+                }}
                 className={cn(
-                  'w-full text-left px-3 py-3 rounded-lg border transition-colors',
+                  'w-full text-left px-3 py-3 rounded-lg border transition-colors cursor-pointer',
                   isActive
-                    ? 'bg-blue-500/10 border-blue-500'
-                    : 'bg-zinc-800/50 border-zinc-700/50 hover:bg-zinc-800 hover:border-zinc-600'
+                    ? 'bg-[var(--accent)]/10 border-[var(--accent)]'
+                    : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] hover:bg-[var(--bg-elevated)] hover:border-[var(--border-muted)]'
                 )}
               >
                 <div className="flex items-start justify-between gap-2">
                   {/* Left: strategy info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm font-medium text-zinc-200 truncate">
+                      <span className="text-sm font-medium text-[var(--text-primary)] truncate">
                         {translateStrategyName(bt.config.strategyName)}
                       </span>
-                      <span className="text-xs font-mono text-zinc-400 flex-shrink-0">
+                      <span className="text-xs font-mono text-[var(--text-secondary)] flex-shrink-0">
                         {formatSymbol(bt.config.symbol)}
                       </span>
                     </div>
 
-                    <p className="text-xs text-zinc-500">
+                    <p className="text-xs text-[var(--text-muted)]">
                       {formatDateRange(bt.config.startTime, bt.config.endTime)}
                     </p>
 
-                    {/* PnL line for completed backtests */}
                     {hasPnl && bt.metrics && (
                       <p
                         className={cn(
@@ -111,23 +120,46 @@ export default function BacktestListPanel({
                       {badge.label}
                     </Badge>
 
-                    <Button
-                      variant="danger"
-                      size="sm"
+                    <span
+                      role="button"
+                      tabIndex={0}
                       onClick={(e) => {
                         e.stopPropagation();
-                        onDelete(bt.id);
+                        setDeleteTarget(bt.id);
                       }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          setDeleteTarget(bt.id);
+                        }
+                      }}
+                      className="text-[10px] text-[var(--text-muted)] hover:text-[var(--loss)] transition-colors cursor-pointer"
                     >
                       삭제
-                    </Button>
+                    </span>
                   </div>
                 </div>
-              </button>
+              </div>
             );
           })}
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) {
+            onDelete(deleteTarget);
+            setDeleteTarget(null);
+          }
+        }}
+        title="백테스트 삭제"
+        message="이 백테스트 결과를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다."
+        confirmLabel="삭제"
+        variant="danger"
+      />
     </Card>
   );
 }

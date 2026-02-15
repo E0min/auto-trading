@@ -18,7 +18,7 @@ const actionVariant: Record<string, 'success' | 'danger' | 'warning' | 'info'> =
 
 export default function SignalFeed({ signals }: SignalFeedProps) {
   return (
-    <Card title="실시간 시그널" className="max-h-[400px] overflow-y-auto">
+    <Card title="실시간 시그널" className="max-h-[500px] overflow-y-auto">
       {signals.length === 0 ? (
         <p className="text-[var(--text-muted)] text-sm text-center py-10">시그널 대기 중...</p>
       ) : (

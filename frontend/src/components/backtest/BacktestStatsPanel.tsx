@@ -26,8 +26,8 @@ const STATS: StatDefinition[] = [
     getValue: (m) => `${parseFloat(m.winRate).toFixed(2)}%`,
     getColor: (m) => {
       const v = parseFloat(m.winRate);
-      if (isNaN(v)) return 'text-zinc-100';
-      return v >= 50 ? 'text-emerald-400' : 'text-red-400';
+      if (isNaN(v)) return 'text-[var(--text-primary)]';
+      return v >= 50 ? 'text-[var(--profit)]' : 'text-[var(--loss)]';
     },
   },
   {
@@ -43,15 +43,15 @@ const STATS: StatDefinition[] = [
   {
     label: '최대 낙폭',
     getValue: (m) => `${parseFloat(m.maxDrawdownPercent).toFixed(2)}%`,
-    getColor: () => 'text-red-400',
+    getColor: () => 'text-[var(--loss)]',
   },
   {
     label: '수익 팩터',
     getValue: (m) => parseFloat(m.profitFactor).toFixed(2),
     getColor: (m) => {
       const v = parseFloat(m.profitFactor);
-      if (isNaN(v)) return 'text-zinc-100';
-      return v >= 1 ? 'text-emerald-400' : 'text-red-400';
+      if (isNaN(v)) return 'text-[var(--text-primary)]';
+      return v >= 1 ? 'text-[var(--profit)]' : 'text-[var(--loss)]';
     },
   },
   {
@@ -59,8 +59,8 @@ const STATS: StatDefinition[] = [
     getValue: (m) => parseFloat(m.sharpeRatio).toFixed(2),
     getColor: (m) => {
       const v = parseFloat(m.sharpeRatio);
-      if (isNaN(v)) return 'text-zinc-100';
-      return v >= 1 ? 'text-emerald-400' : v >= 0 ? 'text-zinc-100' : 'text-red-400';
+      if (isNaN(v)) return 'text-[var(--text-primary)]';
+      return v >= 1 ? 'text-[var(--profit)]' : v >= 0 ? 'text-[var(--text-primary)]' : 'text-[var(--loss)]';
     },
   },
   {
@@ -70,22 +70,22 @@ const STATS: StatDefinition[] = [
   {
     label: '평균 수익',
     getValue: (m) => `$${formatCurrency(m.avgWin)}`,
-    getColor: () => 'text-emerald-400',
+    getColor: () => 'text-[var(--profit)]',
   },
   {
     label: '평균 손실',
     getValue: (m) => `$${formatCurrency(m.avgLoss)}`,
-    getColor: () => 'text-red-400',
+    getColor: () => 'text-[var(--loss)]',
   },
   {
     label: '최대 수익',
     getValue: (m) => `$${formatCurrency(m.largestWin)}`,
-    getColor: () => 'text-emerald-400',
+    getColor: () => 'text-[var(--profit)]',
   },
   {
     label: '최대 손실',
     getValue: (m) => `$${formatCurrency(m.largestLoss)}`,
-    getColor: () => 'text-red-400',
+    getColor: () => 'text-[var(--loss)]',
   },
   {
     label: '연속 승리',
@@ -98,7 +98,7 @@ const STATS: StatDefinition[] = [
   {
     label: '총 수수료',
     getValue: (m) => `$${formatCurrency(m.totalFees)}`,
-    getColor: () => 'text-zinc-400',
+    getColor: () => 'text-[var(--text-secondary)]',
   },
 ];
 
@@ -108,28 +108,46 @@ export default function BacktestStatsPanel({ metrics, loading }: BacktestStatsPa
       {loading ? (
         <div className="flex items-center justify-center py-10">
           <Spinner size="md" />
-          <span className="ml-2 text-sm text-zinc-500">통계 계산 중...</span>
+          <span className="ml-2 text-sm text-[var(--text-muted)]">통계 계산 중...</span>
         </div>
       ) : !metrics ? (
         <div className="flex items-center justify-center py-10">
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-[var(--text-muted)]">
             백테스트를 실행하면 성과 통계가 표시됩니다.
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {STATS.map((stat) => {
-            const value = stat.getValue(metrics);
-            const colorClass = stat.getColor ? stat.getColor(metrics) : 'text-zinc-100';
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {STATS.map((stat) => {
+              const value = stat.getValue(metrics);
+              const colorClass = stat.getColor ? stat.getColor(metrics) : 'text-[var(--text-primary)]';
 
-            return (
-              <div key={stat.label} className="space-y-1">
-                <p className="text-xs text-zinc-500">{stat.label}</p>
-                <p className={cn('text-lg font-semibold', colorClass)}>{value}</p>
-              </div>
-            );
-          })}
-        </div>
+              return (
+                <div key={stat.label} className="space-y-1">
+                  <p className="text-xs text-[var(--text-muted)]">{stat.label}</p>
+                  <p className={cn('text-lg font-semibold', colorClass)}>{value}</p>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Disclaimer */}
+          <div className="mt-4 pt-3 border-t border-[var(--border-subtle)]">
+            <div className="flex items-start gap-2">
+              <svg className="w-3.5 h-3.5 text-[var(--text-muted)] flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                본 백테스트 결과는 과거 데이터 기반 시뮬레이션이며, 실제 수익을 보장하지 않습니다.
+                <strong className="text-[var(--text-secondary)]"> 레버리지 미반영</strong>,
+                <strong className="text-[var(--text-secondary)]"> 펀딩비 미반영</strong>,
+                슬리피지/수수료는 설정값 기준 근사치입니다.
+                실거래 시 시장 유동성, 체결 지연, 펀딩비, 레버리지 효과 등으로 결과가 크게 달라질 수 있습니다.
+              </p>
+            </div>
+          </div>
+        </>
       )}
     </Card>
   );

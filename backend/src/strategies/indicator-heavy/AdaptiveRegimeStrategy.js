@@ -99,6 +99,9 @@ class AdaptiveRegimeStrategy extends StrategyBase {
     // Trailing stop tracking
     this._highestSinceEntry = null;
     this._lowestSinceEntry = null;
+
+    // AD-37: Pending entry regime — set at signal time, applied at fill time
+    this._pendingEntryRegime = null;
   }
 
   // ---------------------------------------------------------------------------
@@ -353,15 +356,25 @@ class AdaptiveRegimeStrategy extends StrategyBase {
     if (!this._active) return;
     if (!fill) return;
     const action = fill.action || (fill.signal && fill.signal.action);
+    const fillPrice = fill.price !== undefined ? String(fill.price) : null;
 
+    // AD-37: Set all position state ONLY on confirmed fill
     if (action === SIGNAL_ACTIONS.OPEN_LONG) {
       this._positionSide = 'long';
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      this._entryPrice = fillPrice || this._latestPrice;
+      this._entryRegime = this._pendingEntryRegime || this.getEffectiveRegime();
+      this._highestSinceEntry = this._entryPrice;
+      this._lowestSinceEntry = null;
+      this._pendingEntryRegime = null;
+      log.trade('Long fill recorded', { entry: this._entryPrice, regime: this._entryRegime, symbol: this._symbol });
     } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
       this._positionSide = 'short';
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      this._entryPrice = fillPrice || this._latestPrice;
+      this._entryRegime = this._pendingEntryRegime || this.getEffectiveRegime();
+      this._lowestSinceEntry = this._entryPrice;
+      this._highestSinceEntry = null;
+      this._pendingEntryRegime = null;
+      log.trade('Short fill recorded', { entry: this._entryPrice, regime: this._entryRegime, symbol: this._symbol });
     } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
       log.trade('Position closed via fill', { side: this._positionSide, symbol: this._symbol });
       this._resetPosition();
@@ -388,11 +401,8 @@ class AdaptiveRegimeStrategy extends StrategyBase {
         symbol: this._symbol, price, rsi: rsiVal, adx: adxVal,
       });
 
-      this._entryPrice = price;
-      this._positionSide = 'long';
-      this._entryRegime = MARKET_REGIMES.TRENDING_UP;
-      this._highestSinceEntry = price;
-      this._lowestSinceEntry = null;
+      // AD-37: Do NOT set position state here — defer to onFill()
+      this._pendingEntryRegime = MARKET_REGIMES.TRENDING_UP;
 
       return {
         action: SIGNAL_ACTIONS.OPEN_LONG,
@@ -427,11 +437,8 @@ class AdaptiveRegimeStrategy extends StrategyBase {
         symbol: this._symbol, price, rsi: rsiVal, adx: adxVal,
       });
 
-      this._entryPrice = price;
-      this._positionSide = 'short';
-      this._entryRegime = MARKET_REGIMES.TRENDING_DOWN;
-      this._lowestSinceEntry = price;
-      this._highestSinceEntry = null;
+      // AD-37: Do NOT set position state here — defer to onFill()
+      this._pendingEntryRegime = MARKET_REGIMES.TRENDING_DOWN;
 
       return {
         action: SIGNAL_ACTIONS.OPEN_SHORT,
@@ -463,11 +470,8 @@ class AdaptiveRegimeStrategy extends StrategyBase {
         symbol: this._symbol, price, rsi: rsiVal, bbLower: bb.lower,
       });
 
-      this._entryPrice = price;
-      this._positionSide = 'long';
-      this._entryRegime = MARKET_REGIMES.RANGING;
-      this._highestSinceEntry = price;
-      this._lowestSinceEntry = null;
+      // AD-37: Do NOT set position state here — defer to onFill()
+      this._pendingEntryRegime = MARKET_REGIMES.RANGING;
 
       return {
         action: SIGNAL_ACTIONS.OPEN_LONG,
@@ -491,11 +495,8 @@ class AdaptiveRegimeStrategy extends StrategyBase {
         symbol: this._symbol, price, rsi: rsiVal, bbUpper: bb.upper,
       });
 
-      this._entryPrice = price;
-      this._positionSide = 'short';
-      this._entryRegime = MARKET_REGIMES.RANGING;
-      this._lowestSinceEntry = price;
-      this._highestSinceEntry = null;
+      // AD-37: Do NOT set position state here — defer to onFill()
+      this._pendingEntryRegime = MARKET_REGIMES.RANGING;
 
       return {
         action: SIGNAL_ACTIONS.OPEN_SHORT,
@@ -527,11 +528,8 @@ class AdaptiveRegimeStrategy extends StrategyBase {
         symbol: this._symbol, price, rsi: rsiVal, volumeSurge,
       });
 
-      this._entryPrice = price;
-      this._positionSide = 'long';
-      this._entryRegime = MARKET_REGIMES.VOLATILE;
-      this._highestSinceEntry = price;
-      this._lowestSinceEntry = null;
+      // AD-37: Do NOT set position state here — defer to onFill()
+      this._pendingEntryRegime = MARKET_REGIMES.VOLATILE;
 
       return {
         action: SIGNAL_ACTIONS.OPEN_LONG,
@@ -555,11 +553,8 @@ class AdaptiveRegimeStrategy extends StrategyBase {
         symbol: this._symbol, price, rsi: rsiVal, volumeSurge,
       });
 
-      this._entryPrice = price;
-      this._positionSide = 'short';
-      this._entryRegime = MARKET_REGIMES.VOLATILE;
-      this._lowestSinceEntry = price;
-      this._highestSinceEntry = null;
+      // AD-37: Do NOT set position state here — defer to onFill()
+      this._pendingEntryRegime = MARKET_REGIMES.VOLATILE;
 
       return {
         action: SIGNAL_ACTIONS.OPEN_SHORT,
@@ -708,6 +703,7 @@ class AdaptiveRegimeStrategy extends StrategyBase {
     this._entryRegime = null;
     this._highestSinceEntry = null;
     this._lowestSinceEntry = null;
+    this._pendingEntryRegime = null;
   }
 }
 

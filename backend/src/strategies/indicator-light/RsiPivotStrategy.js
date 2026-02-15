@@ -280,8 +280,7 @@ class RsiPivotStrategy extends StrategyBase {
             regime,
           },
         };
-        this._positionSide = 'long';
-        this._entryPrice = close;
+        // AD-37: Do NOT set _positionSide/_entryPrice here — defer to onFill()
         this._lastSignal = signal;
         this.emitSignal(signal);
         return;
@@ -312,8 +311,7 @@ class RsiPivotStrategy extends StrategyBase {
             regime,
           },
         };
-        this._positionSide = 'short';
-        this._entryPrice = close;
+        // AD-37: Do NOT set _positionSide/_entryPrice here — defer to onFill()
         this._lastSignal = signal;
         this.emitSignal(signal);
       }
@@ -335,14 +333,14 @@ class RsiPivotStrategy extends StrategyBase {
 
     const action = fill.action || '';
 
-    // Open fills
-    if (action === SIGNAL_ACTIONS.OPEN_LONG || (fill.side === 'buy' && this._positionSide === 'long' && this._entryPrice === null)) {
+    // AD-37: Open fills — set position state ONLY on confirmed fill
+    if (action === SIGNAL_ACTIONS.OPEN_LONG || (fill.side === 'buy' && !this._positionSide)) {
       this._entryPrice = price;
       this._positionSide = 'long';
       this._log.trade('Long entry recorded', { entryPrice: this._entryPrice });
       return;
     }
-    if (action === SIGNAL_ACTIONS.OPEN_SHORT || (fill.side === 'sell' && this._positionSide === 'short' && this._entryPrice === null)) {
+    if (action === SIGNAL_ACTIONS.OPEN_SHORT || (fill.side === 'sell' && !this._positionSide)) {
       this._entryPrice = price;
       this._positionSide = 'short';
       this._log.trade('Short entry recorded', { entryPrice: this._entryPrice });

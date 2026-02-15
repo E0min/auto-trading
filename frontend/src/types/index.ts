@@ -21,6 +21,7 @@ export interface StrategyInfo {
   active: boolean;
   symbol: string;
   symbols: string[];     // T0-3: all active symbols
+  targetRegimes: string[];
   config: Record<string, unknown>;
   lastSignal: Signal | null;
 }

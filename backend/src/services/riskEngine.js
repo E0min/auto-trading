@@ -268,6 +268,20 @@ class RiskEngine extends EventEmitter {
   }
 
   /**
+   * Return the current account state (equity + positions).
+   * Used by BotService and strategies to read cached equity without
+   * hitting the exchange REST API.
+   *
+   * @returns {{ equity: string, positions: Array<object> }}
+   */
+  getAccountState() {
+    return {
+      equity: this.accountState.equity,
+      positions: [...this.accountState.positions],
+    };
+  }
+
+  /**
    * Return a combined status snapshot from all sub-engines.
    *
    * @returns {object}
