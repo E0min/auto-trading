@@ -4,7 +4,23 @@ import { useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useBotStatus } from '@/hooks/useBotStatus';
 import { useTournament } from '@/hooks/useTournament';
+import Card from '@/components/ui/Card';
+import Badge from '@/components/ui/Badge';
+import Button from '@/components/ui/Button';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import Spinner from '@/components/ui/Spinner';
+import {
+  formatCurrency,
+  formatTime,
+  getPnlColor,
+  getPnlSign,
+  translateStrategyName,
+  getStrategyCategory,
+  cn,
+} from '@/lib/utils';
 import type { LeaderboardEntry, StrategyDetail } from '@/types';
+
+/* ── Helpers ──────────────────────────────────────────────────────────── */
 
 function formatPnl(pnl: string): string {
   const num = parseFloat(pnl);
@@ -12,12 +28,13 @@ function formatPnl(pnl: string): string {
   return num >= 0 ? `+${num.toFixed(2)}` : num.toFixed(2);
 }
 
-function pnlColor(pnl: string): string {
-  const num = parseFloat(pnl);
-  if (num > 0) return 'text-emerald-400';
-  if (num < 0) return 'text-red-400';
-  return 'text-zinc-400';
-}
+const CATEGORY_LABEL: Record<string, string> = {
+  'price-action': '가격행동',
+  'indicator-light': '경량지표',
+  'indicator-heavy': '중량지표',
+};
+
+/* ── Page ─────────────────────────────────────────────────────────────── */
 
 export default function TournamentPage() {
   const { status: botStatus, loading: botStatusLoading } = useBotStatus();
@@ -37,6 +54,8 @@ export default function TournamentPage() {
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
   const [strategyDetail, setStrategyDetail] = useState<StrategyDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
   const handleRowClick = useCallback(async (name: string) => {
     if (selectedStrategy === name) {
@@ -57,43 +76,53 @@ export default function TournamentPage() {
   }, [selectedStrategy, getStrategyDetail]);
 
   const handleStart = useCallback(async () => {
+    setActionLoading(true);
     try {
       await startTournament(['all']);
     } catch { /* error handled in hook */ }
+    finally { setActionLoading(false); }
   }, [startTournament]);
 
   const handleStop = useCallback(async () => {
+    setActionLoading(true);
     try {
       await stopTournament();
     } catch { /* error handled in hook */ }
+    finally { setActionLoading(false); }
   }, [stopTournament]);
 
   const handleReset = useCallback(async () => {
-    if (!confirm('토너먼트를 초기화하시겠습니까? 모든 데이터가 삭제됩니다.')) return;
+    setResetDialogOpen(false);
+    setActionLoading(true);
     try {
       await resetTournament();
       setSelectedStrategy(null);
       setStrategyDetail(null);
     } catch { /* error handled in hook */ }
+    finally { setActionLoading(false); }
   }, [resetTournament]);
+
+  /* ── Gate: Paper mode only ──────────────────────────────────────────── */
 
   if (!botStatusLoading && !isPaper) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center space-y-4 max-w-md">
-          <div className="w-16 h-16 mx-auto rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center">
-            <svg className="w-8 h-8 text-zinc-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <div className="min-h-screen flex items-center justify-center relative z-10">
+        <div className="text-center space-y-5 max-w-sm">
+          <div className="w-12 h-12 mx-auto rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)] flex items-center justify-center">
+            <svg className="w-5 h-5 text-[var(--text-muted)]" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
             </svg>
           </div>
-          <h2 className="text-lg font-semibold text-zinc-200">가상거래 모드 전용</h2>
-          <p className="text-sm text-zinc-500">
-            토너먼트는 가상거래(Paper) 모드에서만 사용할 수 있습니다.<br />
-            대시보드에서 가상거래 모드로 전환해주세요.
-          </p>
+          <div>
+            <h2 className="text-sm font-medium text-[var(--text-primary)] mb-2">가상거래 모드 전용</h2>
+            <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+              토너먼트는 가상거래(Paper) 모드에서만 사용할 수 있습니다.<br />
+              대시보드에서 가상거래 모드로 전환해주세요.
+            </p>
+          </div>
           <Link
             href="/"
-            className="inline-block mt-2 px-4 py-2 text-sm font-medium text-amber-400 border border-amber-500/30 bg-amber-500/10 rounded-lg hover:bg-amber-500/20 transition-colors"
+            className="inline-block text-[11px] font-medium text-[var(--accent)] border border-[var(--accent)]/30 rounded-md px-4 py-2 hover:bg-[var(--accent-subtle)] transition-colors"
           >
             대시보드로 돌아가기
           </Link>
@@ -102,229 +131,153 @@ export default function TournamentPage() {
     );
   }
 
+  /* ── Main ────────────────────────────────────────────────────────────── */
+
   return (
-    <div className="min-h-screen p-4 md:p-6 max-w-[1600px] mx-auto">
-      {/* Header */}
-      <header className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
-          <h1 className="text-xl font-bold text-zinc-100">Strategy Tournament</h1>
-          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30">
-            TOURNAMENT MODE
-          </span>
-          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400/80 border border-amber-500/20">
-            가상거래 전용
-          </span>
-          <Link
-            href="/"
-            className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors border border-zinc-700 rounded-lg px-3 py-1.5"
-          >
-            대시보드
-          </Link>
-        </div>
-
-        {/* Controls */}
-        <div className="flex items-center gap-2">
-          {info?.running ? (
-            <button
-              onClick={handleStop}
-              className="px-4 py-2 text-sm font-medium rounded-lg bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-colors"
+    <div className="min-h-screen relative z-10">
+      <div className="px-6 py-8 max-w-[1440px] mx-auto w-full">
+        {/* Header */}
+        <header className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-6">
+            <h1 className="text-lg font-semibold text-[var(--text-primary)] tracking-tight">
+              전략 토너먼트
+            </h1>
+            <div className="w-px h-5 bg-[var(--border-subtle)]" />
+            <Badge variant="info" dot>TOURNAMENT</Badge>
+            <Badge variant="warning" dot>가상거래</Badge>
+            <Link
+              href="/"
+              className="text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors border border-[var(--border-subtle)] rounded-md px-3 py-1.5 hover:border-[var(--border-muted)]"
             >
-              Stop
-            </button>
-          ) : (
-            <button
-              onClick={handleStart}
-              className="px-4 py-2 text-sm font-medium rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors"
-            >
-              Start
-            </button>
-          )}
-          <button
-            onClick={handleReset}
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-zinc-700/50 text-zinc-400 border border-zinc-600 hover:bg-zinc-700 transition-colors"
-          >
-            Reset
-          </button>
-        </div>
-      </header>
-
-      {/* Tournament Info Bar */}
-      {info && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <InfoCard label="Status" value={info.running ? 'Running' : 'Stopped'} valueColor={info.running ? 'text-emerald-400' : 'text-zinc-500'} />
-          <InfoCard label="Strategies" value={String(info.strategyCount)} />
-          <InfoCard label="Initial Balance" value={`${parseFloat(info.initialBalance).toLocaleString()} USDT`} />
-          <InfoCard label="Started" value={info.startedAt ? new Date(info.startedAt).toLocaleString('ko-KR') : '-'} />
-        </div>
-      )}
-
-      {/* Error */}
-      {error && (
-        <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
-          {error}
-        </div>
-      )}
-
-      {/* Leaderboard Table */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 overflow-hidden">
-        <div className="px-4 py-3 border-b border-zinc-800">
-          <h2 className="text-sm font-semibold text-zinc-300">Leaderboard</h2>
-        </div>
-
-        {loading ? (
-          <div className="p-8 text-center text-zinc-500 text-sm">Loading...</div>
-        ) : leaderboard.length === 0 ? (
-          <div className="p-8 text-center text-zinc-500 text-sm">
-            토너먼트가 아직 시작되지 않았습니다. 봇을 시작하면 자동으로 전략별 계좌가 생성됩니다.
+              대시보드
+            </Link>
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-zinc-500 text-xs border-b border-zinc-800">
-                  <th className="px-4 py-2 text-left font-medium w-12">#</th>
-                  <th className="px-4 py-2 text-left font-medium">Strategy</th>
-                  <th className="px-4 py-2 text-right font-medium">Equity</th>
-                  <th className="px-4 py-2 text-right font-medium">PnL</th>
-                  <th className="px-4 py-2 text-right font-medium">PnL %</th>
-                  <th className="px-4 py-2 text-right font-medium">Unrealized</th>
-                  <th className="px-4 py-2 text-right font-medium">Positions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {leaderboard.map((entry) => (
-                  <LeaderboardRow
-                    key={entry.strategy}
-                    entry={entry}
-                    selected={selectedStrategy === entry.strategy}
-                    onClick={() => handleRowClick(entry.strategy)}
-                  />
-                ))}
-              </tbody>
-            </table>
+
+          {/* Controls */}
+          <div className="flex items-center gap-2">
+            {info?.running ? (
+              <Button variant="danger" size="sm" onClick={handleStop} loading={actionLoading}>
+                정지
+              </Button>
+            ) : (
+              <Button variant="primary" size="sm" onClick={handleStart} loading={actionLoading}>
+                시작
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" onClick={() => setResetDialogOpen(true)}>
+              초기화
+            </Button>
+          </div>
+        </header>
+
+        {/* Tournament Info Bar */}
+        {info && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <StatCard
+              label="상태"
+              value={info.running ? '실행 중' : '정지'}
+              badge={info.running ? 'success' : 'neutral'}
+            />
+            <StatCard label="전략 수" value={String(info.strategyCount)} />
+            <StatCard label="초기 잔고" value={`${formatCurrency(info.initialBalance)} USDT`} />
+            <StatCard
+              label="시작 시간"
+              value={info.startedAt ? new Date(info.startedAt).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}
+            />
           </div>
         )}
-      </div>
 
-      {/* Strategy Detail Panel */}
-      {selectedStrategy && (
-        <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/50 overflow-hidden">
-          <div className="px-4 py-3 border-b border-zinc-800">
-            <h2 className="text-sm font-semibold text-zinc-300">
-              {selectedStrategy} — Detail
-            </h2>
+        {/* Error */}
+        {error && (
+          <div className="mb-6 px-4 py-3 rounded-lg border border-[var(--loss)]/20 bg-[var(--loss)]/5">
+            <p className="text-xs text-[var(--loss)]">{error}</p>
           </div>
+        )}
 
-          {detailLoading ? (
-            <div className="p-8 text-center text-zinc-500 text-sm">Loading...</div>
-          ) : strategyDetail ? (
-            <div className="p-4 space-y-4">
-              {/* Account + Stats Row */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <InfoCard label="Equity" value={`${parseFloat(strategyDetail.account.equity).toFixed(2)} USDT`} />
-                <InfoCard label="Balance" value={`${parseFloat(strategyDetail.account.availableBalance).toFixed(2)} USDT`} />
-                <InfoCard
-                  label="Win Rate"
-                  value={`${strategyDetail.stats.winRate}%`}
-                  valueColor={parseFloat(strategyDetail.stats.winRate) >= 50 ? 'text-emerald-400' : 'text-red-400'}
-                />
-                <InfoCard label="Trades" value={`${strategyDetail.stats.wins}W / ${strategyDetail.stats.losses}L (${strategyDetail.stats.totalTrades})`} />
+        <div className="space-y-6">
+          {/* Leaderboard */}
+          <Card title="리더보드">
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <Spinner size="md" />
               </div>
+            ) : leaderboard.length === 0 ? (
+              <p className="text-xs text-[var(--text-muted)] text-center py-12">
+                토너먼트가 아직 시작되지 않았습니다. 시작 버튼을 눌러 전략별 계좌를 생성하세요.
+              </p>
+            ) : (
+              <div className="overflow-x-auto -mx-6 -mb-6">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-[var(--border-subtle)]">
+                      <th className="px-6 py-2.5 text-left text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium w-12">#</th>
+                      <th className="px-4 py-2.5 text-left text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium">전략</th>
+                      <th className="px-4 py-2.5 text-left text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium">카테고리</th>
+                      <th className="px-4 py-2.5 text-right text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium">자산</th>
+                      <th className="px-4 py-2.5 text-right text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium">실현 PnL</th>
+                      <th className="px-4 py-2.5 text-right text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium">수익률</th>
+                      <th className="px-4 py-2.5 text-right text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium">미실현</th>
+                      <th className="px-6 py-2.5 text-right text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium">포지션</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leaderboard.map((entry) => (
+                      <LeaderboardRow
+                        key={entry.strategy}
+                        entry={entry}
+                        selected={selectedStrategy === entry.strategy}
+                        onClick={() => handleRowClick(entry.strategy)}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
 
-              {/* Positions */}
-              {strategyDetail.positions.length > 0 && (
-                <div>
-                  <h3 className="text-xs font-medium text-zinc-500 mb-2">Open Positions</h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="text-zinc-500 border-b border-zinc-800">
-                          <th className="px-3 py-1.5 text-left">Symbol</th>
-                          <th className="px-3 py-1.5 text-left">Side</th>
-                          <th className="px-3 py-1.5 text-right">Qty</th>
-                          <th className="px-3 py-1.5 text-right">Entry</th>
-                          <th className="px-3 py-1.5 text-right">Mark</th>
-                          <th className="px-3 py-1.5 text-right">Unrealized PnL</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {strategyDetail.positions.map((pos, i) => (
-                          <tr key={i} className="border-b border-zinc-800/50">
-                            <td className="px-3 py-1.5 text-zinc-200">{pos.symbol}</td>
-                            <td className={`px-3 py-1.5 ${pos.posSide === 'long' ? 'text-emerald-400' : 'text-red-400'}`}>
-                              {pos.posSide.toUpperCase()}
-                            </td>
-                            <td className="px-3 py-1.5 text-right text-zinc-300">{parseFloat(pos.qty).toFixed(4)}</td>
-                            <td className="px-3 py-1.5 text-right text-zinc-300">{parseFloat(pos.entryPrice).toFixed(2)}</td>
-                            <td className="px-3 py-1.5 text-right text-zinc-300">{parseFloat(pos.markPrice).toFixed(2)}</td>
-                            <td className={`px-3 py-1.5 text-right ${pnlColor(pos.unrealizedPnl)}`}>
-                              {formatPnl(pos.unrealizedPnl)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* Recent Trades */}
-              {strategyDetail.recentTrades.length > 0 && (
-                <div>
-                  <h3 className="text-xs font-medium text-zinc-500 mb-2">Recent Trades</h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="text-zinc-500 border-b border-zinc-800">
-                          <th className="px-3 py-1.5 text-left">Time</th>
-                          <th className="px-3 py-1.5 text-left">Symbol</th>
-                          <th className="px-3 py-1.5 text-left">Side</th>
-                          <th className="px-3 py-1.5 text-right">Qty</th>
-                          <th className="px-3 py-1.5 text-right">Price</th>
-                          <th className="px-3 py-1.5 text-right">PnL</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {strategyDetail.recentTrades.map((trade) => (
-                          <tr key={trade._id} className="border-b border-zinc-800/50">
-                            <td className="px-3 py-1.5 text-zinc-400">
-                              {new Date(trade.createdAt).toLocaleTimeString('ko-KR')}
-                            </td>
-                            <td className="px-3 py-1.5 text-zinc-200">{trade.symbol}</td>
-                            <td className={`px-3 py-1.5 ${trade.side === 'buy' ? 'text-emerald-400' : 'text-red-400'}`}>
-                              {trade.side.toUpperCase()} {trade.posSide}
-                            </td>
-                            <td className="px-3 py-1.5 text-right text-zinc-300">{parseFloat(trade.qty).toFixed(4)}</td>
-                            <td className="px-3 py-1.5 text-right text-zinc-300">
-                              {trade.avgFilledPrice ? parseFloat(trade.avgFilledPrice).toFixed(2) : '-'}
-                            </td>
-                            <td className={`px-3 py-1.5 text-right ${trade.pnl ? pnlColor(trade.pnl) : 'text-zinc-500'}`}>
-                              {trade.pnl ? formatPnl(trade.pnl) : '-'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="p-8 text-center text-zinc-500 text-sm">No data available</div>
+          {/* Strategy Detail Panel */}
+          {selectedStrategy && (
+            <StrategyDetailPanel
+              name={selectedStrategy}
+              detail={strategyDetail}
+              loading={detailLoading}
+            />
           )}
         </div>
-      )}
+      </div>
+
+      {/* Reset Confirm Dialog */}
+      <ConfirmDialog
+        open={resetDialogOpen}
+        title="토너먼트 초기화"
+        message="모든 전략의 계좌, 포지션, 거래 기록이 삭제됩니다. 이 작업은 되돌릴 수 없습니다."
+        confirmLabel="초기화"
+        cancelLabel="취소"
+        variant="danger"
+        onConfirm={handleReset}
+        onCancel={() => setResetDialogOpen(false)}
+      />
     </div>
   );
 }
 
-// ── Sub-components ──────────────────────────────────────────────────────────
+/* ── Sub-components ──────────────────────────────────────────────────── */
 
-function InfoCard({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
+function StatCard({ label, value, badge }: {
+  label: string;
+  value: string;
+  badge?: 'success' | 'neutral';
+}) {
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
-      <p className="text-xs text-zinc-500 mb-1">{label}</p>
-      <p className={`text-sm font-semibold ${valueColor || 'text-zinc-200'}`}>{value}</p>
+    <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg p-4">
+      <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--text-muted)] mb-2">{label}</p>
+      {badge ? (
+        <Badge variant={badge} dot>
+          <span className="text-sm font-mono">{value}</span>
+        </Badge>
+      ) : (
+        <p className="text-sm font-mono text-[var(--text-primary)]">{value}</p>
+      )}
     </div>
   );
 }
@@ -338,34 +291,188 @@ function LeaderboardRow({
   selected: boolean;
   onClick: () => void;
 }) {
-  const rankBadge = entry.rank <= 3
-    ? ['text-yellow-400', 'text-zinc-300', 'text-amber-600'][entry.rank - 1]
-    : 'text-zinc-500';
+  const rankColor = entry.rank === 1
+    ? 'text-[var(--accent)]'
+    : entry.rank <= 3
+      ? 'text-[var(--text-secondary)]'
+      : 'text-[var(--text-muted)]';
+
+  const category = getStrategyCategory(entry.strategy);
 
   return (
     <tr
       onClick={onClick}
-      className={`border-b border-zinc-800/50 cursor-pointer transition-colors hover:bg-zinc-800/40 ${
-        selected ? 'bg-zinc-800/60' : ''
-      }`}
+      className={cn(
+        'border-b border-[var(--border-subtle)]/50 cursor-pointer transition-colors',
+        selected ? 'bg-[var(--bg-surface)]' : 'hover:bg-[var(--bg-surface)]/50',
+      )}
     >
-      <td className={`px-4 py-2.5 font-bold ${rankBadge}`}>{entry.rank}</td>
-      <td className="px-4 py-2.5 text-zinc-200 font-medium">{entry.strategy}</td>
-      <td className="px-4 py-2.5 text-right text-zinc-200 font-mono">
-        {parseFloat(entry.equity).toFixed(2)}
+      <td className={cn('px-6 py-3 font-mono font-medium', rankColor)}>
+        {entry.rank}
       </td>
-      <td className={`px-4 py-2.5 text-right font-mono ${pnlColor(entry.pnl)}`}>
-        {formatPnl(entry.pnl)}
+      <td className="px-4 py-3">
+        <div>
+          <span className="text-sm text-[var(--text-primary)] font-medium">
+            {translateStrategyName(entry.strategy)}
+          </span>
+          <span className="ml-2 text-[10px] text-[var(--text-muted)] font-mono">
+            {entry.strategy.replace('Strategy', '')}
+          </span>
+        </div>
       </td>
-      <td className={`px-4 py-2.5 text-right font-mono ${pnlColor(entry.pnlPercent)}`}>
+      <td className="px-4 py-3">
+        <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">
+          {CATEGORY_LABEL[category] ?? category}
+        </span>
+      </td>
+      <td className="px-4 py-3 text-right font-mono text-sm text-[var(--text-primary)]">
+        {formatCurrency(entry.equity)}
+      </td>
+      <td className={cn('px-4 py-3 text-right font-mono text-sm', getPnlColor(entry.pnl))}>
+        {getPnlSign(entry.pnl)}{formatPnl(entry.pnl)}
+      </td>
+      <td className={cn('px-4 py-3 text-right font-mono text-sm', getPnlColor(entry.pnlPercent))}>
         {formatPnl(entry.pnlPercent)}%
       </td>
-      <td className={`px-4 py-2.5 text-right font-mono ${pnlColor(entry.unrealizedPnl)}`}>
+      <td className={cn('px-4 py-3 text-right font-mono text-sm', getPnlColor(entry.unrealizedPnl))}>
         {formatPnl(entry.unrealizedPnl)}
       </td>
-      <td className="px-4 py-2.5 text-right text-zinc-400">
+      <td className="px-6 py-3 text-right text-sm text-[var(--text-muted)]">
         {entry.positionCount}
       </td>
     </tr>
+  );
+}
+
+function StrategyDetailPanel({
+  name,
+  detail,
+  loading: isLoading,
+}: {
+  name: string;
+  detail: StrategyDetail | null;
+  loading: boolean;
+}) {
+  return (
+    <Card
+      title={`${translateStrategyName(name)} 상세`}
+      headerRight={
+        <span className="text-[10px] text-[var(--text-muted)] font-mono">
+          {name}
+        </span>
+      }
+    >
+      {isLoading ? (
+        <div className="flex items-center justify-center py-8">
+          <Spinner size="md" />
+        </div>
+      ) : !detail ? (
+        <p className="text-xs text-[var(--text-muted)] text-center py-8">데이터 없음</p>
+      ) : (
+        <div className="space-y-6">
+          {/* Account + Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <StatCard label="자산" value={`${formatCurrency(detail.account.equity)} USDT`} />
+            <StatCard label="잔고" value={`${formatCurrency(detail.account.availableBalance)} USDT`} />
+            <StatCard
+              label="승률"
+              value={`${detail.stats.winRate}%`}
+              badge={parseFloat(detail.stats.winRate) >= 50 ? 'success' : 'neutral'}
+            />
+            <StatCard label="거래" value={`${detail.stats.wins}승 / ${detail.stats.losses}패 (${detail.stats.totalTrades})`} />
+          </div>
+
+          {/* Open Positions */}
+          {detail.positions.length > 0 && (
+            <div>
+              <h4 className="text-[11px] uppercase tracking-[0.08em] text-[var(--text-muted)] mb-3">보유 포지션</h4>
+              <div className="overflow-x-auto -mx-6">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-[var(--border-subtle)]">
+                      {['심볼', '방향', '수량', '진입가', '현재가', '미실현 PnL'].map((h, i) => (
+                        <th key={h} className={cn(
+                          'px-6 py-2 text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium',
+                          i >= 2 ? 'text-right' : 'text-left',
+                        )}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.positions.map((pos, i) => (
+                      <tr key={i} className="border-b border-[var(--border-subtle)]/50">
+                        <td className="px-6 py-2.5 text-sm font-mono text-[var(--text-primary)]">{pos.symbol.replace('USDT', '')}</td>
+                        <td className="px-6 py-2.5">
+                          <Badge variant={pos.posSide === 'long' ? 'success' : 'danger'} dot>
+                            {pos.posSide === 'long' ? 'LONG' : 'SHORT'}
+                          </Badge>
+                        </td>
+                        <td className="px-6 py-2.5 text-right text-sm font-mono text-[var(--text-secondary)]">{parseFloat(pos.qty).toFixed(4)}</td>
+                        <td className="px-6 py-2.5 text-right text-sm font-mono text-[var(--text-secondary)]">{formatCurrency(pos.entryPrice)}</td>
+                        <td className="px-6 py-2.5 text-right text-sm font-mono text-[var(--text-secondary)]">{formatCurrency(pos.markPrice)}</td>
+                        <td className={cn('px-6 py-2.5 text-right text-sm font-mono', getPnlColor(pos.unrealizedPnl))}>
+                          {getPnlSign(pos.unrealizedPnl)}{formatPnl(pos.unrealizedPnl)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Recent Trades */}
+          {detail.recentTrades.length > 0 && (
+            <div>
+              <h4 className="text-[11px] uppercase tracking-[0.08em] text-[var(--text-muted)] mb-3">최근 거래</h4>
+              <div className="overflow-x-auto -mx-6 -mb-6">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-[var(--border-subtle)]">
+                      {['시간', '심볼', '방향', '수량', '체결가', 'PnL'].map((h, i) => (
+                        <th key={h} className={cn(
+                          'px-6 py-2 text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium',
+                          i >= 3 ? 'text-right' : 'text-left',
+                        )}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.recentTrades.map((trade) => (
+                      <tr key={trade._id} className="border-b border-[var(--border-subtle)]/50">
+                        <td className="px-6 py-2.5 text-[11px] text-[var(--text-muted)] font-mono">
+                          {formatTime(trade.createdAt)}
+                        </td>
+                        <td className="px-6 py-2.5 text-sm font-mono text-[var(--text-primary)]">
+                          {trade.symbol.replace('USDT', '')}
+                        </td>
+                        <td className="px-6 py-2.5">
+                          <Badge variant={trade.side === 'buy' ? 'success' : 'danger'} dot>
+                            {trade.side === 'buy' ? 'BUY' : 'SELL'} {trade.posSide}
+                          </Badge>
+                        </td>
+                        <td className="px-6 py-2.5 text-right text-sm font-mono text-[var(--text-secondary)]">
+                          {parseFloat(trade.qty).toFixed(4)}
+                        </td>
+                        <td className="px-6 py-2.5 text-right text-sm font-mono text-[var(--text-secondary)]">
+                          {trade.avgFilledPrice ? formatCurrency(trade.avgFilledPrice) : '-'}
+                        </td>
+                        <td className={cn('px-6 py-2.5 text-right text-sm font-mono', trade.pnl ? getPnlColor(trade.pnl) : 'text-[var(--text-muted)]')}>
+                          {trade.pnl ? `${getPnlSign(trade.pnl)}${formatPnl(trade.pnl)}` : '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
