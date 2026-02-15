@@ -69,8 +69,8 @@ export default function DrawdownChart({ equityPoints, maxDrawdownPercent = 10 }:
             <AreaChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
               <defs>
                 <linearGradient id="drawdownGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#ef4444" stopOpacity={0.05} />
-                  <stop offset="100%" stopColor="#ef4444" stopOpacity={0.2} />
+                  <stop offset="0%" stopColor="#F87171" stopOpacity={0.05} />
+                  <stop offset="100%" stopColor="#F87171" stopOpacity={0.2} />
                 </linearGradient>
               </defs>
               <XAxis
@@ -94,15 +94,17 @@ export default function DrawdownChart({ equityPoints, maxDrawdownPercent = 10 }:
               />
               <ReferenceLine
                 y={warningLine}
-                stroke="#f59e0b"
+                stroke="#FBBF24"
                 strokeDasharray="6 4"
                 strokeWidth={0.5}
+                label={{ value: '경고', position: 'right', fontSize: 9, fill: '#FBBF24' }}
               />
               <ReferenceLine
                 y={limitLine}
-                stroke="#ef4444"
+                stroke="#F87171"
                 strokeDasharray="6 4"
                 strokeWidth={0.5}
+                label={{ value: '한도', position: 'right', fontSize: 9, fill: '#F87171' }}
               />
               <Area
                 type="monotone"

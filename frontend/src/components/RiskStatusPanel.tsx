@@ -125,15 +125,15 @@ export default function RiskStatusPanel({ riskStatus, onResetDrawdown, resetLoad
                 <button
                   onClick={handleDailyReset}
                   disabled={resetLoading}
-                  className="flex-1 px-3 py-1.5 text-xs font-medium text-amber-400 border border-amber-500/30 rounded-md hover:bg-amber-500/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
+                  className="flex-1 px-3 py-1.5 text-xs font-medium text-[var(--accent)] border border-[var(--accent)]/30 rounded-md hover:bg-[var(--accent-subtle)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
                 >
-                  {resetLoading ? <Spinner size="sm" className="text-amber-400" /> : null}
+                  {resetLoading ? <Spinner size="sm" className="text-[var(--accent)]" /> : null}
                   일일 한도 리셋
                 </button>
                 <button
                   onClick={() => setShowFullResetConfirm(true)}
                   disabled={resetLoading}
-                  className="flex-1 px-3 py-1.5 text-xs font-medium text-[var(--loss)] border border-[var(--loss)]/30 rounded-md hover:bg-red-500/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="flex-1 px-3 py-1.5 text-xs font-medium text-[var(--loss)] border border-[var(--loss)]/30 rounded-md hover:bg-[var(--loss)]/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   전체 리셋
                 </button>
@@ -170,7 +170,7 @@ export default function RiskStatusPanel({ riskStatus, onResetDrawdown, resetLoad
                   <button
                     onClick={handleFullReset}
                     disabled={!fullResetChecked || resetLoading}
-                    className="flex-1 px-3 py-1.5 text-xs font-medium text-[var(--loss)] border border-[var(--loss)] rounded-md hover:bg-red-500/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
+                    className="flex-1 px-3 py-1.5 text-xs font-medium text-[var(--loss)] border border-[var(--loss)] rounded-md hover:bg-[var(--loss)]/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
                   >
                     {resetLoading ? <Spinner size="sm" /> : null}
                     전체 리셋 실행
