@@ -17,6 +17,7 @@ export function useRiskEvents(socketRiskEvents: RiskEvent[]) {
     }
   }, []);
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const dismiss = useCallback((_eventId: string) => {
     // Local-only dismiss — handled by RiskAlertBanner's internal dismissedIds state.
     // No server call needed for non-critical events.

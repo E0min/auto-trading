@@ -40,11 +40,8 @@ const FACTOR_COLORS: Record<string, string> = {
 };
 
 export default function CoinScoreboard({ data }: CoinScoreboardProps) {
-  if (!data || data.coins.length === 0) {
-    return <p className="text-[var(--text-muted)] text-xs">코인 스코어 데이터 없음</p>;
-  }
-
-  const { coins, weightProfile } = data;
+  const coins = useMemo(() => data?.coins ?? [], [data?.coins]);
+  const weightProfile = data?.weightProfile ?? null;
 
   const chartData = useMemo(() => {
     return coins.slice(0, 15).map((c) => {
@@ -57,6 +54,10 @@ export default function CoinScoreboard({ data }: CoinScoreboardProps) {
       return base;
     });
   }, [coins]);
+
+  if (coins.length === 0) {
+    return <p className="text-[var(--text-muted)] text-xs">코인 스코어 데이터 없음</p>;
+  }
 
   return (
     <div className="space-y-4">
@@ -103,11 +104,10 @@ export default function CoinScoreboard({ data }: CoinScoreboardProps) {
                 fontSize: 11,
               }}
               labelStyle={{ color: 'var(--text-primary)', fontWeight: 600 }}
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              formatter={((value: any, name: any) => [
-                Math.round(Number(value) || 0),
-                FACTOR_LABELS[String(name)] ?? name,
-              ]) as any}
+              formatter={((value: number | undefined, name: string | undefined) => [
+                Math.round(Number(value ?? 0)),
+                FACTOR_LABELS[String(name ?? '')] ?? name ?? '',
+              ]) as never}
             />
             <Legend
               iconSize={8}

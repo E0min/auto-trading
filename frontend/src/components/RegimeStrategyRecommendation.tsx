@@ -105,8 +105,6 @@ export default function RegimeStrategyRecommendation({
     });
   }, [strategies, selectedRegime]);
 
-  const isLive = currentRegime === selectedRegime;
-
   return (
     <Card>
       {/* Header */}
