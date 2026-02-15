@@ -344,7 +344,7 @@ class SwingStructureStrategy extends StrategyBase {
           action: SIGNAL_ACTIONS.OPEN_LONG,
           symbol: this._symbol, category: this._category,
           suggestedQty: positionSizePercent, suggestedPrice: price,
-          riskPerUnit, confidence: toFixed(String(conf), 4),
+          stopLossPrice: slPrice, riskPerUnit, confidence: toFixed(String(conf), 4),
           leverage: this.config.leverage, reason: 'bos_bullish',
           marketContext: {
             structure: this._structure, bosLevel: recentSH,
@@ -384,7 +384,7 @@ class SwingStructureStrategy extends StrategyBase {
           action: SIGNAL_ACTIONS.OPEN_SHORT,
           symbol: this._symbol, category: this._category,
           suggestedQty: positionSizePercent, suggestedPrice: price,
-          riskPerUnit, confidence: toFixed(String(conf), 4),
+          stopLossPrice: slPrice, riskPerUnit, confidence: toFixed(String(conf), 4),
           leverage: this.config.leverage, reason: 'bos_bearish',
           marketContext: {
             structure: this._structure, bosLevel: recentSL,

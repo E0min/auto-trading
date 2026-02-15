@@ -5,7 +5,10 @@
  *
  * Outputs one JSON object per line to stdout/stderr.
  * Supports named prefixes and arbitrary metadata.
+ * Automatically attaches traceId from AsyncLocalStorage context when available.
  */
+
+const { getTraceId } = require('./traceContext');
 
 const LOG_LEVELS = Object.freeze({
   DEBUG: 0,
@@ -52,11 +55,14 @@ function createLogger(prefix, defaultContext = {}) {
   function write(level, message, meta) {
     if (level < minLevel) return;
 
+    const traceId = getTraceId();
+
     const entry = {
       timestamp: new Date().toISOString(),
       level: LEVEL_NAMES[level],
       prefix,
       message,
+      ...(traceId ? { traceId } : {}),
       ...defaultContext,
       ...meta,
     };

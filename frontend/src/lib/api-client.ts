@@ -14,6 +14,9 @@ import type {
   StrategyStats,
   RiskEvent,
   RiskStatus,
+  StrategyPerformanceEntry,
+  SymbolPerformanceEntry,
+  DailyPerformanceEntry,
 } from '@/types';
 import type {
   BacktestConfig,
@@ -25,41 +28,54 @@ import type {
 } from '@/types/backtest';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY || '';
 
 export class ApiError extends Error {
   public statusCode: number;
   public endpoint: string;
   public isNetworkError: boolean;
+  public traceId: string | null;
 
-  constructor(message: string, statusCode: number, endpoint: string, isNetworkError: boolean = false) {
+  constructor(message: string, statusCode: number, endpoint: string, isNetworkError: boolean = false, traceId?: string | null) {
     super(message);
     this.name = 'ApiError';
     this.statusCode = statusCode;
     this.endpoint = endpoint;
     this.isNetworkError = isNetworkError;
+    this.traceId = traceId ?? null;
   }
 }
 
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}),
+  };
+
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${endpoint}`, {
-      headers: { 'Content-Type': 'application/json' },
       ...options,
+      headers: {
+        ...headers,
+        ...(options?.headers as Record<string, string> | undefined),
+      },
     });
   } catch {
     throw new ApiError('서버에 연결할 수 없습니다', 0, endpoint, true);
   }
 
+  const traceId = res.headers.get('x-trace-id') ?? null;
+
   let json: { success: boolean; data: T; error?: string };
   try {
     json = await res.json();
   } catch {
-    throw new ApiError(`서버 응답 파싱 실패 (HTTP ${res.status})`, res.status, endpoint);
+    throw new ApiError(`서버 응답 파싱 실패 (HTTP ${res.status})`, res.status, endpoint, false, traceId);
   }
 
   if (!res.ok || !json.success) {
-    throw new ApiError(json.error || '요청 실패', res.status, endpoint);
+    throw new ApiError(json.error || '요청 실패', res.status, endpoint, false, traceId);
   }
   return json.data;
 }
@@ -133,9 +149,9 @@ export const tradeApi = {
 export const analyticsApi = {
   getSession: (sessionId: string) => request<SessionStats>(`/api/analytics/session/${sessionId}`),
   getEquityCurve: (sessionId: string) => request<EquityPoint[]>(`/api/analytics/equity-curve/${sessionId}`),
-  getDaily: (sessionId: string) => request<Record<string, unknown>>(`/api/analytics/daily/${sessionId}`),
-  getByStrategy: (sessionId: string) => request<Record<string, unknown>>(`/api/analytics/by-strategy/${sessionId}`),
-  getBySymbol: (sessionId: string) => request<Record<string, unknown>>(`/api/analytics/by-symbol/${sessionId}`),
+  getDaily: (sessionId: string) => request<DailyPerformanceEntry[]>(`/api/analytics/daily/${sessionId}`),
+  getByStrategy: (sessionId: string) => request<Record<string, StrategyPerformanceEntry>>(`/api/analytics/by-strategy/${sessionId}`),
+  getBySymbol: (sessionId: string) => request<Record<string, SymbolPerformanceEntry>>(`/api/analytics/by-symbol/${sessionId}`),
 };
 
 // Health

@@ -238,6 +238,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
         category: this._category,
         suggestedQty: positionSizePercent,
         suggestedPrice: close,
+        stopLossPrice: multiply(close, subtract('1', divide(this.config.slPercent || '0.8', '100'))),
         confidence,
         marketContext: { ...marketContext, reason: 'kc_lower_touch' },
       };
@@ -258,6 +259,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
         category: this._category,
         suggestedQty: positionSizePercent,
         suggestedPrice: close,
+        stopLossPrice: multiply(close, add('1', divide(this.config.slPercent || '0.8', '100'))),
         confidence,
         marketContext: { ...marketContext, reason: 'kc_upper_touch' },
       };

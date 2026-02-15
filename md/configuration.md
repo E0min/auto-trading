@@ -21,6 +21,8 @@
 | `LOG_LEVEL` | `INFO` | 로그 레벨 (DEBUG, INFO, TRADE, WARN, ERROR) |
 | `PAPER_TRADING` | `false` | 페이퍼 트레이딩 모드 |
 | `TOURNAMENT_MODE` | `false` | 토너먼트 모드 (PAPER_TRADING=true 필요) |
+| `API_KEY` | (없음) | API 인증 키 (Sprint R5). 미설정 시 인증 비활성화 |
+| `CORS_ORIGIN` | `*` | CORS 허용 오리진 (Sprint R5). 운영 환경에서 프론트엔드 URL로 제한 권장 |
 
 #### .env 파일 예시
 
@@ -48,10 +50,12 @@ TOURNAMENT_MODE=false
 |------|--------|------|
 | `NEXT_PUBLIC_API_URL` | `http://localhost:3001` | 백엔드 REST API URL |
 | `NEXT_PUBLIC_SOCKET_URL` | `http://localhost:3001` | Socket.io URL |
+| `NEXT_PUBLIC_API_KEY` | (없음) | API 인증 키 (Sprint R5). 백엔드 `API_KEY`와 동일 값 |
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:3001
 NEXT_PUBLIC_SOCKET_URL=http://localhost:3001
+NEXT_PUBLIC_API_KEY=your_api_key_here
 ```
 
 ---

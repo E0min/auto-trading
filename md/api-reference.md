@@ -4,7 +4,7 @@
 
 - **Base URL**: `http://localhost:3001`
 - **응답 규약**: `{ success: boolean, data: T, error?: string }`
-- **인증**: 없음 (로컬 전용)
+- **인증**: API Key (`Authorization: Bearer <API_KEY>` 헤더, Sprint R5). 미설정 시 비활성화. `/api/health`, `/metrics` 면제.
 - **Content-Type**: `application/json`
 - **Rate Limiting** (Sprint R4): 인메모리 슬라이딩 윈도우. Critical(10/분), Standard(60/분), Heavy(3/분). 초과 시 429 응답 + `retryAfter` 헤더. `/api/bot/emergency-stop`, `/api/health/*` 제외.
 
@@ -121,7 +121,8 @@
         "unrealizedPnl": "25.00",
         "leverage": "3",
         "liquidationPrice": "62000",
-        "margin": "1083.33"
+        "margin": "1083.33",
+        "stopLossPrice": "64000"
       }
     ],
     "accountState": {
@@ -357,6 +358,20 @@
 |--------|------|------|
 | GET | `/api/health` | 전체 시스템 헬스 체크 (200 or 503) |
 | GET | `/api/health/ping` | 단순 핑 (항상 200) |
+
+---
+
+## Prometheus 메트릭 (`/metrics`) (Sprint R5)
+
+| Method | Path | 설명 |
+|--------|------|------|
+| GET | `/metrics` | Prometheus scrape 엔드포인트 (text/plain) |
+
+인증 면제. 14개 커스텀 메트릭 + Node.js 기본 메트릭:
+- HTTP: `http_request_duration_seconds`, `http_requests_total`
+- Trading: `trading_orders_total`, `trading_pnl_per_trade`, `trading_positions_open`, `trading_fill_latency_seconds`, `trading_slippage_bps`
+- Risk: `risk_events_total`, `risk_circuit_breaker_trips_total`, `risk_drawdown_percent`
+- System: `bot_uptime_seconds`, `exchange_api_calls_total`, `exchange_api_latency_seconds`, `ws_reconnections_total`
 
 #### GET /api/health 응답
 

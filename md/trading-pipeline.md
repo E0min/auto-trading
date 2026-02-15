@@ -83,6 +83,7 @@ marketData 이벤트 → 전략.onKline(kline) → 지표 계산 → 조건 평�
   category: 'USDT-FUTURES',
   suggestedQty: '3',               // 포지션 크기 (% of equity)
   suggestedPrice: '65432.50',
+  stopLossPrice: '64000.00',       // Sprint R5: 거래소 SL 가격 (presetStopLossPrice)
   confidence: '0.7500',            // 0~1 신뢰도
   marketContext: {                  // 시그널 시점의 시장 상태
     rsi: '28.5',

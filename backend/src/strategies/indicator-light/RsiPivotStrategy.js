@@ -263,12 +263,14 @@ class RsiPivotStrategy extends StrategyBase {
 
       if (belowS1 && rsiOversoldMet) {
         const confidence = this._rsiConfidence(parseFloat(rsi), rsiOversold, 'oversold');
+        const slPercent = this.config.slPercent || '2';
         const signal = {
           action: SIGNAL_ACTIONS.OPEN_LONG,
           symbol: this._symbol,
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: close,
+          stopLossPrice: multiply(close, subtract('1', divide(slPercent, '100'))),
           confidence,
           marketContext: {
             rsi,
@@ -293,12 +295,14 @@ class RsiPivotStrategy extends StrategyBase {
 
       if (aboveR1 && rsiOverboughtMet) {
         const confidence = this._rsiConfidence(parseFloat(rsi), rsiOverbought, 'overbought');
+        const slPercent = this.config.slPercent || '2';
         const signal = {
           action: SIGNAL_ACTIONS.OPEN_SHORT,
           symbol: this._symbol,
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: close,
+          stopLossPrice: multiply(close, add('1', divide(slPercent, '100'))),
           confidence,
           marketContext: {
             rsi,

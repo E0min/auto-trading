@@ -10,6 +10,8 @@ const mongoose = require('mongoose');
 const { connectDB } = require('./config/db');
 const { createLogger } = require('./utils/logger');
 const { TRADE_EVENTS, RISK_EVENTS, MARKET_EVENTS } = require('./utils/constants');
+const { generateTraceId, runWithTrace } = require('./utils/traceContext');
+const { register, createHttpMiddleware } = require('./utils/metrics');
 
 // --- Service imports ---
 const exchangeClient = require('./services/exchangeClient');
@@ -226,14 +228,35 @@ async function bootstrap() {
 
   // CORS middleware (no external cors package)
   app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Origin', process.env.CORS_ORIGIN || '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Trace-Id');
+    res.header('Access-Control-Expose-Headers', 'X-Trace-Id');
     if (req.method === 'OPTIONS') return res.sendStatus(200);
     next();
   });
 
-  // 5b. Rate limiters (T2-7)
+  // 5a. Trace context middleware (T3-7) — propagate traceId through async call chain
+  app.use((req, res, next) => {
+    const traceId = req.headers['x-trace-id'] || generateTraceId();
+    res.setHeader('X-Trace-Id', traceId);
+    runWithTrace(traceId, () => next());
+  });
+
+  // 5b. HTTP metrics middleware (T3-5) — record request duration and counts
+  app.use(createHttpMiddleware());
+
+  // 5c. Prometheus /metrics endpoint (T3-5)
+  app.get('/metrics', async (req, res) => {
+    res.set('Content-Type', register.contentType);
+    res.end(await register.metrics());
+  });
+
+  // 5d. API Key authentication (T3-2)
+  const { createApiKeyAuth } = require('./middleware/apiKeyAuth');
+  app.use(createApiKeyAuth());
+
+  // 5e. Rate limiters (T2-7)
   const criticalLimiter = createRateLimiter({
     windowMs: 60000,
     max: 10,
@@ -253,7 +276,7 @@ async function bootstrap() {
     message: '백테스트 실행은 분당 3회로 제한됩니다.',
   });
 
-  // 5c. Apply per-path rate limiters for critical operations
+  // 5f. Apply per-path rate limiters for critical operations
   //     Bot control endpoints
   app.post('/api/bot/start', criticalLimiter);
   app.post('/api/bot/stop', criticalLimiter);

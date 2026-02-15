@@ -69,6 +69,104 @@ function stdDev(values, mean) {
   return Math.sqrt(varianceNum < 0 ? 0 : varianceNum).toFixed(8);
 }
 
+/**
+ * Compute extended metrics for a group of trades (strategy or symbol).
+ *
+ * @param {{ trades: number, wins: number, losses: number, totalPnl: string, winPnls: string[], lossPnls: string[], allPnls: string[] }} data
+ * @param {string} sessionTotalPnl — overall session PnL for contribution calculation
+ * @returns {object}
+ */
+function computeExtendedMetrics(data, sessionTotalPnl) {
+  const decided = data.wins + data.losses;
+  const winRate = decided > 0
+    ? math.multiply(math.divide(String(data.wins), String(decided)), '100')
+    : '0';
+
+  // avgPnl: total PnL / trade count
+  const avgPnl = data.trades > 0
+    ? math.divide(data.totalPnl, String(data.trades))
+    : '0';
+
+  // Sum of winning and losing PnL
+  let totalWinPnl = '0';
+  for (const p of data.winPnls) {
+    totalWinPnl = math.add(totalWinPnl, p);
+  }
+
+  let totalLossPnl = '0';
+  for (const p of data.lossPnls) {
+    totalLossPnl = math.add(totalLossPnl, p);
+  }
+
+  // avgWin / avgLoss
+  const avgWin = data.wins > 0
+    ? math.divide(totalWinPnl, String(data.wins))
+    : '0';
+
+  const avgLoss = data.losses > 0
+    ? math.divide(totalLossPnl, String(data.losses))
+    : '0';
+
+  // profitFactor: sum(wins) / |sum(losses)|
+  let profitFactor;
+  const absLoss = math.abs(totalLossPnl);
+  if (data.losses === 0 && data.wins > 0) {
+    profitFactor = 'Infinity';
+  } else if (data.wins === 0) {
+    profitFactor = '0';
+  } else if (math.isGreaterThan(absLoss, '0')) {
+    profitFactor = math.divide(math.abs(totalWinPnl), absLoss);
+  } else {
+    profitFactor = '0';
+  }
+
+  // expectancy: (winRate% / 100 * avgWin) + ((1 - winRate% / 100) * avgLoss)
+  let expectancy = '0';
+  if (decided > 0) {
+    const winRateDecimal = math.divide(winRate, '100');
+    const lossRateDecimal = math.subtract('1', winRateDecimal);
+    const winComponent = math.multiply(winRateDecimal, avgWin);
+    const lossComponent = math.multiply(lossRateDecimal, avgLoss);
+    expectancy = math.add(winComponent, lossComponent);
+  }
+
+  // largestWin / largestLoss
+  let largestWin = '0';
+  for (const p of data.winPnls) {
+    largestWin = math.max(largestWin, p);
+  }
+
+  let largestLoss = '0';
+  for (const p of data.lossPnls) {
+    largestLoss = math.min(largestLoss, p);
+  }
+
+  // pnlContribution: group totalPnl / session totalPnl * 100
+  let pnlContribution = '0';
+  if (!math.isZero(sessionTotalPnl)) {
+    pnlContribution = math.multiply(
+      math.divide(data.totalPnl, sessionTotalPnl),
+      '100'
+    );
+  }
+
+  return {
+    trades: data.trades,
+    wins: data.wins,
+    losses: data.losses,
+    totalPnl: data.totalPnl,
+    winRate,
+    avgPnl,
+    profitFactor,
+    avgWin,
+    avgLoss,
+    expectancy,
+    largestWin,
+    largestLoss,
+    pnlContribution,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // PerformanceTracker class
 // ---------------------------------------------------------------------------
@@ -333,58 +431,58 @@ class PerformanceTracker {
   // =========================================================================
 
   /**
-   * Return per-strategy statistics for a session.
+   * Return per-strategy statistics for a session with extended metrics.
    *
    * @param {string} sessionId
-   * @returns {Promise<Map<string, { trades: number, wins: number, losses: number, totalPnl: string, winRate: string }>>}
+   * @returns {Promise<Object<string, {
+   *   trades: number, wins: number, losses: number, totalPnl: string, winRate: string,
+   *   avgPnl: string, profitFactor: string, avgWin: string, avgLoss: string,
+   *   expectancy: string, largestWin: string, largestLoss: string, pnlContribution: string
+   * }>>}
    */
   async getByStrategy(sessionId) {
     log.debug('getByStrategy — computing', { sessionId });
 
     const trades = await Trade.find({ sessionId }).lean();
 
-    /** @type {Map<string, { trades: number, wins: number, losses: number, totalPnl: string }>} */
-    const strategyMap = new Map();
+    /** @type {Object<string, { trades: number, wins: number, losses: number, totalPnl: string, winPnls: string[], lossPnls: string[], allPnls: string[] }>} */
+    const strategyMap = {};
+
+    // Overall session totalPnl for pnlContribution
+    let sessionTotalPnl = '0';
 
     for (const trade of trades) {
       const strategyName = trade.strategy || 'unknown';
-      let entry = strategyMap.get(strategyName);
+      let entry = strategyMap[strategyName];
 
       if (!entry) {
-        entry = { trades: 0, wins: 0, losses: 0, totalPnl: '0' };
-        strategyMap.set(strategyName, entry);
+        entry = { trades: 0, wins: 0, losses: 0, totalPnl: '0', winPnls: [], lossPnls: [], allPnls: [] };
+        strategyMap[strategyName] = entry;
       }
 
       entry.trades += 1;
 
       const pnl = trade.pnl || '0';
       entry.totalPnl = math.add(entry.totalPnl, pnl);
+      entry.allPnls.push(pnl);
+      sessionTotalPnl = math.add(sessionTotalPnl, pnl);
 
       if (math.isGreaterThan(pnl, '0')) {
         entry.wins += 1;
+        entry.winPnls.push(pnl);
       } else if (math.isLessThan(pnl, '0')) {
         entry.losses += 1;
+        entry.lossPnls.push(pnl);
       }
     }
 
-    // Compute winRate for each strategy
-    const result = new Map();
-    for (const [name, data] of strategyMap) {
-      const decided = data.wins + data.losses;
-      const winRate = decided > 0
-        ? math.multiply(math.divide(String(data.wins), String(decided)), '100')
-        : '0';
-
-      result.set(name, {
-        trades: data.trades,
-        wins: data.wins,
-        losses: data.losses,
-        totalPnl: data.totalPnl,
-        winRate,
-      });
+    // Compute extended metrics for each strategy
+    const result = {};
+    for (const [name, data] of Object.entries(strategyMap)) {
+      result[name] = computeExtendedMetrics(data, sessionTotalPnl);
     }
 
-    log.debug('getByStrategy — done', { sessionId, strategies: Array.from(result.keys()) });
+    log.debug('getByStrategy — done', { sessionId, strategies: Object.keys(result) });
 
     return result;
   }
@@ -394,58 +492,58 @@ class PerformanceTracker {
   // =========================================================================
 
   /**
-   * Return per-symbol statistics for a session.
+   * Return per-symbol statistics for a session with extended metrics.
    *
    * @param {string} sessionId
-   * @returns {Promise<Map<string, { trades: number, wins: number, losses: number, totalPnl: string, winRate: string }>>}
+   * @returns {Promise<Object<string, {
+   *   trades: number, wins: number, losses: number, totalPnl: string, winRate: string,
+   *   avgPnl: string, profitFactor: string, avgWin: string, avgLoss: string,
+   *   expectancy: string, largestWin: string, largestLoss: string, pnlContribution: string
+   * }>>}
    */
   async getBySymbol(sessionId) {
     log.debug('getBySymbol — computing', { sessionId });
 
     const trades = await Trade.find({ sessionId }).lean();
 
-    /** @type {Map<string, { trades: number, wins: number, losses: number, totalPnl: string }>} */
-    const symbolMap = new Map();
+    /** @type {Object<string, { trades: number, wins: number, losses: number, totalPnl: string, winPnls: string[], lossPnls: string[], allPnls: string[] }>} */
+    const symbolMap = {};
+
+    // Overall session totalPnl for pnlContribution
+    let sessionTotalPnl = '0';
 
     for (const trade of trades) {
       const sym = trade.symbol || 'unknown';
-      let entry = symbolMap.get(sym);
+      let entry = symbolMap[sym];
 
       if (!entry) {
-        entry = { trades: 0, wins: 0, losses: 0, totalPnl: '0' };
-        symbolMap.set(sym, entry);
+        entry = { trades: 0, wins: 0, losses: 0, totalPnl: '0', winPnls: [], lossPnls: [], allPnls: [] };
+        symbolMap[sym] = entry;
       }
 
       entry.trades += 1;
 
       const pnl = trade.pnl || '0';
       entry.totalPnl = math.add(entry.totalPnl, pnl);
+      entry.allPnls.push(pnl);
+      sessionTotalPnl = math.add(sessionTotalPnl, pnl);
 
       if (math.isGreaterThan(pnl, '0')) {
         entry.wins += 1;
+        entry.winPnls.push(pnl);
       } else if (math.isLessThan(pnl, '0')) {
         entry.losses += 1;
+        entry.lossPnls.push(pnl);
       }
     }
 
-    // Compute winRate for each symbol
-    const result = new Map();
-    for (const [sym, data] of symbolMap) {
-      const decided = data.wins + data.losses;
-      const winRate = decided > 0
-        ? math.multiply(math.divide(String(data.wins), String(decided)), '100')
-        : '0';
-
-      result.set(sym, {
-        trades: data.trades,
-        wins: data.wins,
-        losses: data.losses,
-        totalPnl: data.totalPnl,
-        winRate,
-      });
+    // Compute extended metrics for each symbol
+    const result = {};
+    for (const [sym, data] of Object.entries(symbolMap)) {
+      result[sym] = computeExtendedMetrics(data, sessionTotalPnl);
     }
 
-    log.debug('getBySymbol — done', { sessionId, symbols: Array.from(result.keys()) });
+    log.debug('getBySymbol — done', { sessionId, symbols: Object.keys(result) });
 
     return result;
   }

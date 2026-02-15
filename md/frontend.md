@@ -32,7 +32,7 @@
 ├──────────────────────┬──────────────────────────────────────┤
 │ 계정 개요            │ 리스크 상태 패널 (낙폭 리셋 버튼)   │
 ├──────────────────────┴──────────────────────────────────────┤
-│ 자산 곡선 차트 (봇 실행 중 시그널 피드보다 우선)          │
+│ PerformanceTabs (에쿼티 커브 | 전략별 | 심볼별 | 일별)    │
 ├──────────────────────┬──────────────────────────────────────┤
 │ 포지션 테이블        │ 시그널 피드                          │
 │ (수동 청산 버튼)     │                                      │
@@ -119,6 +119,7 @@
 | `useBacktest` | `hooks/useBacktest.ts` | 1초 (실행 중) | 백테스트 CRUD + 결과 폴링 |
 | `useTournament` | `hooks/useTournament.ts` | 3초 | 토너먼트 정보 + 순위표 |
 | `useRiskEvents` | `hooks/useRiskEvents.ts` | 이벤트 기반 | 리스크 이벤트 조회/확인 처리 |
+| `usePerformanceAnalytics` | `hooks/usePerformanceAnalytics.ts` | 30초 (Sprint R5) | 전략별/심볼별/일별 성과 데이터 |
 
 ### 훅 사용 패턴
 
@@ -183,7 +184,7 @@ getSocket()      // 현재 소켓 인스턴스 조회 (없으면 null)
 | `RegimeStrategyRecommendation` | 현재 레짐에 맞는 전략 추천 |
 | `EquityCurveChart` | Recharts 자산 곡선 |
 | `DrawdownChart` | Drawdown 시각화 차트 (Sprint R4: 접기/펼치기 토글, 경고/한계선 참조선, 빨간 그래디언트) |
-| `PositionsTable` | 오픈 포지션 (진입가, 현재가, 미실현 PnL, Sprint R3: 수동 청산 버튼 추가) |
+| `PositionsTable` | 오픈 포지션 (진입가, SL 가격, 현재가, 미실현 PnL, Sprint R3: 수동 청산, Sprint R5: SL 컬럼) |
 | `SignalFeed` | 실시간 시그널 피드 (최대 50개, 최신순, Sprint R4: rejectReason 표시) |
 | `TradesTable` | 거래 내역 + 페이지네이션 |
 | `SystemHealth` | API 상태, 지연, 소켓 연결 |
@@ -191,6 +192,15 @@ getSocket()      // 현재 소켓 인스턴스 조회 (없으면 null)
 | `EmergencyStopDialog` | 긴급 정지 체크박스 확인 다이얼로그 |
 | `TradingModeBanner` | 트레이딩 모드 배너 (LIVE=빨강 펄스, PAPER=초록 배너) |
 | `RiskAlertBanner` | 심각도 기반 리스크 알림 배너 (critical=수동 닫기, warning=30초, info=10초 자동 닫기) |
+
+### 분석 컴포넌트 (`components/analytics/`) (Sprint R5)
+
+| 컴포넌트 | 설명 |
+|----------|------|
+| `PerformanceTabs` | 4탭 통합 분석 뷰 (에쿼티 커브, 전략별, 심볼별, 일별) |
+| `StrategyPerformance` | 전략별 PnL 가로 막대 차트 + 테이블 (승률, PnL, 거래 수) |
+| `SymbolPerformance` | 심볼별 PnL 가로 막대 차트 + 테이블 |
+| `DailyPerformance` | 일별 PnL 세로 막대 차트 + 요약 카드 (수익일, 손실일, 평균) |
 
 ### 백테스트 컴포넌트 (`components/backtest/`)
 
@@ -238,7 +248,9 @@ const health = await healthApi.check();
 ```typescript
 class ApiError extends Error {
   statusCode: number
-  response?: any
+  endpoint: string
+  isNetworkError: boolean
+  traceId: string | null        // Sprint R5: 서버 X-Trace-Id 헤더에서 추출
 }
 
 // 사용 예시
@@ -302,6 +314,9 @@ translateRejectReason('confidence_too_low')     // → '신뢰도 부족' (Sprin
 | `LeaderboardEntry` | `types/index.ts` | 순위표 항목 |
 | `RiskEvent` | `types/index.ts` | 리스크 이벤트 (eventType, severity, riskSnapshot, acknowledged) |
 | `RiskEventLegacy` | `types/index.ts` | 레거시 호환 리스크 이벤트 |
+| `StrategyPerformanceEntry` | `types/index.ts` | 전략별 성과 (Sprint R5) |
+| `SymbolPerformanceEntry` | `types/index.ts` | 심볼별 성과 (Sprint R5) |
+| `DailyPerformanceEntry` | `types/index.ts` | 일별 성과 (Sprint R5) |
 | `BacktestConfig` | `types/backtest.ts` | 백테스트 설정 |
 | `BacktestResult` | `types/backtest.ts` | 백테스트 결과 |
 | `BacktestMetrics` | `types/backtest.ts` | 백테스트 성과 지표 |

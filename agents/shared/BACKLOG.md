@@ -64,13 +64,14 @@
 
 | ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
 |----|--------|------|------|--------|--------|------|
-| T3-1 | P3 | All | 테스트 프레임워크 구축 (Jest/Vitest) | E:E-1 | R1 | agreed |
-| T3-2 | P3 | All | API 인증/인가 (1단계: API key, 2단계: JWT) | E:E-3 | R1 | agreed |
-| T3-3 | P3 | Backend | Exchange-side stop loss 주문 | T:E4 | R1 | agreed |
+| T3-1 | P3 | All | 테스트 프레임워크 구축 (Jest + mathUtils 51 tests) | E:E-1 | R5 | done |
+| T3-2 | P3 | All | API 인증/인가 (Bearer API Key + FE 헤더) | E:E-3 | R5 | done |
+| T3-3 | P3 | Backend | Exchange-side stop loss (16전략 presetSL + PaperEngine) | T:E4 | R5 | done |
 | T3-4 | P3 | Backend | decimal.js 마이그레이션 (mathUtils 교체) | E:C-5 | R1 | deferred |
-| T3-5 | P3 | Backend | Prometheus 메트릭/모니터링 | E:E-7 | R1 | agreed |
-| T3-6 | P3 | Frontend | 성과 귀인 대시보드 (by-strategy, by-symbol) | T:Review | R1 | agreed |
-| T3-7 | P3 | Backend | Correlation ID (traceId) 전파 | E:9.1 | R1 | agreed |
+| T3-5 | P3 | Backend | Prometheus 메트릭 (14 metrics + /metrics endpoint) | E:E-7 | R5 | done |
+| T3-6 | P3 | Frontend | 성과 귀인 대시보드 (PerformanceTabs 4탭 + BE 확장) | T:Review | R5 | done |
+| T3-7 | P3 | Backend | Correlation ID (AsyncLocalStorage traceId 전파) | E:9.1 | R5 | done |
+| BUG-1 | P0 | Backend | Map 직렬화 버그 수정 (performanceTracker) | R5 | R5 | done |
 
 ---
 
@@ -79,3 +80,4 @@
 → `decisions/round_2.md` — AD-7~AD-12 참조 (T0-1~T0-9 구현 세부사항)
 → `decisions/round_3.md` — AD-13~AD-17 참조 (T1-1~T1-11 구현 세부사항)
 → `decisions/round_4.md` — AD-18~AD-24 참조 (T2-1~T2-12 구현 세부사항)
+→ `decisions/round_5.md` — AD-25~AD-31 참조 (T3-1~T3-7 + BUG-1 구현 세부사항)

@@ -8,6 +8,15 @@ import Spinner from '@/components/ui/Spinner';
 import { formatCurrency, formatSymbol, getPnlColor, getPnlSign, translateSide } from '@/lib/utils';
 import type { Position } from '@/types';
 
+/** Format SL price with 2-4 decimal places depending on magnitude */
+function formatSlPrice(price: string): string {
+  const num = parseFloat(price);
+  if (isNaN(num) || num <= 0) return '\u2014';
+  // Use 4 decimals for small prices (< 1), otherwise 2
+  const decimals = num < 1 ? 4 : 2;
+  return `$${num.toFixed(decimals)}`;
+}
+
 interface PositionsTableProps {
   positions: Position[];
   loading: boolean;
@@ -46,6 +55,7 @@ export default function PositionsTable({ positions, loading, onClosePosition, cl
                 <th>방향</th>
                 <th>수량</th>
                 <th>진입가</th>
+                <th>SL 가격</th>
                 <th>현재가</th>
                 <th>미실현 PnL</th>
                 <th>레버리지</th>
@@ -56,13 +66,13 @@ export default function PositionsTable({ positions, loading, onClosePosition, cl
             <tbody>
               {loading && positions.length === 0 ? (
                 <tr>
-                  <td colSpan={onClosePosition ? 9 : 8} className="text-center text-zinc-500 py-8">
+                  <td colSpan={onClosePosition ? 10 : 9} className="text-center text-zinc-500 py-8">
                     로딩 중...
                   </td>
                 </tr>
               ) : positions.length === 0 ? (
                 <tr>
-                  <td colSpan={onClosePosition ? 9 : 8} className="text-center text-zinc-500 py-8">
+                  <td colSpan={onClosePosition ? 10 : 9} className="text-center text-zinc-500 py-8">
                     활성 포지션 없음
                   </td>
                 </tr>
@@ -79,6 +89,9 @@ export default function PositionsTable({ positions, loading, onClosePosition, cl
                       </td>
                       <td className="font-mono">{pos.qty}</td>
                       <td className="font-mono">${formatCurrency(pos.entryPrice)}</td>
+                      <td className="font-mono text-red-400">
+                        {pos.stopLossPrice ? formatSlPrice(pos.stopLossPrice) : '—'}
+                      </td>
                       <td className="font-mono">${formatCurrency(pos.markPrice)}</td>
                       <td className={`font-mono font-medium ${getPnlColor(pos.unrealizedPnl)}`}>
                         {getPnlSign(pos.unrealizedPnl)}${formatCurrency(pos.unrealizedPnl)}

@@ -45,6 +45,36 @@ app.use('/api/bot', createBotRoutes({ botService, riskEngine }));
 app.use('/api/risk', createRiskRoutes({ riskEngine }));
 ```
 
+### API Key 인증 (Sprint R5)
+
+`backend/src/middleware/apiKeyAuth.js` — `Authorization: Bearer <key>` 헤더 기반 인증.
+- `API_KEY` 환경 변수로 설정, 미설정 시 인증 비활성화 (경고 로그 출력)
+- `crypto.timingSafeEqual()` 사용하여 타이밍 공격 방어
+- 면제 경로: `/api/health`, `/metrics`
+- 실거래 모드(`PAPER_TRADING=false`)에서 미설정 시 강화 경고
+
+### Trace Context (Sprint R5)
+
+`backend/src/utils/traceContext.js` — `AsyncLocalStorage` 기반 traceId 전파.
+- traceId 형식: `trc_` + 12 hex chars
+- Express 미들웨어: `X-Trace-Id` 요청 헤더에서 추출 또는 자동 생성, 응답 헤더에 포함
+- `runWithTrace(traceId, fn)`: 지정된 traceId 컨텍스트에서 함수 실행
+- `getTraceId()`: 현재 컨텍스트의 traceId 반환
+- `logger.js`에서 자동으로 모든 로그에 traceId 포함
+
+### Prometheus 메트릭 (Sprint R5)
+
+`backend/src/utils/metrics.js` — `prom-client` 싱글턴 레지스트리.
+- 14개 커스텀 메트릭 (HTTP, Trading, Risk, System 카테고리)
+- `createHttpMiddleware()`: HTTP 요청 계측 미들웨어
+- `GET /metrics` 엔드포인트로 Prometheus scrape 지원
+
+### 미들웨어 실행 순서
+
+```
+CORS → traceContext → apiKeyAuth → httpMetrics → rateLimiter → API routes → /metrics
+```
+
 ### API Rate Limiting (Sprint R4)
 
 3-tier 인메모리 슬라이딩 윈도우 rate limiter가 적용되어 있습니다:

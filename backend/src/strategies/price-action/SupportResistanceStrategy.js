@@ -433,7 +433,7 @@ class SupportResistanceStrategy extends StrategyBase {
       const conf = this._calcConfidence(level);
       const signal = {
         action: SIGNAL_ACTIONS.OPEN_LONG, symbol: this._symbol, category: this._category,
-        suggestedQty: positionSizePercent, suggestedPrice: price, riskPerUnit,
+        suggestedQty: positionSizePercent, suggestedPrice: price, stopLossPrice: slPrice, riskPerUnit,
         confidence: toFixed(String(conf), 4), leverage: this.config.leverage,
         reason: 'sr_breakout_long',
         marketContext: { brokenLevel: level.price, levelTouches: level.touches,
@@ -463,7 +463,7 @@ class SupportResistanceStrategy extends StrategyBase {
       const conf = this._calcConfidence(level);
       const signal = {
         action: SIGNAL_ACTIONS.OPEN_SHORT, symbol: this._symbol, category: this._category,
-        suggestedQty: positionSizePercent, suggestedPrice: price, riskPerUnit,
+        suggestedQty: positionSizePercent, suggestedPrice: price, stopLossPrice: slPrice, riskPerUnit,
         confidence: toFixed(String(conf), 4), leverage: this.config.leverage,
         reason: 'sr_breakout_short',
         marketContext: { brokenLevel: level.price, levelTouches: level.touches,

@@ -41,6 +41,16 @@
 - 체결 조건: 시장가가 지정가에 도달
 - 체결 시 슬리피지 없음 (지정가 그대로)
 
+#### Stop Loss 시뮬레이션 (Sprint R5)
+
+PaperEngine에 거래소 사이드 SL 시뮬레이션이 추가되었습니다:
+- `registerStopLoss({ symbol, posSide, triggerPrice, qty, strategy })`: SL 주문 등록
+- `cancelStopLoss(symbol, posSide)`: SL 주문 취소
+- `_checkStopLossTriggers(symbol, lastPrice)`: 매 틱마다 SL 트리거 확인
+- LONG SL: `lastPrice <= triggerPrice`, SHORT SL: `lastPrice >= triggerPrice`
+- SL 체결 시 `paper:fill` (reduceOnly, reason: 'stop_loss_triggered') + `paper:sl_triggered` 이벤트 발생
+- `getPendingSLOrders()`: 대기 중 SL 주문 조회
+
 #### 기본 설정
 ```javascript
 feeRate = '0.0006'     // 0.06% 테이커 수수료

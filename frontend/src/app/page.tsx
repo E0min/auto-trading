@@ -17,8 +17,7 @@ import StrategyHub from '@/components/strategy/StrategyHub';
 import AccountOverview from '@/components/AccountOverview';
 import RiskStatusPanel from '@/components/RiskStatusPanel';
 import SymbolRegimeTable from '@/components/SymbolRegimeTable';
-import EquityCurveChart from '@/components/EquityCurveChart';
-import DrawdownChart from '@/components/DrawdownChart';
+import PerformanceTabs from '@/components/analytics/PerformanceTabs';
 import PositionsTable from '@/components/PositionsTable';
 import SignalFeed from '@/components/SignalFeed';
 import TradesTable from '@/components/TradesTable';
@@ -230,11 +229,11 @@ export default function Dashboard() {
             onResetDrawdown={handleResetDrawdown}
             resetLoading={resetLoading}
           />
-          <div className="lg:col-span-2 space-y-4">
-            <EquityCurveChart data={equityCurve} loading={analyticsLoading} />
-            {/* Drawdown Chart — synced below equity curve */}
-            <DrawdownChart
-              equityPoints={equityCurve || []}
+          <div className="lg:col-span-2">
+            <PerformanceTabs
+              sessionId={botStatus?.sessionId || null}
+              equityCurve={equityCurve}
+              analyticsLoading={analyticsLoading}
               maxDrawdownPercent={10}
             />
           </div>

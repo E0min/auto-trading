@@ -11,6 +11,7 @@
  *
  * Emits:
  *   - 'paper:fill'  { clientOid, symbol, side, posSide, qty, fillPrice, fee, filledAt }
+ *   - 'paper:sl_triggered'  { symbol, posSide, triggerPrice, fillPrice }
  */
 
 const { EventEmitter } = require('events');
@@ -55,6 +56,15 @@ class PaperEngine extends EventEmitter {
      * @type {Map<string, string>}
      */
     this._lastPrices = new Map();
+
+    /**
+     * Pending stop-loss orders keyed by `${symbol}:${posSide}`.
+     * Each entry: { symbol, posSide, triggerPrice, qty, strategy, createdAt }
+     * LONG SL triggers when lastPrice <= triggerPrice.
+     * SHORT SL triggers when lastPrice >= triggerPrice.
+     * @type {Map<string, object>}
+     */
+    this._pendingSLOrders = new Map();
 
     log.info('PaperEngine initialised', {
       feeRate: this.feeRate,
@@ -221,6 +231,76 @@ class PaperEngine extends EventEmitter {
         this.emit('paper:fill', fill);
       }
     }
+
+    // Check pending stop-loss triggers for this symbol
+    this._checkStopLossTriggers(symbol, String(lastPrice));
+  }
+
+  /**
+   * Check all pending SL orders for the given symbol and trigger
+   * those whose conditions are met.
+   *
+   * LONG SL triggers when lastPrice <= triggerPrice (sell to close).
+   * SHORT SL triggers when lastPrice >= triggerPrice (buy to close).
+   *
+   * @param {string} symbol
+   * @param {string} lastPrice
+   * @private
+   */
+  _checkStopLossTriggers(symbol, lastPrice) {
+    for (const [key, sl] of this._pendingSLOrders) {
+      if (sl.symbol !== symbol) continue;
+
+      let triggered = false;
+
+      // LONG position SL: triggers when price falls to or below triggerPrice
+      if (sl.posSide === 'long' && !math.isGreaterThan(lastPrice, sl.triggerPrice)) {
+        triggered = true;
+      }
+      // SHORT position SL: triggers when price rises to or above triggerPrice
+      else if (sl.posSide === 'short' && !math.isLessThan(lastPrice, sl.triggerPrice)) {
+        triggered = true;
+      }
+
+      if (triggered) {
+        this._pendingSLOrders.delete(key);
+
+        // SL fills as a market order at trigger price with slippage
+        const closeSide = sl.posSide === 'long' ? 'sell' : 'buy';
+        const fillPrice = this._applySlippage(sl.triggerPrice, closeSide);
+
+        const fill = this._createFill({
+          clientOid: `sl_${sl.symbol}_${sl.posSide}_${Date.now()}`,
+          symbol: sl.symbol,
+          side: closeSide,
+          posSide: sl.posSide,
+          qty: sl.qty,
+          fillPrice,
+          reduceOnly: true,
+          strategy: sl.strategy,
+        });
+
+        // Mark fill as SL-triggered for downstream handling
+        fill.reason = 'stop_loss_triggered';
+        fill.triggerPrice = sl.triggerPrice;
+
+        log.trade('_checkStopLossTriggers — SL triggered', {
+          symbol: sl.symbol,
+          posSide: sl.posSide,
+          triggerPrice: sl.triggerPrice,
+          fillPrice,
+          qty: sl.qty,
+        });
+
+        this.emit('paper:fill', fill);
+        this.emit('paper:sl_triggered', {
+          symbol: sl.symbol,
+          posSide: sl.posSide,
+          triggerPrice: sl.triggerPrice,
+          fillPrice,
+        });
+      }
+    }
   }
 
   // =========================================================================
@@ -244,6 +324,73 @@ class PaperEngine extends EventEmitter {
     }
 
     return existed;
+  }
+
+  // =========================================================================
+  // Exchange-side Stop Loss simulation
+  // =========================================================================
+
+  /**
+   * Register a stop-loss trigger for a filled entry order.
+   * Called after a market/limit order fill when the original signal
+   * carried a `stopLossPrice`.
+   *
+   * @param {object} params
+   * @param {string} params.symbol
+   * @param {string} params.posSide    — 'long' | 'short'
+   * @param {string} params.triggerPrice — price at which SL triggers
+   * @param {string} params.qty        — quantity to close
+   * @param {string} [params.strategy]
+   */
+  registerStopLoss({ symbol, posSide, triggerPrice, qty, strategy }) {
+    if (!symbol || !posSide || !triggerPrice || !qty) {
+      log.warn('registerStopLoss — missing required params', { symbol, posSide, triggerPrice, qty });
+      return;
+    }
+
+    const key = `${symbol}:${posSide}`;
+    this._pendingSLOrders.set(key, {
+      symbol,
+      posSide,
+      triggerPrice: String(triggerPrice),
+      qty: String(qty),
+      strategy: strategy || 'unknown',
+      createdAt: new Date(),
+    });
+
+    log.info('registerStopLoss — SL trigger registered', {
+      symbol,
+      posSide,
+      triggerPrice,
+      qty,
+    });
+  }
+
+  /**
+   * Cancel a pending stop-loss trigger (e.g. when position is closed normally).
+   *
+   * @param {string} symbol
+   * @param {string} posSide — 'long' | 'short'
+   * @returns {boolean} true if a pending SL was found and removed
+   */
+  cancelStopLoss(symbol, posSide) {
+    const key = `${symbol}:${posSide}`;
+    const existed = this._pendingSLOrders.has(key);
+    this._pendingSLOrders.delete(key);
+
+    if (existed) {
+      log.info('cancelStopLoss — SL trigger cancelled', { symbol, posSide });
+    }
+
+    return existed;
+  }
+
+  /**
+   * Get all pending stop-loss orders.
+   * @returns {Array<object>}
+   */
+  getPendingSLOrders() {
+    return Array.from(this._pendingSLOrders.values());
   }
 
   // =========================================================================

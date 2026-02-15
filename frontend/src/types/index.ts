@@ -92,6 +92,7 @@ export interface Position {
   leverage: string;
   liquidationPrice: string;
   margin: string;
+  stopLossPrice?: string;
 }
 
 // Account types
@@ -219,6 +220,31 @@ export interface StrategyStats {
   totalPnl: string;
   recentTrades: Trade[];
   recentSignals: Signal[];
+}
+
+// Performance analytics types
+export interface StrategyPerformanceEntry {
+  trades: number;
+  wins: number;
+  losses: number;
+  totalPnl: string;
+  winRate: string;
+}
+
+export interface SymbolPerformanceEntry {
+  trades: number;
+  wins: number;
+  losses: number;
+  totalPnl: string;
+  winRate: string;
+}
+
+export interface DailyPerformanceEntry {
+  date: string;
+  trades: number;
+  pnl: string;
+  wins: number;
+  losses: number;
 }
 
 // API response wrapper

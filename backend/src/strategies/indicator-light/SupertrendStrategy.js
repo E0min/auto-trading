@@ -665,6 +665,7 @@ class SupertrendStrategy extends StrategyBase {
         category: this._category,
         suggestedQty: this._calculateQty(),
         suggestedPrice: this._latestPrice,
+        stopLossPrice: multiply(this._latestPrice, subtract('1', divide(this._slPercent, '100'))),
         confidence,
         leverage: '5',
         marketContext: {
@@ -710,6 +711,7 @@ class SupertrendStrategy extends StrategyBase {
         category: this._category,
         suggestedQty: this._calculateQty(),
         suggestedPrice: this._latestPrice,
+        stopLossPrice: multiply(this._latestPrice, add('1', divide(this._slPercent, '100'))),
         confidence,
         leverage: '5',
         marketContext: {

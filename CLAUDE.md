@@ -26,7 +26,13 @@ npm run build    # 프로덕션 빌드
 npm run lint     # ESLint
 ```
 
-테스트 프레임워크 미구성. MongoDB 미설치 시 서버 시작 실패 (ECONNREFUSED).
+MongoDB 미설치 시 서버 시작 실패 (ECONNREFUSED).
+
+### 테스트 (`backend/`)
+```bash
+npm test                                   # Jest 전체 테스트 실행
+npx jest --coverage                        # 커버리지 포함 실행
+```
 
 ## 환경 변수
 
@@ -36,10 +42,13 @@ npm run lint     # ESLint
 - `LOG_LEVEL` (DEBUG/INFO/TRADE/WARN/ERROR, 기본 INFO)
 - `PAPER_TRADING=true` — 페이퍼 트레이딩 모드 활성화
 - `TOURNAMENT_MODE=true` — 토너먼트 모드 활성화
+- `API_KEY` — API 인증 키 (미설정 시 인증 비활성화)
+- `CORS_ORIGIN` — CORS 허용 오리진 (기본 `*`)
 
 `frontend/.env.local`:
 - `NEXT_PUBLIC_API_URL` (기본 `http://localhost:3001`)
 - `NEXT_PUBLIC_SOCKET_URL` (기본 `http://localhost:3001`)
+- `NEXT_PUBLIC_API_KEY` — API 인증 키 (백엔드 `API_KEY`와 동일)
 
 ## 핵심 아키텍처 패턴
 
@@ -49,6 +58,8 @@ npm run lint     # ESLint
 exchangeClient (싱글턴) → riskEngine → orderManager/positionManager
 → marketData → tickerAggregator → coinSelector/marketRegime
 → indicatorCache/fundingDataService/strategyRouter/signalFilter → botService (오케스트레이터)
+
+미들웨어 체인: CORS → traceContext → apiKeyAuth → httpMetrics → rateLimiter → routes
 ```
 모든 API 라우트 파일은 팩토리 함수를 export: `createBotRoutes({ botService, riskEngine })`
 
@@ -104,6 +115,7 @@ exchangeClient (싱글턴) → riskEngine → orderManager/positionManager
 | `/api/tournament` | info, leaderboard, start, stop, reset, strategy/:name (TOURNAMENT_MODE=true일 때만) |
 | `/api/risk` | events, events/unacknowledged, events/:id/acknowledge, status, drawdown/reset |
 | `/api/health` | ping, status |
+| `/metrics` | Prometheus 메트릭 (prom-client, 인증 면제) |
 
 ## 프론트엔드 구조
 

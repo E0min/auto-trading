@@ -226,6 +226,7 @@ class FundingRateStrategy extends StrategyBase {
         category: this._category,
         suggestedQty: qty,
         suggestedPrice: currentPrice,
+        stopLossPrice: multiply(currentPrice, subtract('1', divide(this._slPercent, '100'))),
         confidence,
         leverage: '3',
         marketContext: {
@@ -272,6 +273,7 @@ class FundingRateStrategy extends StrategyBase {
         category: this._category,
         suggestedQty: qty,
         suggestedPrice: currentPrice,
+        stopLossPrice: multiply(currentPrice, add('1', divide(this._slPercent, '100'))),
         confidence,
         leverage: '3',
         marketContext: {
