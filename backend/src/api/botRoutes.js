@@ -182,10 +182,12 @@ module.exports = function createBotRoutes({ botService, riskEngine }) {
   });
 
   // POST /api/bot/strategies/:name/disable — disable a strategy at runtime
+  // Body: { mode?: 'immediate' | 'graceful' }  (default: 'immediate')
   router.post('/strategies/:name/disable', (req, res) => {
     try {
       const { name } = req.params;
-      const ok = botService.disableStrategy(name);
+      const mode = req.body?.mode || 'immediate';
+      const ok = botService.disableStrategy(name, { mode });
 
       if (!ok) {
         return res.status(400).json({
@@ -194,7 +196,7 @@ module.exports = function createBotRoutes({ botService, riskEngine }) {
         });
       }
 
-      res.json({ success: true, data: { name, enabled: false } });
+      res.json({ success: true, data: { name, enabled: false, mode } });
     } catch (err) {
       log.error('POST /strategies/:name/disable — error', { error: err });
       res.status(500).json({ success: false, error: err.message });

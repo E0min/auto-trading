@@ -96,6 +96,9 @@ class BotService extends EventEmitter {
     /** @type {boolean} */
     this.paperMode = paperMode || false;
 
+    /** @type {Set<string>} Strategies disabled in graceful mode — blocks new entries */
+    this._gracefulDisabledStrategies = new Set();
+
     /** @type {import('./indicatorCache')|null} */
     this.indicatorCache = indicatorCache || null;
 
@@ -475,6 +478,7 @@ class BotService extends EventEmitter {
       }
     }
     this._eventCleanups = [];
+    this._gracefulDisabledStrategies.clear();
 
     // 3b. Stop regimeOptimizer and regimeEvaluator
     if (this.regimeOptimizer) {
@@ -840,6 +844,9 @@ class BotService extends EventEmitter {
       return false;
     }
 
+    // Clear graceful-disabled flag if re-enabling
+    this._gracefulDisabledStrategies.delete(name);
+
     if (!registry.has(name)) {
       log.warn('enableStrategy — unknown strategy', { name });
       return false;
@@ -914,7 +921,20 @@ class BotService extends EventEmitter {
    * @param {string} name — strategy name to disable
    * @returns {boolean} true if successfully disabled
    */
-  disableStrategy(name) {
+  /**
+   * Disable a strategy by name at runtime.
+   *
+   * @param {string} name — strategy name to disable
+   * @param {object} [opts]
+   * @param {'immediate'|'graceful'} [opts.mode='immediate']
+   *   - immediate: deactivate strategy + auto-close all its positions
+   *   - graceful: deactivate strategy (no new entries) but let existing positions
+   *               close naturally via SL/TP
+   * @returns {boolean} true if successfully disabled
+   */
+  disableStrategy(name, opts = {}) {
+    const mode = opts.mode || 'immediate';
+
     if (!this._running) {
       log.warn('disableStrategy — bot is not running');
       return false;
@@ -932,10 +952,16 @@ class BotService extends EventEmitter {
       strategy.removeAllListeners(TRADE_EVENTS.SIGNAL_GENERATED);
       this.strategies.splice(idx, 1);
 
-      // Close all positions opened by this strategy
-      this._closeStrategyPositions(name);
+      if (mode === 'immediate') {
+        // Close all positions opened by this strategy
+        this._closeStrategyPositions(name);
+      } else {
+        // Graceful: block new entries but keep existing positions
+        this._gracefulDisabledStrategies.add(name);
+        log.info('disableStrategy — graceful mode, blocking new entries only', { name });
+      }
 
-      log.info('disableStrategy — strategy disabled', { name });
+      log.info('disableStrategy — strategy disabled', { name, mode });
       return true;
     } catch (err) {
       log.error('disableStrategy — failed', { name, error: err });
@@ -1144,6 +1170,19 @@ class BotService extends EventEmitter {
    * @private
    */
   async _handleStrategySignal(signal, sessionId) {
+    // Block new entry signals from gracefully-disabled strategies
+    if (this._gracefulDisabledStrategies.has(signal.strategy)) {
+      const isEntry = signal.action === SIGNAL_ACTIONS.OPEN_LONG
+        || signal.action === SIGNAL_ACTIONS.OPEN_SHORT;
+      if (isEntry) {
+        log.info('_handleStrategySignal — blocked new entry from gracefully-disabled strategy', {
+          strategy: signal.strategy, symbol: signal.symbol, action: signal.action,
+        });
+        return;
+      }
+      // Allow close signals (SL/TP exits) to pass through
+    }
+
     // Pass through SignalFilter first
     if (this.signalFilter) {
       const result = this.signalFilter.filter(signal);

@@ -58,6 +58,9 @@ export default function StrategyHub({
   // Expanded card
   const [expandedName, setExpandedName] = useState<string | null>(null);
 
+  // Disable mode dialog
+  const [disableTarget, setDisableTarget] = useState<string | null>(null);
+
   // ── Data fetching ────────────────────────────────────────────────────────
 
   const fetchStrategies = useCallback(async () => {
@@ -113,15 +116,17 @@ export default function StrategyHub({
   const handleToggle = useCallback(
     async (strategy: StrategyListItem) => {
       if (togglingName) return;
-      setTogglingName(strategy.name);
 
+      // If disabling while bot is running, show mode selection dialog
+      if (botRunning && strategy.active) {
+        setDisableTarget(strategy.name);
+        return;
+      }
+
+      setTogglingName(strategy.name);
       try {
         if (botRunning) {
-          if (strategy.active) {
-            await botApi.disableStrategy(strategy.name);
-          } else {
-            await botApi.enableStrategy(strategy.name);
-          }
+          await botApi.enableStrategy(strategy.name);
           await fetchStrategies();
         } else {
           setStrategies((prev) =>
@@ -137,6 +142,25 @@ export default function StrategyHub({
       }
     },
     [togglingName, botRunning, fetchStrategies],
+  );
+
+  const handleDisableConfirm = useCallback(
+    async (mode: 'immediate' | 'graceful') => {
+      if (!disableTarget) return;
+      const name = disableTarget;
+      setDisableTarget(null);
+      setTogglingName(name);
+
+      try {
+        await botApi.disableStrategy(name, mode);
+        await fetchStrategies();
+      } catch (err) {
+        console.error('전략 비활성화 실패:', err);
+      } finally {
+        setTogglingName(null);
+      }
+    },
+    [disableTarget, fetchStrategies],
   );
 
   // ── Expand handler ──────────────────────────────────────────────────────
@@ -271,6 +295,53 @@ export default function StrategyHub({
           ))
         )}
       </div>
+
+      {/* Disable mode dialog */}
+      {disableTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-[var(--bg-card)] border border-[var(--border-muted)] rounded-xl p-5 w-80 shadow-xl">
+            <h3 className="text-sm font-medium text-[var(--text-primary)] mb-1">
+              전략 비활성화
+            </h3>
+            <p className="text-xs text-[var(--text-muted)] mb-4">
+              <span className="text-[var(--text-secondary)] font-medium">{disableTarget}</span> 전략을 어떻게 종료할까요?
+            </p>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => handleDisableConfirm('immediate')}
+                className="w-full text-left px-3 py-2.5 rounded-lg border border-[var(--border-subtle)] hover:border-[var(--loss)]/50 hover:bg-[var(--loss)]/5 transition-colors group"
+              >
+                <span className="text-xs font-medium text-[var(--text-primary)] group-hover:text-[var(--loss)]">
+                  즉시 청산
+                </span>
+                <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                  열린 포지션을 시장가로 즉시 청산합니다
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDisableConfirm('graceful')}
+                className="w-full text-left px-3 py-2.5 rounded-lg border border-[var(--border-subtle)] hover:border-amber-500/50 hover:bg-amber-500/5 transition-colors group"
+              >
+                <span className="text-xs font-medium text-[var(--text-primary)] group-hover:text-amber-400">
+                  자연 종료
+                </span>
+                <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                  신규 진입을 차단하고, 기존 포지션은 SL/TP로 자연 청산
+                </p>
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDisableTarget(null)}
+              className="w-full mt-3 py-1.5 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+            >
+              취소
+            </button>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }

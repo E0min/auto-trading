@@ -101,8 +101,11 @@ export const botApi = {
       method: 'POST',
       body: JSON.stringify(config || {}),
     }),
-  disableStrategy: (name: string) =>
-    request<{ message: string }>(`/api/bot/strategies/${name}/disable`, { method: 'POST' }),
+  disableStrategy: (name: string, mode: 'immediate' | 'graceful' = 'immediate') =>
+    request<{ message: string }>(`/api/bot/strategies/${name}/disable`, {
+      method: 'POST',
+      body: JSON.stringify({ mode }),
+    }),
   getTradingMode: () =>
     request<{ mode: string }>('/api/bot/trading-mode'),
   setTradingMode: (mode: string) =>
