@@ -294,6 +294,92 @@ export interface RiskEvent {
   timestamp?: string;
 }
 
+// --- Market Intelligence types ---
+
+export interface RegimeHistoryEntry {
+  previous: MarketRegime | null;
+  current: MarketRegime;
+  confidence: number;
+  scores: Record<string, number>;
+  btcPrice: number;
+  ema9: number;
+  sma20: number;
+  sma50: number;
+  atr: number;
+  advancers?: number;
+  decliners?: number;
+  tickerCount?: number;
+  ts: number;
+}
+
+export interface CoinFactorScores {
+  volume: number;
+  spreadInv: number;
+  openInterest: number;
+  fundingInv: number;
+  momentum: number;
+  volatility: number;
+  volMomentum: number;
+}
+
+export interface ScoredCoin {
+  symbol: string;
+  score: string;
+  vol24h: string;
+  change24h: string;
+  spread: string;
+  lastPrice: string;
+  openInterest?: string;
+  fundingRate?: string;
+  volatility?: string;
+  regime?: string;
+  _factorScores: CoinFactorScores;
+}
+
+export interface WeightProfile {
+  regime: string;
+  weights: CoinFactorScores;
+}
+
+export interface CoinScoringData {
+  coins: ScoredCoin[];
+  weightProfile: WeightProfile | null;
+}
+
+export interface StrategyRoutingEntry {
+  name: string;
+  active: boolean;
+  targetRegimes: string[];
+  matchesCurrentRegime: boolean;
+}
+
+export interface StrategyRoutingData {
+  running: boolean;
+  currentRegime: string | null;
+  strategies: StrategyRoutingEntry[];
+  activeCount: number;
+  totalCount: number;
+  regimeBreakdown: Record<string, { active: string[]; inactive: string[] }>;
+}
+
+export interface RegimeContext {
+  regime: MarketRegime;
+  confidence: number;
+  factorScores?: Record<string, number>;
+  ema9?: number;
+  sma20?: number;
+  sma50?: number;
+  atr?: number;
+  btcPrice?: number;
+  aggregateStats?: {
+    advancers: number;
+    decliners: number;
+    tickerCount: number;
+  };
+  pendingRegime?: string | null;
+  historyLength?: number;
+}
+
 // Legacy RiskEvent compat (for useSocket inline events that lack full schema)
 export interface RiskEventLegacy {
   reason: string;

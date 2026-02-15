@@ -16,6 +16,7 @@ const POLLING_CONFIGS: Record<string, PollingConfig> = {
   positions:  { idle: 30000, active: 3000,  halted: 10000, hidden: 60000 },
   trades:     { idle: 30000, active: 10000, halted: 15000, hidden: 60000 },
   health:     { idle: 60000, active: 30000, halted: 30000, hidden: 120000 },
+  marketIntel: { idle: 30000, active: 10000, halted: 15000, hidden: 60000 },
 };
 
 export function useAdaptivePolling(

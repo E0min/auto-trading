@@ -5,18 +5,18 @@ import type { RiskEvent } from '@/types';
 
 const SEVERITY_CONFIG = {
   critical: {
-    bg: 'bg-red-900/90 border-red-500/50',
-    iconColor: 'text-red-400',
+    border: 'border-[var(--loss)]/30',
+    textColor: 'text-[var(--loss)]',
     autoDismissMs: null as number | null,
   },
   warning: {
-    bg: 'bg-amber-900/60 border-amber-500/30',
-    iconColor: 'text-amber-400',
+    border: 'border-amber-500/20',
+    textColor: 'text-amber-400',
     autoDismissMs: 30000,
   },
   info: {
-    bg: 'bg-blue-900/40 border-blue-500/20',
-    iconColor: 'text-blue-400',
+    border: 'border-blue-500/10',
+    textColor: 'text-blue-400',
     autoDismissMs: 10000,
   },
 } as const;
@@ -93,39 +93,39 @@ export default function RiskAlertBanner({ events, onDismiss, onAcknowledge }: Ri
 
   return (
     <div
-      className={`w-full border-b px-4 py-2 ${config.bg}`}
+      className={`w-full border-b ${config.border} bg-[var(--bg-primary)] px-6 py-2`}
       role="alert"
       aria-live="assertive"
     >
-      <div className="flex items-center gap-3 max-w-7xl mx-auto">
-        <svg className={`w-5 h-5 flex-shrink-0 ${config.iconColor}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+      <div className="flex items-center gap-3 max-w-[1440px] mx-auto">
+        <svg className={`w-4 h-4 flex-shrink-0 ${config.textColor}`} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
         </svg>
         <div className="flex-1 min-w-0">
-          <span className="text-sm font-medium text-zinc-100">
+          <span className={`text-[11px] font-medium ${config.textColor}`}>
             {EVENT_TYPE_LABELS[topEvent.eventType] || topEvent.eventType}
           </span>
-          <span className="text-sm text-zinc-300 ml-2">{topEvent.reason}</span>
+          <span className="text-[11px] text-[var(--text-secondary)] ml-2">{topEvent.reason}</span>
           {topEvent.symbol && (
-            <span className="text-xs text-zinc-400 ml-2">[{topEvent.symbol}]</span>
+            <span className="text-[10px] text-[var(--text-muted)] ml-2">[{topEvent.symbol}]</span>
           )}
         </div>
         {remainingCount > 0 && (
-          <span className="text-xs text-zinc-400 flex-shrink-0">+{remainingCount}건 더</span>
+          <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0">+{remainingCount}</span>
         )}
         {topEvent.severity === 'critical' ? (
           <button
             onClick={() => onAcknowledge(topEvent._id)}
-            className="text-xs px-2 py-1 rounded bg-red-600 text-white hover:bg-red-500 flex-shrink-0"
+            className="text-[11px] px-2.5 py-1 rounded-md border border-[var(--loss)]/30 text-[var(--loss)] hover:bg-red-500/10 flex-shrink-0 transition-colors"
           >
             확인
           </button>
         ) : (
           <button
             onClick={() => { setDismissedIds((prev) => new Set(prev).add(topEvent._id)); onDismiss(topEvent._id); }}
-            className="text-zinc-400 hover:text-zinc-200 flex-shrink-0"
+            className="text-[var(--text-muted)] hover:text-[var(--text-secondary)] flex-shrink-0 transition-colors"
           >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
             </svg>
           </button>

@@ -16,6 +16,14 @@ import Spinner from '@/components/ui/Spinner';
 import { formatCurrency } from '@/lib/utils';
 import type { DailyPerformanceEntry } from '@/types';
 
+const TOOLTIP_STYLE = {
+  backgroundColor: 'var(--bg-elevated)',
+  border: '1px solid var(--border-muted)',
+  borderRadius: '6px',
+  fontSize: '11px',
+  padding: '8px 12px',
+};
+
 interface DailyPerformanceProps {
   data: DailyPerformanceEntry[] | null;
   loading: boolean;
@@ -55,10 +63,7 @@ export default function DailyPerformance({ data, loading }: DailyPerformanceProp
     return (
       <Card className="col-span-full">
         <div className="h-[400px] flex items-center justify-center">
-          <div className="flex flex-col items-center gap-2">
-            <Spinner size="md" />
-            <span className="text-zinc-500 text-sm">데이터 로딩 중...</span>
-          </div>
+          <Spinner size="md" />
         </div>
       </Card>
     );
@@ -67,7 +72,7 @@ export default function DailyPerformance({ data, loading }: DailyPerformanceProp
   if (entries.length === 0) {
     return (
       <Card className="col-span-full">
-        <div className="h-[400px] flex items-center justify-center text-zinc-500 text-sm">
+        <div className="h-[400px] flex items-center justify-center text-[var(--text-muted)] text-sm">
           데이터가 없습니다
         </div>
       </Card>
@@ -83,35 +88,31 @@ export default function DailyPerformance({ data, loading }: DailyPerformanceProp
             <BarChart data={entries} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}>
               <XAxis
                 dataKey="date"
-                tick={{ fill: '#71717a', fontSize: 11 }}
-                axisLine={{ stroke: '#27272a' }}
+                tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
+                axisLine={{ stroke: 'var(--border-subtle)' }}
                 tickLine={false}
               />
               <YAxis
-                tick={{ fill: '#71717a', fontSize: 11 }}
-                axisLine={{ stroke: '#27272a' }}
+                tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
+                axisLine={false}
                 tickLine={false}
                 tickFormatter={(v) => `$${formatCurrency(String(v), 0)}`}
               />
               <Tooltip
-                contentStyle={{
-                  backgroundColor: '#18181b',
-                  border: '1px solid #27272a',
-                  borderRadius: '8px',
-                  fontSize: '12px',
-                }}
-                labelStyle={{ color: '#a1a1aa' }}
+                contentStyle={TOOLTIP_STYLE}
+                labelStyle={{ color: 'var(--text-secondary)' }}
                 formatter={((value: number) => [
                   `$${formatCurrency(String(value))}`,
                   'PnL',
                 ]) as never}
               />
-              <ReferenceLine y={0} stroke="#52525b" />
-              <Bar dataKey="pnl" radius={[4, 4, 0, 0]}>
+              <ReferenceLine y={0} stroke="var(--border-muted)" />
+              <Bar dataKey="pnl" radius={[3, 3, 0, 0]} barSize={16}>
                 {entries.map((entry, index) => (
                   <Cell
                     key={`cell-${index}`}
-                    fill={entry.pnl >= 0 ? '#34d399' : '#f87171'}
+                    fill={entry.pnl >= 0 ? 'var(--profit)' : 'var(--loss)'}
+                    fillOpacity={0.7}
                   />
                 ))}
               </Bar>
@@ -122,22 +123,22 @@ export default function DailyPerformance({ data, loading }: DailyPerformanceProp
 
       {/* Summary Cards */}
       {summary && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-lg p-3">
-            <p className="text-xs text-zinc-500 mb-1">총 거래일</p>
-            <p className="text-lg font-mono text-zinc-100">{summary.totalDays}</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg p-4">
+            <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--text-muted)] mb-1">총 거래일</p>
+            <p className="text-lg font-mono text-[var(--text-primary)]">{summary.totalDays}</p>
           </div>
-          <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-lg p-3">
-            <p className="text-xs text-zinc-500 mb-1">수익일</p>
-            <p className="text-lg font-mono text-emerald-400">{summary.profitDays}</p>
+          <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg p-4">
+            <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--text-muted)] mb-1">수익일</p>
+            <p className="text-lg font-mono text-[var(--profit)]">{summary.profitDays}</p>
           </div>
-          <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-lg p-3">
-            <p className="text-xs text-zinc-500 mb-1">손실일</p>
-            <p className="text-lg font-mono text-red-400">{summary.lossDays}</p>
+          <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg p-4">
+            <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--text-muted)] mb-1">손실일</p>
+            <p className="text-lg font-mono text-[var(--loss)]">{summary.lossDays}</p>
           </div>
-          <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-lg p-3">
-            <p className="text-xs text-zinc-500 mb-1">평균 일일 PnL</p>
-            <p className={`text-lg font-mono ${summary.avgDailyPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+          <div className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg p-4">
+            <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--text-muted)] mb-1">평균 일일 PnL</p>
+            <p className={`text-lg font-mono ${summary.avgDailyPnl >= 0 ? 'text-[var(--profit)]' : 'text-[var(--loss)]'}`}>
               {summary.avgDailyPnl >= 0 ? '+' : ''}${formatCurrency(String(summary.avgDailyPnl))}
             </p>
           </div>

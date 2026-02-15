@@ -44,6 +44,7 @@ safeRequire('./price-action/CandlePatternStrategy', 'CandlePatternStrategy');
 safeRequire('./price-action/SupportResistanceStrategy', 'SupportResistanceStrategy');
 safeRequire('./price-action/SwingStructureStrategy', 'SwingStructureStrategy');
 safeRequire('./price-action/FibonacciRetracementStrategy', 'FibonacciRetracementStrategy');
+safeRequire('./price-action/TrendlineBreakoutStrategy', 'TrendlineBreakoutStrategy');
 
 // ---- indicator-light (1~2 지표) ----
 safeRequire('./indicator-light/GridStrategy', 'GridStrategy');

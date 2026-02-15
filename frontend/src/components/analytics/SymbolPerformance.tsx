@@ -15,6 +15,14 @@ import Spinner from '@/components/ui/Spinner';
 import { formatCurrency, formatSymbol } from '@/lib/utils';
 import type { SymbolPerformanceEntry } from '@/types';
 
+const TOOLTIP_STYLE = {
+  backgroundColor: 'var(--bg-elevated)',
+  border: '1px solid var(--border-muted)',
+  borderRadius: '6px',
+  fontSize: '11px',
+  padding: '8px 12px',
+};
+
 interface SymbolPerformanceProps {
   data: Record<string, SymbolPerformanceEntry> | null;
   loading: boolean;
@@ -52,10 +60,7 @@ export default function SymbolPerformance({ data, loading }: SymbolPerformancePr
     return (
       <Card className="col-span-full">
         <div className="h-[400px] flex items-center justify-center">
-          <div className="flex flex-col items-center gap-2">
-            <Spinner size="md" />
-            <span className="text-zinc-500 text-sm">데이터 로딩 중...</span>
-          </div>
+          <Spinner size="md" />
         </div>
       </Card>
     );
@@ -64,7 +69,7 @@ export default function SymbolPerformance({ data, loading }: SymbolPerformancePr
   if (entries.length === 0) {
     return (
       <Card className="col-span-full">
-        <div className="h-[400px] flex items-center justify-center text-zinc-500 text-sm">
+        <div className="h-[400px] flex items-center justify-center text-[var(--text-muted)] text-sm">
           데이터가 없습니다
         </div>
       </Card>
@@ -84,37 +89,33 @@ export default function SymbolPerformance({ data, loading }: SymbolPerformancePr
             >
               <XAxis
                 type="number"
-                tick={{ fill: '#71717a', fontSize: 11 }}
-                axisLine={{ stroke: '#27272a' }}
+                tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
+                axisLine={{ stroke: 'var(--border-subtle)' }}
                 tickLine={false}
                 tickFormatter={(v) => `$${formatCurrency(String(v), 0)}`}
               />
               <YAxis
                 type="category"
                 dataKey="displaySymbol"
-                tick={{ fill: '#a1a1aa', fontSize: 11 }}
-                axisLine={{ stroke: '#27272a' }}
+                tick={{ fill: 'var(--text-secondary)', fontSize: 10 }}
+                axisLine={false}
                 tickLine={false}
                 width={120}
               />
               <Tooltip
-                contentStyle={{
-                  backgroundColor: '#18181b',
-                  border: '1px solid #27272a',
-                  borderRadius: '8px',
-                  fontSize: '12px',
-                }}
-                labelStyle={{ color: '#a1a1aa' }}
+                contentStyle={TOOLTIP_STYLE}
+                labelStyle={{ color: 'var(--text-secondary)' }}
                 formatter={((value: number) => [
                   `$${formatCurrency(String(value))}`,
                   'PnL',
                 ]) as never}
               />
-              <Bar dataKey="pnl" radius={[0, 4, 4, 0]}>
+              <Bar dataKey="pnl" radius={[0, 3, 3, 0]} barSize={12}>
                 {entries.map((entry, index) => (
                   <Cell
                     key={`cell-${index}`}
-                    fill={entry.pnl >= 0 ? '#34d399' : '#f87171'}
+                    fill={entry.pnl >= 0 ? 'var(--profit)' : 'var(--loss)'}
+                    fillOpacity={0.7}
                   />
                 ))}
               </Bar>
@@ -125,31 +126,31 @@ export default function SymbolPerformance({ data, loading }: SymbolPerformancePr
 
       {/* Data Table */}
       <Card title="심볼별 상세">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto -mx-6 -mb-6">
+          <table>
             <thead>
-              <tr className="text-zinc-500 border-b border-zinc-800">
-                <th className="text-left py-2 px-3 font-medium">심볼</th>
-                <th className="text-right py-2 px-3 font-medium">거래수</th>
-                <th className="text-right py-2 px-3 font-medium">승률</th>
-                <th className="text-right py-2 px-3 font-medium">총 PnL</th>
+              <tr>
+                <th>심볼</th>
+                <th className="text-right">거래수</th>
+                <th className="text-right">승률</th>
+                <th className="text-right">총 PnL</th>
               </tr>
             </thead>
             <tbody>
               {entries.map((entry) => {
                 const pnlValue = parseFloat(entry.totalPnl);
-                const pnlColor = pnlValue > 0 ? 'text-emerald-400' : pnlValue < 0 ? 'text-red-400' : 'text-zinc-400';
-                const winRateColor = entry.winRate >= 50 ? 'text-emerald-400' : 'text-red-400';
+                const pnlColor = pnlValue > 0 ? 'text-[var(--profit)]' : pnlValue < 0 ? 'text-[var(--loss)]' : 'text-[var(--text-muted)]';
+                const winRateColor = entry.winRate >= 50 ? 'text-[var(--profit)]' : 'text-[var(--loss)]';
                 const pnlSign = pnlValue > 0 ? '+' : '';
 
                 return (
-                  <tr key={entry.symbol} className="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors">
-                    <td className="py-2 px-3 text-zinc-200 font-mono">{entry.displaySymbol}</td>
-                    <td className="py-2 px-3 text-right font-mono text-zinc-300">{entry.trades}</td>
-                    <td className={`py-2 px-3 text-right font-mono ${winRateColor}`}>
+                  <tr key={entry.symbol}>
+                    <td className="text-[var(--text-primary)] font-mono">{entry.displaySymbol}</td>
+                    <td className="text-right font-mono text-[var(--text-secondary)]">{entry.trades}</td>
+                    <td className={`text-right font-mono ${winRateColor}`}>
                       {entry.winRate.toFixed(1)}%
                     </td>
-                    <td className={`py-2 px-3 text-right font-mono ${pnlColor}`}>
+                    <td className={`text-right font-mono font-medium ${pnlColor}`}>
                       {pnlSign}${formatCurrency(entry.totalPnl)}
                     </td>
                   </tr>

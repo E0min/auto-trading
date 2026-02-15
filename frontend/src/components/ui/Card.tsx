@@ -11,10 +11,14 @@ interface CardProps {
 
 export default function Card({ children, className = '', title, headerRight }: CardProps) {
   return (
-    <div className={`bg-zinc-900 border border-zinc-800 rounded-xl p-4 ${className}`}>
+    <div
+      className={`bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg p-6 transition-colors hover:border-[var(--border-muted)] ${className}`}
+    >
       {title && (
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-medium text-zinc-400">{title}</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--text-secondary)]">
+            {title}
+          </h3>
           {headerRight}
         </div>
       )}

@@ -6,12 +6,19 @@ import {
   Area,
   XAxis,
   YAxis,
-  CartesianGrid,
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
 } from 'recharts';
 import { computeDrawdownSeries } from '@/lib/drawdown';
+
+const TOOLTIP_STYLE = {
+  backgroundColor: 'var(--bg-elevated)',
+  border: '1px solid var(--border-muted)',
+  borderRadius: '6px',
+  fontSize: '11px',
+  padding: '8px 12px',
+};
 
 interface DrawdownChartProps {
   equityPoints: { timestamp: string; equity: string }[];
@@ -37,69 +44,72 @@ export default function DrawdownChart({ equityPoints, maxDrawdownPercent = 10 }:
   };
 
   return (
-    <div className="bg-zinc-900 rounded-lg border border-zinc-800">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800">
-        <div className="flex items-center gap-2">
-          <h3 className="text-sm font-medium text-zinc-300">드로다운 추이</h3>
+    <div className="bg-[var(--bg-elevated)] rounded-lg border border-[var(--border-subtle)]">
+      <div className="flex items-center justify-between px-6 py-3 border-b border-[var(--border-subtle)]">
+        <div className="flex items-center gap-3">
+          <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--text-secondary)]">
+            드로다운 추이
+          </h3>
           {data.length > 0 && (
-            <span className="text-xs text-red-400">
+            <span className="text-[11px] text-[var(--loss)] font-mono">
               최대: {minDD.toFixed(2)}%
             </span>
           )}
         </div>
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+          className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
         >
           {collapsed ? '펼치기' : '접기'}
         </button>
       </div>
       {!collapsed && (
-        <div className="p-4" style={{ height: 180 }}>
+        <div className="p-6" style={{ height: 180 }}>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
               <defs>
                 <linearGradient id="drawdownGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#ef4444" stopOpacity={0.1} />
-                  <stop offset="100%" stopColor="#ef4444" stopOpacity={0.4} />
+                  <stop offset="0%" stopColor="#ef4444" stopOpacity={0.05} />
+                  <stop offset="100%" stopColor="#ef4444" stopOpacity={0.2} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
               <XAxis
                 dataKey="timestamp"
                 tickFormatter={formatTime}
-                stroke="#52525b"
-                tick={{ fontSize: 10 }}
+                stroke="var(--border-subtle)"
+                tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
               />
               <YAxis
                 domain={[Math.min(limitLine * 1.2, minDD * 1.2), 0]}
                 tickFormatter={(v: number) => `${v.toFixed(1)}%`}
-                stroke="#52525b"
-                tick={{ fontSize: 10 }}
+                stroke="var(--border-subtle)"
+                tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
                 width={50}
+                axisLine={false}
               />
               <Tooltip
-                contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
+                contentStyle={TOOLTIP_STYLE}
                 labelFormatter={(label) => formatTime(String(label))}
                 formatter={((value?: number) => [`${(value ?? 0).toFixed(2)}%`, '드로다운']) as never}
               />
               <ReferenceLine
                 y={warningLine}
                 stroke="#f59e0b"
-                strokeDasharray="5 5"
-                label={{ value: '경고', fill: '#f59e0b', fontSize: 10, position: 'right' }}
+                strokeDasharray="6 4"
+                strokeWidth={0.5}
               />
               <ReferenceLine
                 y={limitLine}
                 stroke="#ef4444"
-                label={{ value: '한도', fill: '#ef4444', fontSize: 10, position: 'right' }}
+                strokeDasharray="6 4"
+                strokeWidth={0.5}
               />
               <Area
                 type="monotone"
                 dataKey="drawdownPct"
-                stroke="#ef4444"
+                stroke="var(--loss)"
                 fill="url(#drawdownGradient)"
-                strokeWidth={1.5}
+                strokeWidth={1}
               />
             </AreaChart>
           </ResponsiveContainer>

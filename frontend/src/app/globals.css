@@ -1,37 +1,62 @@
 @import "tailwindcss";
 
 :root {
-  --background: #09090b;
-  --foreground: #fafafa;
-  --card: #18181b;
-  --card-border: #27272a;
-  --muted: #a1a1aa;
-  --emerald: #34d399;
-  --red: #f87171;
+  /* Color Tokens — Minimal Refined */
+  --bg-primary: #08080A;
+  --bg-elevated: #0E0E12;
+  --bg-surface: #15151A;
+  --border-subtle: #1C1C22;
+  --border-muted: #28282F;
+  --text-primary: #EAEAEC;
+  --text-secondary: #7C7C84;
+  --text-muted: #44444C;
+  --accent: #C4A87C;
+  --accent-subtle: rgba(196, 168, 124, 0.08);
+  --profit: #4ADE80;
+  --loss: #F87171;
+
+  /* Legacy compat */
+  --background: var(--bg-primary);
+  --foreground: var(--text-primary);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--bg-primary);
+  --color-foreground: var(--text-primary);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
 }
+
+/* ── Base ───────────────────────────────────────────────────────────── */
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans), 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+
+/* Background noise texture overlay */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.15) 1px, transparent 0);
+  background-size: 24px 24px;
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────────────── */
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #3f3f46 transparent;
+  scrollbar-color: #28282F transparent;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
-}
-
-/* Custom scrollbar for webkit */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
 }
 
 ::-webkit-scrollbar-track {
@@ -39,15 +64,16 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
-  border-radius: 3px;
+  background: #28282F;
+  border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: #3A3A42;
 }
 
-/* Table styles */
+/* ── Table ──────────────────────────────────────────────────────────── */
+
 table {
   border-collapse: collapse;
   width: 100%;
@@ -56,19 +82,35 @@ table {
 th {
   text-align: left;
   font-weight: 500;
-  font-size: 0.75rem;
-  color: #a1a1aa;
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid #27272a;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 td {
-  padding: 0.5rem 0.75rem;
+  padding: 0.75rem 1rem;
   font-size: 0.8125rem;
-  border-bottom: 1px solid #27272a20;
+  border-bottom: 1px solid rgba(28, 28, 34, 0.5);
 }
 
-/* Animations */
+tr:hover td {
+  background: rgba(21, 21, 26, 0.5);
+}
+
+/* ── Animations ─────────────────────────────────────────────────────── */
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out;
+}
+
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
@@ -79,10 +121,27 @@ td {
 }
 
 @keyframes slide-in {
-  from { opacity: 0; transform: translateY(-8px); }
+  from { opacity: 0; transform: translateY(-6px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 .animate-slide-in {
   animation: slide-in 0.3s ease-out;
+}
+
+@keyframes number-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-number-up {
+  animation: number-up 0.5s ease-out;
+}
+
+/* ── Utility ────────────────────────────────────────────────────────── */
+
+.font-display {
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.01em;
 }

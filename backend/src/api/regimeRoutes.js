@@ -21,7 +21,7 @@ const log = createLogger('RegimeRoutes');
  * @param {import('../services/regimeEvaluator')}  deps.regimeEvaluator
  * @returns {Router}
  */
-function createRegimeRoutes({ marketRegime, regimeParamStore, regimeOptimizer, regimeEvaluator }) {
+function createRegimeRoutes({ marketRegime, regimeParamStore, regimeOptimizer, regimeEvaluator, coinSelector, strategyRouter }) {
   const router = Router();
 
   // GET /api/regime/status — current regime + context + params + confidence
@@ -138,6 +138,42 @@ function createRegimeRoutes({ marketRegime, regimeParamStore, regimeOptimizer, r
       res.json({ success: true, data: status });
     } catch (err) {
       log.error('GET /optimizer/status error', { error: err.message });
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // GET /api/regime/history — regime transition history
+  router.get('/history', (req, res) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit, 10) || 100, 100);
+      const history = marketRegime.getRegimeHistory();
+      res.json({ success: true, data: history.slice(-limit) });
+    } catch (err) {
+      log.error('GET /history error', { error: err.message });
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // GET /api/regime/coin-scoring — coin selection factor scores + weight profile
+  router.get('/coin-scoring', (req, res) => {
+    try {
+      const coins = coinSelector.getScoringDetails() || [];
+      const weightProfile = coinSelector.getActiveWeightProfile() || null;
+      res.json({ success: true, data: { coins, weightProfile } });
+    } catch (err) {
+      log.error('GET /coin-scoring error', { error: err.message });
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // GET /api/regime/strategy-routing — strategy router status + regime breakdown
+  router.get('/strategy-routing', (req, res) => {
+    try {
+      const status = strategyRouter.getStatus();
+      const regimeBreakdown = strategyRouter.getRegimeBreakdown();
+      res.json({ success: true, data: { ...status, regimeBreakdown } });
+    } catch (err) {
+      log.error('GET /strategy-routing error', { error: err.message });
       res.status(500).json({ success: false, error: err.message });
     }
   });

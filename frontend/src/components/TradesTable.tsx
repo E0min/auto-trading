@@ -33,7 +33,7 @@ const statusLabel: Record<string, string> = {
 export default function TradesTable({ trades, loading }: TradesTableProps) {
   return (
     <Card title="최근 거래 내역" className="col-span-full overflow-hidden">
-      <div className="overflow-x-auto -mx-4 -mb-4">
+      <div className="overflow-x-auto -mx-6 -mb-6">
         <table>
           <thead>
             <tr>
@@ -51,38 +51,38 @@ export default function TradesTable({ trades, loading }: TradesTableProps) {
           <tbody>
             {loading && trades.length === 0 ? (
               <tr>
-                <td colSpan={9} className="text-center text-zinc-500 py-8">
+                <td colSpan={9} className="text-center text-[var(--text-muted)] py-10">
                   로딩 중...
                 </td>
               </tr>
             ) : trades.length === 0 ? (
               <tr>
-                <td colSpan={9} className="text-center text-zinc-500 py-8">
+                <td colSpan={9} className="text-center text-[var(--text-muted)] py-10">
                   거래 내역 없음
                 </td>
               </tr>
             ) : (
               trades.map((trade) => (
-                <tr key={trade._id} className="hover:bg-zinc-800/50">
-                  <td className="text-zinc-400 whitespace-nowrap">{formatDate(trade.createdAt)}</td>
-                  <td className="font-mono font-medium text-zinc-200">{formatSymbol(trade.symbol)}</td>
+                <tr key={trade._id}>
+                  <td className="text-[var(--text-muted)] whitespace-nowrap">{formatDate(trade.createdAt)}</td>
+                  <td className="font-mono font-medium text-[var(--text-primary)]">{formatSymbol(trade.symbol)}</td>
                   <td>
-                    <Badge variant={trade.side === 'buy' ? 'success' : 'danger'}>
+                    <Badge variant={trade.side === 'buy' ? 'success' : 'danger'} dot>
                       {translateSide(trade.side)}
                     </Badge>
                   </td>
-                  <td className="text-zinc-400">{trade.orderType}</td>
-                  <td className="font-mono">{trade.filledQty || trade.qty}</td>
-                  <td className="font-mono">${formatCurrency(trade.avgFilledPrice || trade.price)}</td>
+                  <td className="text-[var(--text-muted)]">{trade.orderType}</td>
+                  <td className="font-mono text-[var(--text-secondary)]">{trade.filledQty || trade.qty}</td>
+                  <td className="font-mono text-[var(--text-secondary)]">${formatCurrency(trade.avgFilledPrice || trade.price)}</td>
                   <td>
-                    <Badge variant={statusVariant[trade.status] || 'neutral'}>
+                    <Badge variant={statusVariant[trade.status] || 'neutral'} dot>
                       {statusLabel[trade.status] || trade.status}
                     </Badge>
                   </td>
                   <td className={`font-mono font-medium ${getPnlColor(trade.pnl)}`}>
-                    {trade.pnl ? `${getPnlSign(trade.pnl)}$${formatCurrency(trade.pnl)}` : '-'}
+                    {trade.pnl ? `${getPnlSign(trade.pnl)}$${formatCurrency(trade.pnl)}` : '\u2014'}
                   </td>
-                  <td className="text-zinc-500 text-xs">{trade.strategy || '-'}</td>
+                  <td className="text-[var(--text-muted)] text-xs">{trade.strategy || '\u2014'}</td>
                 </tr>
               ))
             )}

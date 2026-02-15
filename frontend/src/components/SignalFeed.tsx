@@ -20,27 +20,27 @@ export default function SignalFeed({ signals }: SignalFeedProps) {
   return (
     <Card title="실시간 시그널" className="max-h-[400px] overflow-y-auto">
       {signals.length === 0 ? (
-        <p className="text-zinc-500 text-sm text-center py-8">시그널 대기 중...</p>
+        <p className="text-[var(--text-muted)] text-sm text-center py-10">시그널 대기 중...</p>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-0">
           {signals.map((signal, idx) => (
             <div
               key={signal._id || idx}
-              className="flex items-center justify-between p-2 rounded-lg bg-zinc-800/50 animate-slide-in"
+              className="flex items-center justify-between py-3 border-b border-[var(--border-subtle)]/50 last:border-b-0 animate-slide-in"
             >
-              <div className="flex items-center gap-2">
-                <Badge variant={actionVariant[signal.action] || 'neutral'}>
+              <div className="flex items-center gap-3">
+                <Badge variant={actionVariant[signal.action] || 'neutral'} dot>
                   {translateSide(signal.action)}
                 </Badge>
-                <span className="font-mono text-sm text-zinc-200">
+                <span className="font-mono text-sm text-[var(--text-primary)]">
                   {formatSymbol(signal.symbol)}
                 </span>
               </div>
-              <div className="flex items-center gap-3 text-xs">
-                <span className="text-zinc-400">
+              <div className="flex items-center gap-3 text-[11px]">
+                <span className="text-[var(--text-muted)]">
                   {signal.strategy}
                 </span>
-                <span className="text-zinc-500">
+                <span className="text-[var(--text-muted)] font-mono">
                   {Math.round(signal.confidence * 100)}%
                 </span>
                 {signal.riskApproved !== null && (
@@ -50,7 +50,7 @@ export default function SignalFeed({ signals }: SignalFeedProps) {
                     </Badge>
                     {!signal.riskApproved && signal.rejectReason && (
                       <span
-                        className="text-[10px] text-red-400/70 max-w-[160px] truncate"
+                        className="text-[10px] text-[var(--loss)]/60 max-w-[160px] truncate"
                         title={signal.rejectReason}
                       >
                         {translateRejectReason(signal.rejectReason)}
@@ -58,7 +58,7 @@ export default function SignalFeed({ signals }: SignalFeedProps) {
                     )}
                   </div>
                 )}
-                <span className="text-zinc-600">
+                <span className="text-[var(--text-muted)] font-mono">
                   {formatTime(signal.createdAt)}
                 </span>
               </div>

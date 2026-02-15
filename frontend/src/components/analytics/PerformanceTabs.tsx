@@ -41,28 +41,31 @@ export default function PerformanceTabs({
   } = usePerformanceAnalytics(sessionId);
 
   return (
-    <div className="space-y-3">
-      {/* Tab Navigation */}
-      <div className="flex gap-1 bg-zinc-900 border border-zinc-800 rounded-lg p-1">
+    <div className="space-y-4">
+      {/* Tab Navigation — minimal underline style */}
+      <div className="flex gap-0 border-b border-[var(--border-subtle)]">
         {TABS.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             className={`
-              flex-1 px-3 py-1.5 text-sm font-medium rounded-md transition-colors
+              px-4 py-2.5 text-[11px] font-medium transition-all duration-200 relative
               ${activeTab === tab.key
-                ? 'bg-zinc-700/70 text-zinc-100'
-                : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
+                ? 'text-[var(--text-primary)]'
+                : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
               }
             `}
           >
             {tab.label}
+            {activeTab === tab.key && (
+              <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[var(--accent)]" />
+            )}
           </button>
         ))}
       </div>
 
       {/* Tab Content */}
-      <div>
+      <div className="animate-fade-in">
         {activeTab === 'equity' && (
           <div className="space-y-4">
             <EquityCurveChart data={equityCurve} loading={analyticsLoading} />

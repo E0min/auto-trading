@@ -1,6 +1,5 @@
 'use client';
 
-import Card from '@/components/ui/Card';
 import { formatCurrency, getPnlColor, getPnlSign } from '@/lib/utils';
 import type { AccountState } from '@/types';
 
@@ -12,25 +11,47 @@ interface AccountOverviewProps {
 export default function AccountOverview({ accountState, positionCount }: AccountOverviewProps) {
   const { equity, availableBalance, unrealizedPnl } = accountState;
 
-  const cards = [
-    { label: '총 자산', value: `$${formatCurrency(equity)}`, color: 'text-zinc-100' },
-    { label: '가용 잔고', value: `$${formatCurrency(availableBalance)}`, color: 'text-zinc-100' },
-    {
-      label: '미실현 PnL',
-      value: `${getPnlSign(unrealizedPnl)}$${formatCurrency(unrealizedPnl)}`,
-      color: getPnlColor(unrealizedPnl),
-    },
-    { label: '활성 포지션', value: String(positionCount), color: 'text-zinc-100' },
-  ];
-
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      {cards.map((card) => (
-        <Card key={card.label}>
-          <p className="text-xs text-zinc-500 mb-1">{card.label}</p>
-          <p className={`text-xl font-bold font-mono ${card.color}`}>{card.value}</p>
-        </Card>
-      ))}
+    <div className="grid grid-cols-4 gap-8 py-2">
+      {/* Total Equity — Hero */}
+      <div className="animate-number-up">
+        <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--text-muted)] mb-1">
+          총 자산
+        </p>
+        <p className="text-3xl font-mono font-display text-[var(--text-primary)]">
+          ${formatCurrency(equity)}
+        </p>
+      </div>
+
+      {/* Available Balance */}
+      <div className="animate-number-up">
+        <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--text-muted)] mb-1">
+          가용 잔고
+        </p>
+        <p className="text-lg font-mono text-[var(--text-primary)]">
+          ${formatCurrency(availableBalance)}
+        </p>
+      </div>
+
+      {/* Unrealized PnL — color */}
+      <div className="animate-number-up">
+        <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--text-muted)] mb-1">
+          미실현 PnL
+        </p>
+        <p className={`text-lg font-mono font-medium ${getPnlColor(unrealizedPnl)}`}>
+          {getPnlSign(unrealizedPnl)}${formatCurrency(unrealizedPnl)}
+        </p>
+      </div>
+
+      {/* Active Positions */}
+      <div className="animate-number-up">
+        <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--text-muted)] mb-1">
+          활성 포지션
+        </p>
+        <p className="text-lg font-mono text-[var(--text-primary)]">
+          {positionCount}
+        </p>
+      </div>
     </div>
   );
 }

@@ -8,6 +8,8 @@ import {
   translateStrategyName,
   translateRegime,
   getStrategyCategory,
+  getRegimeColor,
+  getRegimeDotColor,
   cn,
 } from '@/lib/utils';
 import type { StrategyListItem, Signal, Position } from '@/types';
@@ -26,18 +28,10 @@ interface StrategyCardProps {
   onExpand: () => void;
 }
 
-const REGIME_TAG_COLORS: Record<string, string> = {
-  trending_up: 'bg-emerald-500/20 text-emerald-400',
-  trending_down: 'bg-red-500/20 text-red-400',
-  ranging: 'bg-yellow-500/20 text-yellow-400',
-  volatile: 'bg-purple-500/20 text-purple-400',
-  quiet: 'bg-zinc-500/20 text-zinc-400',
-};
-
 const RISK_BADGE: Record<string, { label: string; color: string }> = {
-  low: { label: 'Low', color: 'bg-emerald-500/20 text-emerald-400' },
-  medium: { label: 'Med', color: 'bg-amber-500/20 text-amber-400' },
-  high: { label: 'High', color: 'bg-red-500/20 text-red-400' },
+  low: { label: 'Low', color: 'text-[var(--profit)]/60' },
+  medium: { label: 'Med', color: 'text-amber-400/60' },
+  high: { label: 'High', color: 'text-[var(--loss)]/60' },
 };
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -51,6 +45,7 @@ export default function StrategyCard({
   active,
   recommended,
   expanded,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   botRunning,
   toggling,
   sessionId,
@@ -76,16 +71,16 @@ export default function StrategyCard({
       className={cn(
         'rounded-lg border transition-all',
         active
-          ? 'border-l-2 border-l-emerald-500 border-emerald-500/20 bg-emerald-500/5'
-          : 'border-zinc-700/50 bg-zinc-800/30',
-        !recommended && !active && 'opacity-60',
+          ? 'border-l-2 border-l-[var(--profit)]/50 border-[var(--border-muted)] bg-[var(--bg-surface)]'
+          : 'border-[var(--border-subtle)] bg-transparent',
+        !recommended && !active && 'opacity-50',
       )}
     >
       {/* Card header — clickable to expand */}
       <button
         type="button"
         onClick={onExpand}
-        className="w-full flex items-center gap-3 px-3 py-2.5 text-left"
+        className="w-full flex items-center gap-3 px-4 py-3 text-left"
       >
         {/* Toggle button */}
         <div
@@ -99,11 +94,11 @@ export default function StrategyCard({
           ) : (
             <div
               className={cn(
-                'w-4 h-4 rounded-full border-2 flex items-center justify-center transition-colors',
-                active ? 'border-emerald-400' : 'border-zinc-500',
+                'w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-colors',
+                active ? 'border-[var(--profit)]' : 'border-[var(--text-muted)]',
               )}
             >
-              {active && <div className="w-2 h-2 rounded-full bg-emerald-400" />}
+              {active && <div className="w-1.5 h-1.5 rounded-full bg-[var(--profit)]" />}
             </div>
           )}
         </div>
@@ -111,35 +106,33 @@ export default function StrategyCard({
         {/* Strategy info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-zinc-200 truncate">
+            <span className="text-sm font-medium text-[var(--text-primary)] truncate">
               {strategy.name}
             </span>
             {recommended && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400">
+              <span className="text-[10px] text-[var(--accent)]">
                 추천
               </span>
             )}
           </div>
           <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-xs text-zinc-500 truncate">
+            <span className="text-[11px] text-[var(--text-muted)] truncate">
               {translateStrategyName(strategy.name)}
             </span>
-            <span className="text-[10px] text-zinc-600">|</span>
-            <span className="text-[10px] text-zinc-500">
+            <span className="text-[10px] text-[var(--border-muted)]">|</span>
+            <span className="text-[10px] text-[var(--text-muted)]">
               {CATEGORY_LABEL[category] || category}
             </span>
           </div>
-          {/* Regime tags */}
+          {/* Regime tags — dot + text only */}
           {regimes.length > 0 && (
-            <div className="flex gap-1 mt-1">
+            <div className="flex gap-2 mt-1.5">
               {regimes.slice(0, 3).map((r) => (
                 <span
                   key={r}
-                  className={cn(
-                    'px-1.5 py-0.5 text-[10px] rounded',
-                    REGIME_TAG_COLORS[r] || 'bg-zinc-500/20 text-zinc-400',
-                  )}
+                  className={cn('inline-flex items-center gap-1 text-[10px]', getRegimeColor(r))}
                 >
+                  <span className={cn('w-1 h-1 rounded-full', getRegimeDotColor(r))} />
                   {translateRegime(r)}
                 </span>
               ))}
@@ -148,13 +141,8 @@ export default function StrategyCard({
         </div>
 
         {/* Right side: risk + status */}
-        <div className="flex-shrink-0 flex items-center gap-2">
-          <span
-            className={cn(
-              'px-1.5 py-0.5 rounded text-[10px] font-medium',
-              risk.color,
-            )}
-          >
+        <div className="flex-shrink-0 flex items-center gap-3">
+          <span className={cn('text-[10px] font-medium', risk.color)}>
             {risk.label}
           </span>
           <Badge variant={active ? 'success' : 'neutral'} dot>
@@ -163,7 +151,7 @@ export default function StrategyCard({
           {/* Chevron */}
           <svg
             className={cn(
-              'w-4 h-4 text-zinc-500 transition-transform',
+              'w-3.5 h-3.5 text-[var(--text-muted)] transition-transform',
               expanded && 'rotate-180',
             )}
             fill="none"
@@ -178,7 +166,7 @@ export default function StrategyCard({
 
       {/* Expanded detail */}
       {expanded && (
-        <div className="px-3 pb-3">
+        <div className="px-4 pb-4 animate-fade-in">
           <StrategyDetail
             strategyName={strategy.name}
             sessionId={sessionId}

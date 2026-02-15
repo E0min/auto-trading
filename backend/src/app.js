@@ -301,7 +301,7 @@ async function bootstrap() {
   app.use('/api/health', createHealthRoutes({ healthCheck }));
   app.use('/api/backtest', createBacktestRoutes({ dataFetcher, backtestStore }));
 
-  app.use('/api/regime', createRegimeRoutes({ marketRegime, regimeParamStore, regimeOptimizer, regimeEvaluator }));
+  app.use('/api/regime', createRegimeRoutes({ marketRegime, regimeParamStore, regimeOptimizer, regimeEvaluator, coinSelector, strategyRouter }));
   app.use('/api/risk', createRiskRoutes({ riskEngine }));
 
   if (PAPER_TRADING) {

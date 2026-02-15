@@ -67,10 +67,10 @@ export function formatTime(dateStr: string | undefined | null): string {
  * Get PnL color class based on value
  */
 export function getPnlColor(value: string | undefined | null): string {
-  if (!value) return 'text-zinc-400';
+  if (!value) return 'text-[var(--text-muted)]';
   const num = parseFloat(value);
-  if (isNaN(num) || num === 0) return 'text-zinc-400';
-  return num > 0 ? 'text-emerald-400' : 'text-red-400';
+  if (isNaN(num) || num === 0) return 'text-[var(--text-muted)]';
+  return num > 0 ? 'text-[var(--profit)]' : 'text-[var(--loss)]';
 }
 
 /**
@@ -144,12 +144,24 @@ export function translateRegime(regime: string): string {
  */
 export function getRegimeColor(regime: string): string {
   const map: Record<string, string> = {
-    trending_up: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
-    trending_down: 'bg-red-500/20 text-red-400 border-red-500/30',
-    ranging: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-    volatile: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-    quiet: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-    unknown: 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
+    trending_up: 'text-emerald-400/70',
+    trending_down: 'text-red-400/70',
+    ranging: 'text-amber-400/70',
+    volatile: 'text-purple-400/70',
+    quiet: 'text-blue-400/70',
+    unknown: 'text-[var(--text-muted)]',
+  };
+  return map[regime] || map.unknown;
+}
+
+export function getRegimeDotColor(regime: string): string {
+  const map: Record<string, string> = {
+    trending_up: 'bg-emerald-400',
+    trending_down: 'bg-red-400',
+    ranging: 'bg-amber-400',
+    volatile: 'bg-purple-400',
+    quiet: 'bg-blue-400',
+    unknown: 'bg-[var(--text-muted)]',
   };
   return map[regime] || map.unknown;
 }
@@ -189,6 +201,7 @@ export function translateStrategyName(name: string): string {
     SupportResistanceStrategy: '지지저항 돌파',
     SwingStructureStrategy: '스윙 구조 추세',
     FibonacciRetracementStrategy: '피보나치 되돌림',
+    TrendlineBreakoutStrategy: '추세선 돌파',
   };
   return map[name] || name;
 }
@@ -204,6 +217,7 @@ const STRATEGY_CATEGORY_MAP: Record<string, StrategyCategory> = {
   SupportResistanceStrategy: 'price-action',
   SwingStructureStrategy: 'price-action',
   FibonacciRetracementStrategy: 'price-action',
+  TrendlineBreakoutStrategy: 'price-action',
   QuietRangeScalpStrategy: 'indicator-heavy',
   BreakoutStrategy: 'indicator-heavy',
   AdaptiveRegimeStrategy: 'indicator-heavy',

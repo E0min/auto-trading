@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Card from '@/components/ui/Card';
-import Badge from '@/components/ui/Badge';
 import Spinner from '@/components/ui/Spinner';
 import StrategyCard from '@/components/strategy/StrategyCard';
 import { botApi } from '@/lib/api-client';
 import {
   translateRegime,
   getRegimeColor,
+  getRegimeDotColor,
   getStrategyCategory,
   cn,
 } from '@/lib/utils';
@@ -25,14 +25,6 @@ const ALL_REGIMES: MarketRegime[] = [
   'volatile',
   'quiet',
 ];
-
-const REGIME_DOT: Record<string, string> = {
-  trending_up: 'bg-emerald-400',
-  trending_down: 'bg-red-400',
-  ranging: 'bg-yellow-400',
-  volatile: 'bg-purple-400',
-  quiet: 'bg-blue-400',
-};
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -158,9 +150,8 @@ export default function StrategyHub({
   if (loading) {
     return (
       <Card>
-        <div className="flex items-center justify-center py-6">
+        <div className="flex items-center justify-center py-8">
           <Spinner size="md" />
-          <span className="ml-2 text-sm text-zinc-500">전략 목록 로딩 중...</span>
         </div>
       </Card>
     );
@@ -171,33 +162,23 @@ export default function StrategyHub({
   return (
     <Card>
       {/* Header */}
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold text-zinc-100">전략 관리</h2>
-          <Badge variant={activeCount > 0 ? 'success' : 'neutral'}>
-            {activeCount}/{filteredStrategies.length} 활성
-          </Badge>
+          <h2 className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--text-secondary)]">전략 관리</h2>
+          <span className="text-[11px] text-[var(--text-muted)] font-mono">
+            {activeCount}/{filteredStrategies.length}
+          </span>
         </div>
-        {/* Current regime badge */}
+        {/* Current regime */}
         {currentRegime && (
-          <span
-            className={cn(
-              'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border',
-              getRegimeColor(currentRegime),
-            )}
-          >
-            <span
-              className={cn(
-                'w-2 h-2 rounded-full animate-pulse',
-                REGIME_DOT[currentRegime] || 'bg-zinc-400',
-              )}
-            />
+          <span className={cn('inline-flex items-center gap-1.5 text-[11px] font-medium', getRegimeColor(currentRegime))}>
+            <span className={cn('w-1.5 h-1.5 rounded-full animate-pulse', getRegimeDotColor(currentRegime))} />
             현재: {translateRegime(currentRegime)}
           </span>
         )}
       </div>
 
-      {/* Category filter tabs */}
+      {/* Category filter */}
       <div className="flex gap-1.5 mb-2">
         {([
           ['all', '전체'],
@@ -210,10 +191,10 @@ export default function StrategyHub({
             type="button"
             onClick={() => setCategoryFilter(value)}
             className={cn(
-              'px-2.5 py-1 text-xs rounded-full transition-colors',
+              'px-2.5 py-1 text-[11px] rounded-md transition-colors',
               categoryFilter === value
-                ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40'
-                : 'bg-zinc-800/60 text-zinc-400 border border-zinc-700/50 hover:bg-zinc-700/60',
+                ? 'text-[var(--accent)] bg-[var(--accent-subtle)] border border-[var(--accent)]/20'
+                : 'text-[var(--text-muted)] border border-[var(--border-subtle)] hover:text-[var(--text-secondary)] hover:border-[var(--border-muted)]',
             )}
           >
             {label}
@@ -221,16 +202,16 @@ export default function StrategyHub({
         ))}
       </div>
 
-      {/* Regime filter buttons */}
-      <div className="flex gap-1.5 mb-3 flex-wrap">
+      {/* Regime filter */}
+      <div className="flex gap-1.5 mb-4 flex-wrap">
         <button
           type="button"
           onClick={() => setRegimeFilter('all')}
           className={cn(
-            'px-2.5 py-1 text-xs rounded-full transition-colors',
+            'px-2.5 py-1 text-[11px] rounded-md transition-colors',
             regimeFilter === 'all'
-              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
-              : 'bg-zinc-800/60 text-zinc-400 border border-zinc-700/50 hover:bg-zinc-700/60',
+              ? 'text-[var(--accent)] bg-[var(--accent-subtle)] border border-[var(--accent)]/20'
+              : 'text-[var(--text-muted)] border border-[var(--border-subtle)] hover:text-[var(--text-secondary)] hover:border-[var(--border-muted)]',
           )}
         >
           전체
@@ -244,38 +225,31 @@ export default function StrategyHub({
               type="button"
               onClick={() => setRegimeFilter(r)}
               className={cn(
-                'flex items-center gap-1 px-2.5 py-1 text-xs rounded-full transition-colors',
+                'flex items-center gap-1 px-2.5 py-1 text-[11px] rounded-md transition-colors',
                 isSelected
-                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
-                  : 'bg-zinc-800/60 text-zinc-400 border border-zinc-700/50 hover:bg-zinc-700/60',
+                  ? 'text-[var(--accent)] bg-[var(--accent-subtle)] border border-[var(--accent)]/20'
+                  : 'text-[var(--text-muted)] border border-[var(--border-subtle)] hover:text-[var(--text-secondary)] hover:border-[var(--border-muted)]',
               )}
             >
               {isCurrent && (
-                <span
-                  className={cn(
-                    'w-1.5 h-1.5 rounded-full',
-                    REGIME_DOT[r] || 'bg-zinc-400',
-                    isSelected && 'animate-pulse',
-                  )}
-                />
+                <span className={cn('w-1.5 h-1.5 rounded-full', getRegimeDotColor(r))} />
               )}
               {translateRegime(r)}
-              {isCurrent && ' ★'}
             </button>
           );
         })}
       </div>
 
       {!botRunning && (
-        <p className="text-xs text-zinc-500 mb-3">
+        <p className="text-[11px] text-[var(--text-muted)] mb-3">
           봇 시작 시 활성화할 전략을 선택하세요.
         </p>
       )}
 
       {/* Strategy cards */}
-      <div className="space-y-1.5">
+      <div className="space-y-1">
         {filteredStrategies.length === 0 ? (
-          <p className="text-sm text-zinc-500 py-4 text-center">
+          <p className="text-sm text-[var(--text-muted)] py-6 text-center">
             선택한 필터에 해당하는 전략이 없습니다.
           </p>
         ) : (

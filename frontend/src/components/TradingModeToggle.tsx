@@ -46,35 +46,31 @@ export default function TradingModeToggle({
   return (
     <>
       <div
-        className={`inline-flex items-center rounded-lg border p-0.5 text-xs font-medium ${
-          botRunning ? 'opacity-50 cursor-not-allowed' : ''
-        } ${
-          isLive
-            ? 'border-red-500/40 bg-red-500/10'
-            : 'border-amber-500/40 bg-amber-500/10'
-        }`}
+        className={`inline-flex items-center rounded-md border p-0.5 text-[11px] font-medium ${
+          botRunning ? 'opacity-40 cursor-not-allowed' : ''
+        } border-[var(--border-subtle)]`}
       >
         {/* Live radio */}
         <button
           type="button"
           disabled={botRunning || loading}
           onClick={() => handleSelect('live')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors ${
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition-colors ${
             botRunning ? 'cursor-not-allowed' : 'cursor-pointer'
           } ${
             isLive
-              ? 'bg-red-500/20 text-red-400'
-              : 'text-zinc-500 hover:text-zinc-300'
+              ? 'text-[var(--loss)]'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
           }`}
         >
           <span
-            className={`w-3 h-3 rounded-full border-2 flex items-center justify-center ${
-              isLive ? 'border-red-400' : 'border-zinc-600'
+            className={`w-2.5 h-2.5 rounded-full border-[1.5px] flex items-center justify-center ${
+              isLive ? 'border-[var(--loss)]' : 'border-[var(--text-muted)]'
             }`}
           >
-            {isLive && <span className="w-1.5 h-1.5 rounded-full bg-red-400" />}
+            {isLive && <span className="w-1 h-1 rounded-full bg-[var(--loss)]" />}
           </span>
-          실거래(Live)
+          Live
         </button>
 
         {/* Paper radio */}
@@ -82,22 +78,22 @@ export default function TradingModeToggle({
           type="button"
           disabled={botRunning || loading}
           onClick={() => handleSelect('paper')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors ${
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition-colors ${
             botRunning ? 'cursor-not-allowed' : 'cursor-pointer'
           } ${
             !isLive
-              ? 'bg-amber-500/20 text-amber-400'
-              : 'text-zinc-500 hover:text-zinc-300'
+              ? 'text-[var(--accent)]'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
           }`}
         >
           <span
-            className={`w-3 h-3 rounded-full border-2 flex items-center justify-center ${
-              !isLive ? 'border-amber-400' : 'border-zinc-600'
+            className={`w-2.5 h-2.5 rounded-full border-[1.5px] flex items-center justify-center ${
+              !isLive ? 'border-[var(--accent)]' : 'border-[var(--text-muted)]'
             }`}
           >
-            {!isLive && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
+            {!isLive && <span className="w-1 h-1 rounded-full bg-[var(--accent)]" />}
           </span>
-          가상거래(Paper)
+          Paper
         </button>
       </div>
 

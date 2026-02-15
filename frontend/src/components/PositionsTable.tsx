@@ -47,7 +47,7 @@ export default function PositionsTable({ positions, loading, onClosePosition, cl
   return (
     <>
       <Card title="활성 포지션" className="overflow-hidden">
-        <div className="overflow-x-auto -mx-4 -mb-4">
+        <div className="overflow-x-auto -mx-6 -mb-6">
           <table>
             <thead>
               <tr>
@@ -66,13 +66,13 @@ export default function PositionsTable({ positions, loading, onClosePosition, cl
             <tbody>
               {loading && positions.length === 0 ? (
                 <tr>
-                  <td colSpan={onClosePosition ? 10 : 9} className="text-center text-zinc-500 py-8">
+                  <td colSpan={onClosePosition ? 10 : 9} className="text-center text-[var(--text-muted)] py-10">
                     로딩 중...
                   </td>
                 </tr>
               ) : positions.length === 0 ? (
                 <tr>
-                  <td colSpan={onClosePosition ? 10 : 9} className="text-center text-zinc-500 py-8">
+                  <td colSpan={onClosePosition ? 10 : 9} className="text-center text-[var(--text-muted)] py-10">
                     활성 포지션 없음
                   </td>
                 </tr>
@@ -80,34 +80,34 @@ export default function PositionsTable({ positions, loading, onClosePosition, cl
                 positions.map((pos, idx) => {
                   const isClosing = closingSymbol === `${pos.symbol}-${pos.posSide}`;
                   return (
-                    <tr key={`${pos.symbol}-${pos.posSide}-${idx}`} className="hover:bg-zinc-800/50">
-                      <td className="font-mono font-medium text-zinc-200">{formatSymbol(pos.symbol)}</td>
+                    <tr key={`${pos.symbol}-${pos.posSide}-${idx}`}>
+                      <td className="font-mono font-medium text-[var(--text-primary)]">{formatSymbol(pos.symbol)}</td>
                       <td>
-                        <Badge variant={pos.posSide === 'long' ? 'success' : 'danger'}>
+                        <Badge variant={pos.posSide === 'long' ? 'success' : 'danger'} dot>
                           {translateSide(pos.posSide)}
                         </Badge>
                       </td>
-                      <td className="font-mono">{pos.qty}</td>
-                      <td className="font-mono">${formatCurrency(pos.entryPrice)}</td>
-                      <td className="font-mono text-red-400">
-                        {pos.stopLossPrice ? formatSlPrice(pos.stopLossPrice) : '—'}
+                      <td className="font-mono text-[var(--text-secondary)]">{pos.qty}</td>
+                      <td className="font-mono text-[var(--text-secondary)]">${formatCurrency(pos.entryPrice)}</td>
+                      <td className="font-mono text-[var(--loss)]/70">
+                        {pos.stopLossPrice ? formatSlPrice(pos.stopLossPrice) : '\u2014'}
                       </td>
-                      <td className="font-mono">${formatCurrency(pos.markPrice)}</td>
-                      <td className={`font-mono font-medium ${getPnlColor(pos.unrealizedPnl)}`}>
+                      <td className="font-mono text-[var(--text-secondary)]">${formatCurrency(pos.markPrice)}</td>
+                      <td className={`font-mono font-medium text-sm ${getPnlColor(pos.unrealizedPnl)}`}>
                         {getPnlSign(pos.unrealizedPnl)}${formatCurrency(pos.unrealizedPnl)}
                       </td>
-                      <td className="font-mono">{pos.leverage}x</td>
-                      <td className="font-mono text-zinc-500">${formatCurrency(pos.liquidationPrice)}</td>
+                      <td className="font-mono text-[var(--text-muted)]">{pos.leverage}x</td>
+                      <td className="font-mono text-[var(--text-muted)]">${formatCurrency(pos.liquidationPrice)}</td>
                       {onClosePosition && (
                         <td>
                           <button
                             onClick={() => setConfirmTarget(pos)}
                             disabled={isClosing}
-                            className="px-3 py-1 text-xs font-medium text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg hover:bg-red-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
+                            className="px-3 py-1 text-[11px] font-medium text-[var(--loss)] border border-[var(--loss)]/30 rounded-md hover:bg-red-500/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
                           >
                             {isClosing ? (
                               <>
-                                <Spinner size="sm" className="text-red-400" />
+                                <Spinner size="sm" className="text-[var(--loss)]" />
                                 청산 중
                               </>
                             ) : (

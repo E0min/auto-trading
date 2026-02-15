@@ -32,17 +32,17 @@ export default function SystemHealth({ health, latency, socketConnected, error }
   }
 
   return (
-    <div className="flex items-center gap-3 text-xs">
+    <div className="flex items-center gap-4 text-[11px]">
       {health && (
         <Badge variant={healthVariant[health.status]} dot>
           {healthLabel[health.status]}
         </Badge>
       )}
       <Badge variant={socketConnected ? 'success' : 'danger'} dot>
-        {socketConnected ? 'WS 연결' : 'WS 끊김'}
+        WS
       </Badge>
       {latency !== null && (
-        <span className="text-zinc-500">
+        <span className="text-[var(--text-muted)] font-mono">
           {latency}ms
         </span>
       )}

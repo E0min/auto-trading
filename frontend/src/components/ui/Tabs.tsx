@@ -47,7 +47,7 @@ export function TabList({ children, className }: TabListProps) {
   return (
     <div
       className={cn(
-        'flex gap-1 border-b border-zinc-800 pb-px',
+        'flex gap-1 border-b border-[var(--border-subtle)]',
         className,
       )}
     >
@@ -79,10 +79,11 @@ export function Tab({ value, children, className }: TabProps) {
       aria-selected={isActive}
       onClick={handleClick}
       className={cn(
-        'px-3 py-1.5 text-xs font-medium rounded-t transition-colors',
+        'px-3 py-2 text-xs font-medium transition-all duration-200 relative',
         isActive
-          ? 'text-zinc-100 bg-zinc-800 border-b-2 border-blue-500'
-          : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50',
+          ? 'text-[var(--text-primary)]'
+          : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]',
+        isActive && 'after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-[var(--accent)]',
         className,
       )}
     >
@@ -104,7 +105,7 @@ export function TabPanel({ value, children, className }: TabPanelProps) {
   if (activeTab !== value) return null;
 
   return (
-    <div role="tabpanel" className={cn('pt-2', className)}>
+    <div role="tabpanel" className={cn('pt-3 animate-fade-in', className)}>
       {children}
     </div>
   );

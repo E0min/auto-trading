@@ -106,4 +106,6 @@ export const SOCKET_EVENTS = {
   REGIME_CHANGE: 'market:regime_change',
   SYMBOL_REGIME_UPDATE: 'market:symbol_regime_update',
   COIN_SELECTED: 'market:coin_selected',
+  // Strategy router
+  REGIME_SWITCH: 'router:regime_switch',
 } as const;

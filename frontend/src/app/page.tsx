@@ -18,6 +18,7 @@ import AccountOverview from '@/components/AccountOverview';
 import RiskStatusPanel from '@/components/RiskStatusPanel';
 import SymbolRegimeTable from '@/components/SymbolRegimeTable';
 import PerformanceTabs from '@/components/analytics/PerformanceTabs';
+import MarketIntelligence from '@/components/market-intel/MarketIntelligence';
 import PositionsTable from '@/components/PositionsTable';
 import SignalFeed from '@/components/SignalFeed';
 import TradesTable from '@/components/TradesTable';
@@ -125,147 +126,164 @@ export default function Dashboard() {
   if (botLoading && positionsLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
+        <div className="flex flex-col items-center gap-4">
           <Spinner size="lg" />
-          <p className="text-zinc-500 text-sm">대시보드 로딩 중...</p>
+          <p className="text-[var(--text-muted)] text-xs uppercase tracking-wider">로딩 중</p>
         </div>
       </div>
     );
   }
 
   const tradingMode = botStatus.tradingMode ?? (botStatus.paperMode ? 'paper' : 'live');
+  const isPaper = tradingMode === 'paper' || botStatus.paperMode;
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col relative z-10">
       {/* Row 0: Top Banners */}
       <TradingModeBanner mode={tradingMode} isLoading={botLoading} />
       <RiskAlertBanner events={riskEvents} onDismiss={dismissRisk} onAcknowledge={acknowledgeRisk} />
 
-      <div className="flex-1 p-4 md:p-6 max-w-[1600px] mx-auto w-full">
-      {/* Header */}
-      <header className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
-          <h1 className="text-xl font-bold text-zinc-100">
-            Bitget 자동매매
-          </h1>
-          <TradingModeToggle
-            currentMode={botStatus.tradingMode ?? (botStatus.paperMode ? 'paper' : 'live')}
-            botRunning={botStatus.running}
-            onModeChange={() => refetchBotStatus()}
-          />
-          {(botStatus.tradingMode === 'paper' || botStatus.paperMode) ? (
-            <>
-              <Link
-                href="/backtest"
-                className="text-sm text-amber-400/80 hover:text-amber-300 transition-colors border border-amber-500/30 bg-amber-500/5 rounded-lg px-3 py-1.5"
-              >
-                백테스트
-              </Link>
-              <Link
-                href="/tournament"
-                className="text-sm text-amber-400/80 hover:text-amber-300 transition-colors border border-amber-500/30 bg-amber-500/5 rounded-lg px-3 py-1.5"
-              >
-                토너먼트
-              </Link>
-            </>
-          ) : (
-            <>
-              <span
-                className="text-sm text-zinc-600 border border-zinc-800 rounded-lg px-3 py-1.5 cursor-not-allowed select-none"
-                title="가상거래 모드에서만 사용 가능"
-              >
-                백테스트
-              </span>
-              <span
-                className="text-sm text-zinc-600 border border-zinc-800 rounded-lg px-3 py-1.5 cursor-not-allowed select-none"
-                title="가상거래 모드에서만 사용 가능"
-              >
-                토너먼트
-              </span>
-            </>
-          )}
-        </div>
-        <SystemHealth
-          health={health}
-          latency={latency}
-          socketConnected={socketConnected}
-          error={healthError}
-        />
-      </header>
-
-      <div className="space-y-4">
-        {/* Row 1: BotControlPanel + AccountOverview */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <BotControlPanel
-            status={botStatus.status}
-            running={botStatus.running}
-            tradingMode={tradingMode}
-            openPositionCount={positions.length}
-            unrealizedPnl={accountState?.unrealizedPnl ?? '0.00'}
-            onStart={handleStartBot}
-            onStop={stopBot}
-            onPause={pauseBot}
-            onResume={resumeBot}
-            onEmergencyStop={emergencyStop}
-          />
-          <AccountOverview
-            accountState={accountState}
-            positionCount={positions.length}
-          />
-        </div>
-
-        {/* Row 2: PositionsTable (full width, above the fold) */}
-        <PositionsTable
-          positions={positions}
-          loading={positionsLoading}
-          onClosePosition={handleClosePosition}
-          closingSymbol={closingSymbol}
-        />
-
-        {/* Row 3: RiskStatusPanel + EquityCurveChart */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <RiskStatusPanel
-            riskStatus={botStatus.riskStatus}
-            onResetDrawdown={handleResetDrawdown}
-            resetLoading={resetLoading}
-          />
-          <div className="lg:col-span-2">
-            <PerformanceTabs
-              sessionId={botStatus?.sessionId || null}
-              equityCurve={equityCurve}
-              analyticsLoading={analyticsLoading}
-              maxDrawdownPercent={10}
+      <div className="flex-1 px-6 py-8 max-w-[1440px] mx-auto w-full">
+        {/* Header */}
+        <header className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-6">
+            <h1 className="text-lg font-semibold text-[var(--text-primary)] tracking-tight">
+              Bitget 자동매매
+            </h1>
+            <div className="w-px h-5 bg-[var(--border-subtle)]" />
+            <TradingModeToggle
+              currentMode={botStatus.tradingMode ?? (botStatus.paperMode ? 'paper' : 'live')}
+              botRunning={botStatus.running}
+              onModeChange={() => refetchBotStatus()}
+            />
+            <div className="flex items-center gap-2">
+              {isPaper ? (
+                <>
+                  <Link
+                    href="/backtest"
+                    className="text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors border border-[var(--border-subtle)] rounded-md px-3 py-1.5 hover:border-[var(--border-muted)]"
+                  >
+                    백테스트
+                  </Link>
+                  <Link
+                    href="/tournament"
+                    className="text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors border border-[var(--border-subtle)] rounded-md px-3 py-1.5 hover:border-[var(--border-muted)]"
+                  >
+                    토너먼트
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <span
+                    className="text-[11px] text-[var(--text-muted)] border border-[var(--border-subtle)] rounded-md px-3 py-1.5 cursor-not-allowed select-none"
+                    title="가상거래 모드에서만 사용 가능"
+                  >
+                    백테스트
+                  </span>
+                  <span
+                    className="text-[11px] text-[var(--text-muted)] border border-[var(--border-subtle)] rounded-md px-3 py-1.5 cursor-not-allowed select-none"
+                    title="가상거래 모드에서만 사용 가능"
+                  >
+                    토너먼트
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-6">
+            <SystemHealth
+              health={health}
+              latency={latency}
+              socketConnected={socketConnected}
+              error={healthError}
+            />
+            <div className="w-px h-5 bg-[var(--border-subtle)]" />
+            <BotControlPanel
+              status={botStatus.status}
+              running={botStatus.running}
+              tradingMode={tradingMode}
+              openPositionCount={positions.length}
+              unrealizedPnl={accountState?.unrealizedPnl ?? '0.00'}
+              onStart={handleStartBot}
+              onStop={stopBot}
+              onPause={pauseBot}
+              onResume={resumeBot}
+              onEmergencyStop={emergencyStop}
             />
           </div>
-        </div>
+        </header>
 
-        {/* Row 4: SignalFeed + TradesTable */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <SignalFeed signals={signals} />
-          <div className="lg:col-span-2">
-            <TradesTable trades={trades} loading={tradesLoading} />
+        <div className="space-y-6">
+          {/* Hero Stats */}
+          <section className="border-b border-[var(--border-subtle)] pb-6">
+            <AccountOverview
+              accountState={accountState}
+              positionCount={positions.length}
+            />
+          </section>
+
+          {/* Row 2: Performance (7/12) + Risk (5/12) */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="lg:col-span-7">
+              <PerformanceTabs
+                sessionId={botStatus?.sessionId || null}
+                equityCurve={equityCurve}
+                analyticsLoading={analyticsLoading}
+                maxDrawdownPercent={10}
+              />
+            </div>
+            <div className="lg:col-span-5">
+              <RiskStatusPanel
+                riskStatus={botStatus.riskStatus}
+                onResetDrawdown={handleResetDrawdown}
+                resetLoading={resetLoading}
+              />
+            </div>
           </div>
+
+          {/* Row 3: Market Intelligence (collapsible) */}
+          <MarketIntelligence
+            botState={botStatus.status}
+            currentRegime={regime?.regime ?? null}
+          />
+
+          {/* Row 4: PositionsTable (full width) */}
+          <PositionsTable
+            positions={positions}
+            loading={positionsLoading}
+            onClosePosition={handleClosePosition}
+            closingSymbol={closingSymbol}
+          />
+
+          {/* Row 4: SignalFeed (5/12) + TradesTable (7/12) */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="lg:col-span-5">
+              <SignalFeed signals={signals} />
+            </div>
+            <div className="lg:col-span-7">
+              <TradesTable trades={trades} loading={tradesLoading} />
+            </div>
+          </div>
+
+          {/* Row 5: StrategyHub (collapsible) */}
+          <StrategyHub
+            botRunning={botStatus.running}
+            currentRegime={regime?.regime ?? botStatus.regime?.regime ?? null}
+            sessionId={botStatus.sessionId}
+            realtimeSignals={signals}
+            positions={positions}
+            onSelectionChange={handleSelectionChange}
+          />
+
+          {/* Row 6: SymbolRegimeTable (collapsible) */}
+          <SymbolRegimeTable
+            symbolRegimes={
+              Object.keys(socketSymbolRegimes).length > 0
+                ? socketSymbolRegimes
+                : (botStatus.symbolRegimes ?? {})
+            }
+          />
         </div>
-
-        {/* Row 5: StrategyHub (full width, settings/lower priority) */}
-        <StrategyHub
-          botRunning={botStatus.running}
-          currentRegime={regime?.regime ?? botStatus.regime?.regime ?? null}
-          sessionId={botStatus.sessionId}
-          realtimeSignals={signals}
-          positions={positions}
-          onSelectionChange={handleSelectionChange}
-        />
-
-        {/* Row 6: SymbolRegimeTable (full width, reference info) */}
-        <SymbolRegimeTable
-          symbolRegimes={
-            Object.keys(socketSymbolRegimes).length > 0
-              ? socketSymbolRegimes
-              : (botStatus.symbolRegimes ?? {})
-          }
-        />
-      </div>
       </div>
     </div>
   );

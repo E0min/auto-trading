@@ -58,7 +58,14 @@ const PREFERRED_REGIME = {
   MacdDivergenceStrategy: 'trending_down',
   QuietRangeScalpStrategy: 'quiet',
   BreakoutStrategy: 'volatile',
+  TrendlineBreakoutStrategy: 'trending_up',
   AdaptiveRegimeStrategy: null,
+};
+
+// -- Per-strategy config overrides for backtest (e.g. aggregation adjustments) --
+const STRATEGY_CONFIG = {
+  // Kline data is already 1H, so skip aggregation (1:1 mapping)
+  TrendlineBreakoutStrategy: { aggregationMinutes: 1 },
 };
 
 // -- Run single backtest -----------------------------------------------------
@@ -67,6 +74,7 @@ const INITIAL_CAPITAL = '10000';
 function runSingle(name, regime) {
   const engine = new BacktestEngine({
     strategyName: name,
+    strategyConfig: STRATEGY_CONFIG[name] || {},
     symbol: 'BTCUSDT',
     interval: '1H',
     initialCapital: INITIAL_CAPITAL,

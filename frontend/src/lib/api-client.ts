@@ -17,6 +17,10 @@ import type {
   StrategyPerformanceEntry,
   SymbolPerformanceEntry,
   DailyPerformanceEntry,
+  RegimeContext,
+  RegimeHistoryEntry,
+  CoinScoringData,
+  StrategyRoutingData,
 } from '@/types';
 import type {
   BacktestConfig,
@@ -194,6 +198,15 @@ export const riskApi = {
       method: 'POST',
       body: JSON.stringify({ type }),
     }),
+};
+
+// Regime / Market Intelligence
+export const regimeApi = {
+  getStatus: () => request<RegimeContext>('/api/regime/status'),
+  getHistory: (limit?: number) =>
+    request<RegimeHistoryEntry[]>(`/api/regime/history${limit ? `?limit=${limit}` : ''}`),
+  getCoinScoring: () => request<CoinScoringData>('/api/regime/coin-scoring'),
+  getStrategyRouting: () => request<StrategyRoutingData>('/api/regime/strategy-routing'),
 };
 
 // Backtest

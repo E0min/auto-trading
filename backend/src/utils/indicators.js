@@ -613,6 +613,81 @@ function findPivots(data, leftBars = 3, rightBars = 3) {
 }
 
 // ---------------------------------------------------------------------------
+// Trendline helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Calculate the projected trendline price at a given bar index.
+ * Uses two pivot points and linear extrapolation (all String math).
+ *
+ * @param {{index:number, value:string}} pivot1 — earlier pivot
+ * @param {{index:number, value:string}} pivot2 — later pivot
+ * @param {number} currentIndex — bar index to project to
+ * @returns {string} projected price
+ */
+function trendlineValue(pivot1, pivot2, currentIndex) {
+  const dx = currentIndex - pivot1.index;
+  const slopeNumerator = subtract(pivot2.value, pivot1.value);
+  const slopeDenominator = String(pivot2.index - pivot1.index);
+  const slope = divide(slopeNumerator, slopeDenominator);
+  return add(pivot1.value, multiply(slope, String(dx)));
+}
+
+/**
+ * Find valid trendlines from pivot arrays.
+ *
+ * A **resistance trendline** connects two recent pivot highs.
+ * A **support trendline** connects two recent pivot lows.
+ * Slope direction is NOT filtered — ascending resistance (ending diagonal)
+ * and descending support are both valid patterns.
+ *
+ * @param {Array<{index:number, value:string}>} pivotHighs
+ * @param {Array<{index:number, value:string}>} pivotLows
+ * @param {number} currentIndex — current bar index (for age / projection)
+ * @param {object} [options]
+ * @param {number} [options.minPivotDistance=5] — minimum bar distance between pivots
+ * @param {number} [options.maxPivotAge=100]    — max bars ago a pivot can be
+ * @returns {{ resistance: {pivot1, pivot2, slope:string, projected:string}|null,
+ *             support:    {pivot1, pivot2, slope:string, projected:string}|null }}
+ */
+function findTrendlines(pivotHighs, pivotLows, currentIndex, options = {}) {
+  const minDist = options.minPivotDistance || 5;
+  const maxAge = options.maxPivotAge || 100;
+
+  const result = { resistance: null, support: null };
+
+  // --- Resistance trendline (pivot highs, any slope) ---
+  if (pivotHighs.length >= 2) {
+    for (let i = pivotHighs.length - 1; i >= 1; i--) {
+      const p2 = pivotHighs[i];
+      const p1 = pivotHighs[i - 1];
+      if (currentIndex - p1.index > maxAge) break;
+      if (p2.index - p1.index < minDist) continue;
+      const slope = divide(subtract(p2.value, p1.value), String(p2.index - p1.index));
+      const projected = trendlineValue(p1, p2, currentIndex);
+      result.resistance = { pivot1: p1, pivot2: p2, slope, projected };
+      break;
+    }
+  }
+
+  // --- Support trendline (pivot lows, any slope) ---
+  if (pivotLows.length >= 2) {
+    for (let i = pivotLows.length - 1; i >= 1; i--) {
+      const p2 = pivotLows[i];
+      const p1 = pivotLows[i - 1];
+      if (currentIndex - p1.index > maxAge) break;
+      if (p2.index - p1.index < minDist) continue;
+      const slope = divide(subtract(p2.value, p1.value), String(p2.index - p1.index));
+      const projected = trendlineValue(p1, p2, currentIndex);
+      result.support = { pivot1: p1, pivot2: p2, slope, projected };
+      break;
+    }
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Divergence detection
 // ---------------------------------------------------------------------------
 
@@ -700,4 +775,7 @@ module.exports = {
   // Pivots / Divergence
   findPivots,
   detectDivergence,
+  // Trendlines
+  trendlineValue,
+  findTrendlines,
 };
