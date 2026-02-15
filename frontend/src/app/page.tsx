@@ -265,15 +265,9 @@ export default function Dashboard() {
             closingSymbol={closingSymbol}
           />
 
-          {/* Row 4: SignalFeed (5/12) + TradesTable (7/12) */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-5">
-              <SignalFeed signals={signals} />
-            </div>
-            <div className="lg:col-span-7">
-              <TradesTable trades={trades} loading={tradesLoading} />
-            </div>
-          </div>
+          {/* Row 4: SignalFeed + TradesTable (vertical stack) */}
+          <SignalFeed signals={signals} />
+          <TradesTable trades={trades} loading={tradesLoading} />
 
           {/* Row 5: StrategyHub (collapsible) */}
           <StrategyHub
