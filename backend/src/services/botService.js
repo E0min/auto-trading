@@ -200,9 +200,12 @@ class BotService extends EventEmitter {
     const sessionId = this.currentSession._id.toString();
     log.info('start — session created', { sessionId });
 
+    const startedServices = [];
+
     try {
       // 2. Connect exchangeClient WebSockets
       this.exchangeClient.connectWebsockets();
+      startedServices.push('exchangeClient.ws');
 
       // 3. Subscribe to private channels (order, position, account, fill)
       this.exchangeClient.subscribePrivate([
@@ -214,11 +217,13 @@ class BotService extends EventEmitter {
 
       // 4. Start positionManager
       await this.positionManager.start(category);
+      startedServices.push('positionManager');
 
       // 4b. Refresh InstrumentCache (R9-T1: per-symbol lot step)
       if (this.instrumentCache) {
         await this.instrumentCache.refresh(category);
         this.instrumentCache.startAutoRefresh(category);
+        startedServices.push('instrumentCache');
       }
 
       // 4c. State recovery — reconcile DB vs exchange (R8-T2-6, live mode only)
@@ -234,18 +239,24 @@ class BotService extends EventEmitter {
 
       // 5. Start marketData, indicatorCache, tickerAggregator, marketRegime
       this.marketData.start();
+      startedServices.push('marketData');
       if (this.indicatorCache) {
         this.indicatorCache.start();
+        startedServices.push('indicatorCache');
       }
       this.tickerAggregator.start();
+      startedServices.push('tickerAggregator');
       this.marketRegime.start();
+      startedServices.push('marketRegime');
 
       // 5b. Start regimeEvaluator and regimeOptimizer
       if (this.regimeEvaluator) {
         this.regimeEvaluator.start();
+        startedServices.push('regimeEvaluator');
       }
       if (this.regimeOptimizer) {
         this.regimeOptimizer.start();
+        startedServices.push('regimeOptimizer');
       }
 
       // 6. Select coins via coinSelector
@@ -282,6 +293,7 @@ class BotService extends EventEmitter {
       //     If no router, fall back to activating all strategies immediately
       if (this.strategyRouter) {
         this.strategyRouter.start(this.strategies, this._selectedSymbols, category);
+        startedServices.push('strategyRouter');
         this._eventCleanups.push(() => {
           this.strategyRouter.stop();
         });
@@ -321,6 +333,7 @@ class BotService extends EventEmitter {
       if (this.symbolRegimeManager) {
         const nonBtcSymbols = this._selectedSymbols.filter((s) => s !== 'BTCUSDT');
         this.symbolRegimeManager.start(nonBtcSymbols);
+        startedServices.push('symbolRegimeManager');
 
         const onSymbolRegimeChange = (payload) => {
           for (const strategy of this.strategies) {
@@ -336,6 +349,7 @@ class BotService extends EventEmitter {
       // 10c. Start FundingDataService and wire funding updates to strategies (T2-4)
       if (this.fundingDataService) {
         this.fundingDataService.start(this._selectedSymbols);
+        startedServices.push('fundingDataService');
 
         const onFundingUpdate = (data) => {
           for (const strategy of this.strategies) {
@@ -586,6 +600,7 @@ class BotService extends EventEmitter {
       // 14e. Start orphan order cleanup (R8-T2-6, live mode only)
       if (this.orphanOrderCleanup && !this.paperMode) {
         this.orphanOrderCleanup.start(category);
+        startedServices.push('orphanOrderCleanup');
         this._eventCleanups.push(() => {
           this.orphanOrderCleanup.stop();
         });
@@ -608,7 +623,47 @@ class BotService extends EventEmitter {
 
       return this.currentSession;
     } catch (err) {
-      log.error('start — failed to start bot', { error: err });
+      log.error('start — failed to start bot, rolling back started services', {
+        error: err,
+        startedServices: [...startedServices],
+      });
+
+      // Rollback started services in REVERSE order
+      const rollbackMap = {
+        'orphanOrderCleanup': () => this.orphanOrderCleanup && this.orphanOrderCleanup.stop(),
+        'fundingDataService': () => this.fundingDataService && this.fundingDataService.stop(),
+        'symbolRegimeManager': () => this.symbolRegimeManager && this.symbolRegimeManager.stop(),
+        'strategyRouter': () => this.strategyRouter && this.strategyRouter.stop(),
+        'regimeOptimizer': () => this.regimeOptimizer && this.regimeOptimizer.stop(),
+        'regimeEvaluator': () => this.regimeEvaluator && this.regimeEvaluator.stop(),
+        'marketRegime': () => this.marketRegime.stop(),
+        'tickerAggregator': () => this.tickerAggregator.stop(),
+        'indicatorCache': () => this.indicatorCache && this.indicatorCache.stop(),
+        'marketData': () => this.marketData.stop(),
+        'instrumentCache': () => this.instrumentCache && this.instrumentCache.stop(),
+        'positionManager': () => this.positionManager.stop(),
+        'exchangeClient.ws': () => this.exchangeClient.closeWebsockets(),
+      };
+
+      for (let i = startedServices.length - 1; i >= 0; i--) {
+        const svcName = startedServices[i];
+        try {
+          const rollbackFn = rollbackMap[svcName];
+          if (rollbackFn) rollbackFn();
+          log.info('start — rollback: stopped service', { service: svcName });
+        } catch (rollbackErr) {
+          log.error('start — rollback: failed to stop service', {
+            service: svcName,
+            error: rollbackErr.message,
+          });
+        }
+      }
+
+      // Clean up event wiring that may have been set up before failure
+      for (const cleanup of this._eventCleanups) {
+        try { cleanup(); } catch (_) { /* ignore */ }
+      }
+      this._eventCleanups = [];
 
       // Clean up on failure
       this.currentSession.status = BOT_STATES.ERROR;

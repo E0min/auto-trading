@@ -306,10 +306,20 @@ function computeMetrics({ trades, equityCurve, initialCapital, interval, totalFu
     }
   }
 
-  // -- Calmar ratio (totalReturn / maxDrawdownPercent) --
-  const calmarRatio = !isZero(maxDrawdownPercent)
-    ? toFixed(divide(totalReturn, maxDrawdownPercent), 2)
-    : '0.00';
+  // -- Calmar ratio (annualized totalReturn / maxDrawdownPercent, P12-7) --
+  let calmarRatio = '0.00';
+  if (!isZero(maxDrawdownPercent) && equityCurve.length >= 2) {
+    const startTs = Number(equityCurve[0].ts);
+    const endTs = Number(equityCurve[equityCurve.length - 1].ts);
+    const tradingDays = (endTs - startTs) / (24 * 60 * 60 * 1000);
+
+    if (tradingDays >= 7) {
+      const annualizedReturn = toFixed(multiply(divide(totalReturn, String(tradingDays), 8), '365'), 4);
+      calmarRatio = toFixed(divide(annualizedReturn, maxDrawdownPercent), 2);
+    } else {
+      calmarRatio = toFixed(divide(totalReturn, maxDrawdownPercent), 2);
+    }
+  }
 
   // -- Final equity --------------------------------------------------------
   const finalEquity = equityCurve.length > 0

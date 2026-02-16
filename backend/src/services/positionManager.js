@@ -436,7 +436,7 @@ class PositionManager extends EventEmitter {
       markPrice: String(raw.markPrice || raw.marketPrice || '0'),
       unrealizedPnl: String(raw.unrealizedPL || raw.unrealizedPnl || raw.achievedProfits || raw.upl || '0'),
       leverage: String(raw.leverage || '1'),
-      marginMode: raw.marginMode || raw.marginCoin ? 'crossed' : 'crossed',
+      marginMode: raw.marginMode || 'crossed',
       liquidationPrice: String(raw.liquidationPrice || raw.liqPx || '0'),
       updatedAt: new Date(),
     };

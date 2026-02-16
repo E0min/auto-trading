@@ -28,6 +28,12 @@ const log = createLogger('TickerAggregator');
 /** Minimum interval (ms) between aggregate recalculations. */
 const RECALC_DEBOUNCE_MS = 2000;
 
+/** Interval (ms) for stale symbol cleanup sweep */
+const STALE_CLEANUP_INTERVAL_MS = 5 * 60_000; // 5 minutes
+
+/** Max age (ms) for a ticker entry before it is considered stale and removed */
+const STALE_MAX_AGE_MS = 30 * 60_000; // 30 minutes
+
 // ---------------------------------------------------------------------------
 // TickerAggregator class
 // ---------------------------------------------------------------------------
@@ -59,6 +65,12 @@ class TickerAggregator extends EventEmitter {
     /** @private timestamp of last recalculation */
     this._lastRecalcTs = 0;
 
+    /** @private stale cleanup interval timer */
+    this._staleCleanupTimer = null;
+
+    /** @type {Map<string, number>} symbol → last update timestamp for stale detection */
+    this._tickerUpdatedAt = new Map();
+
     // Bound handler reference for clean removal.
     this._boundOnTickerUpdate = this._onTickerUpdate.bind(this);
   }
@@ -72,6 +84,11 @@ class TickerAggregator extends EventEmitter {
    */
   start() {
     this._marketData.on(MARKET_EVENTS.TICKER_UPDATE, this._boundOnTickerUpdate);
+
+    // Periodic stale symbol cleanup (E12-3)
+    this._staleCleanupTimer = setInterval(() => this._cleanupStaleSymbols(), STALE_CLEANUP_INTERVAL_MS);
+    if (this._staleCleanupTimer.unref) this._staleCleanupTimer.unref();
+
     log.info('TickerAggregator started');
   }
 
@@ -86,7 +103,13 @@ class TickerAggregator extends EventEmitter {
       this._recalcTimer = null;
     }
 
+    if (this._staleCleanupTimer !== null) {
+      clearInterval(this._staleCleanupTimer);
+      this._staleCleanupTimer = null;
+    }
+
     this._tickers.clear();
+    this._tickerUpdatedAt.clear();
     this._aggregateStats = {};
 
     log.info('TickerAggregator stopped');
@@ -106,6 +129,7 @@ class TickerAggregator extends EventEmitter {
     if (!data || !data.symbol) return;
 
     this._tickers.set(data.symbol, data);
+    this._tickerUpdatedAt.set(data.symbol, Date.now());
 
     // Debounced recalculation: schedule at most once per RECALC_DEBOUNCE_MS.
     const now = Date.now();
@@ -135,6 +159,26 @@ class TickerAggregator extends EventEmitter {
       this._recalculate();
     } catch (err) {
       log.error('Aggregate recalculation failed', { error: err });
+    }
+  }
+
+  /**
+   * Remove ticker entries that have not been updated for STALE_MAX_AGE_MS.
+   * Prevents the _tickers map from growing indefinitely with dead symbols.
+   * @private
+   */
+  _cleanupStaleSymbols() {
+    const now = Date.now();
+    let removed = 0;
+    for (const [symbol, updatedAt] of this._tickerUpdatedAt) {
+      if (now - updatedAt > STALE_MAX_AGE_MS) {
+        this._tickers.delete(symbol);
+        this._tickerUpdatedAt.delete(symbol);
+        removed++;
+      }
+    }
+    if (removed > 0) {
+      log.info('Stale symbol cleanup', { removed, remaining: this._tickers.size });
     }
   }
 

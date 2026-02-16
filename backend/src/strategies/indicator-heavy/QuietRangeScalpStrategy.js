@@ -110,6 +110,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
         category: this._category,
         suggestedQty: this.config.positionSizePercent,
         suggestedPrice: this._latestPrice,
+        reduceOnly: true,
         confidence: '0.9000',
         marketContext: { reason: 'regime_change_exit', regime: this.getEffectiveRegime() },
       };
@@ -190,6 +191,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
             category: this._category,
             suggestedQty: halfQty,
             suggestedPrice: close,
+            reduceOnly: true,
             confidence: '0.7000',
             marketContext: { reason: 'ema_midpoint_half_profit', ema: emaValue },
           };
@@ -206,6 +208,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
             category: this._category,
             suggestedQty: halfQty,
             suggestedPrice: close,
+            reduceOnly: true,
             confidence: '0.7000',
             marketContext: { reason: 'ema_midpoint_half_profit', ema: emaValue },
           };
@@ -322,6 +325,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: currentPrice,
+          reduceOnly: true,
           confidence: '0.9500',
           marketContext: { reason: 'take_profit', entryPrice: this._entryPrice, tpPrice },
         };
@@ -337,6 +341,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: currentPrice,
+          reduceOnly: true,
           confidence: '0.9500',
           marketContext: { reason: 'stop_loss', entryPrice: this._entryPrice, slPrice },
         };
@@ -355,6 +360,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: currentPrice,
+          reduceOnly: true,
           confidence: '0.9500',
           marketContext: { reason: 'take_profit', entryPrice: this._entryPrice, tpPrice },
         };
@@ -370,6 +376,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: currentPrice,
+          reduceOnly: true,
           confidence: '0.9500',
           marketContext: { reason: 'stop_loss', entryPrice: this._entryPrice, slPrice },
         };

@@ -12,6 +12,8 @@ interface BacktestFormProps {
   onSubmit: (config: BacktestConfig) => void;
 }
 
+const LEVERAGE_OPTIONS = ['1', '2', '3', '5', '10', '20'] as const;
+
 const INTERVALS = [
   { value: '1m', label: '1m' },
   { value: '5m', label: '5m' },
@@ -54,7 +56,7 @@ interface ValidationWarnings {
 export default function BacktestForm({ strategies, running, onSubmit }: BacktestFormProps) {
   const [strategyName, setStrategyName] = useState('');
   const [symbol, setSymbol] = useState('BTCUSDT');
-  const [interval, setInterval] = useState('15m');
+  const [timeframe, setTimeframe] = useState('15m');
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setMonth(d.getMonth() - 1);
@@ -65,6 +67,7 @@ export default function BacktestForm({ strategies, running, onSubmit }: Backtest
   const [makerFee, setMakerFee] = useState('0.02');
   const [takerFee, setTakerFee] = useState('0.06');
   const [slippage, setSlippage] = useState('0.05');
+  const [leverage, setLeverage] = useState('1');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
@@ -163,13 +166,14 @@ export default function BacktestForm({ strategies, running, onSubmit }: Backtest
       strategyName,
       strategyConfig: selectedStrategy?.defaultConfig ?? {},
       symbol: symbol.trim().toUpperCase(),
-      interval,
+      interval: timeframe,
       startTime: startMs,
       endTime: endMs,
       initialCapital,
       makerFee: (parseFloat(makerFee) / 100).toString(),
       takerFee: (parseFloat(takerFee) / 100).toString(),
       slippage: (parseFloat(slippage) / 100).toString(),
+      leverage,
     };
 
     onSubmit(config);
@@ -226,8 +230,8 @@ export default function BacktestForm({ strategies, running, onSubmit }: Backtest
             </label>
             <select
               id="bt-interval"
-              value={interval}
-              onChange={(e) => setInterval(e.target.value)}
+              value={timeframe}
+              onChange={(e) => setTimeframe(e.target.value)}
               className={inputClass}
             >
               {INTERVALS.map((iv) => (
@@ -246,8 +250,8 @@ export default function BacktestForm({ strategies, running, onSubmit }: Backtest
           </p>
         )}
 
-        {/* Row 2: Start date, End date, Initial capital */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* Row 2: Start date, End date, Initial capital, Leverage */}
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
           <div>
             <label htmlFor="bt-start" className={labelClass}>
               시작일
@@ -304,6 +308,24 @@ export default function BacktestForm({ strategies, running, onSubmit }: Backtest
                 {errors.initialCapital}
               </p>
             )}
+          </div>
+
+          <div>
+            <label htmlFor="bt-leverage" className={labelClass}>
+              레버리지
+            </label>
+            <select
+              id="bt-leverage"
+              value={leverage}
+              onChange={(e) => setLeverage(e.target.value)}
+              className={inputClass}
+            >
+              {LEVERAGE_OPTIONS.map((lv) => (
+                <option key={lv} value={lv}>
+                  {lv}x
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 

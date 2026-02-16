@@ -60,6 +60,49 @@ export function useBacktest() {
   }, []);
 
   // Run a new backtest
+  const backtestIdRef = useRef<string | null>(null);
+
+  const pollOnce = useCallback(async (id: string) => {
+    try {
+      const result = await backtestApi.getResult(id);
+      if (result.status === 'completed' || result.status === 'error') {
+        stopPolling();
+        setActiveResult(result);
+        setRunning(false);
+        backtestIdRef.current = null;
+        if (result.status === 'error') {
+          setError(result.error || '백테스트 실행 오류');
+        }
+        fetchList();
+      } else {
+        setActiveResult(result);
+      }
+    } catch {
+      stopPolling();
+      setRunning(false);
+      backtestIdRef.current = null;
+      setError('백테스트 상태 조회 실패');
+    }
+  }, [stopPolling, fetchList]);
+
+  const startPolling = useCallback((id: string) => {
+    stopPolling();
+    pollRef.current = setInterval(() => pollOnce(id), 1000);
+  }, [stopPolling, pollOnce]);
+
+  useEffect(() => {
+    const handler = () => {
+      if (!document.hidden && backtestIdRef.current) {
+        pollOnce(backtestIdRef.current);
+        startPolling(backtestIdRef.current);
+      } else if (document.hidden) {
+        stopPolling();
+      }
+    };
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
+  }, [pollOnce, startPolling, stopPolling]);
+
   const runBacktest = useCallback(async (config: BacktestConfig) => {
     setRunning(true);
     setError(null);
@@ -68,35 +111,13 @@ export function useBacktest() {
 
     try {
       const { id } = await backtestApi.run(config);
-
-      // Poll for completion
-      pollRef.current = setInterval(async () => {
-        try {
-          const result = await backtestApi.getResult(id);
-          if (result.status === 'completed' || result.status === 'error') {
-            stopPolling();
-            setActiveResult(result);
-            setRunning(false);
-            if (result.status === 'error') {
-              setError(result.error || '백테스트 실행 오류');
-            }
-            // Refresh list
-            fetchList();
-          } else {
-            // Still running — update progress
-            setActiveResult(result);
-          }
-        } catch {
-          stopPolling();
-          setRunning(false);
-          setError('백테스트 상태 조회 실패');
-        }
-      }, 1000);
+      backtestIdRef.current = id;
+      startPolling(id);
     } catch (err) {
       setRunning(false);
       setError(err instanceof Error ? err.message : '백테스트 실행 실패');
     }
-  }, [stopPolling, fetchList]);
+  }, [stopPolling, startPolling]);
 
   // Delete a backtest
   const deleteBacktest = useCallback(async (id: string) => {

@@ -23,6 +23,7 @@ const {
   getWsKeyMap,
 } = require('../config/bitget');
 
+const { TRADE_EVENTS } = require('../utils/constants');
 const log = createLogger('ExchangeClient');
 
 // ---------------------------------------------------------------------------
@@ -86,6 +87,15 @@ class ExchangeClient extends EventEmitter {
 
     /** @type {boolean} Whether WebSocket connections have been initialised */
     this._wsConnected = false;
+
+    /** @type {number} Timestamp of last public WS message received */
+    this._lastPublicWsMessage = 0;
+
+    /** @type {number} Timestamp of last private WS message received */
+    this._lastPrivateWsMessage = 0;
+
+    /** @type {number} Global rate-limit cooldown until timestamp (E12-5) */
+    this._rateLimitCooldownUntil = 0;
   }
 
   // =========================================================================
@@ -110,6 +120,14 @@ class ExchangeClient extends EventEmitter {
    */
   async _withRetry(fn, label, maxRetries = 3) {
     let lastError;
+
+    // E12-5: Global rate-limit cooldown — wait if recently throttled
+    const now = Date.now();
+    if (now < this._rateLimitCooldownUntil) {
+      const waitMs = this._rateLimitCooldownUntil - now;
+      log.warn(`${label} — rate-limit cooldown active, waiting ${waitMs}ms`);
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
@@ -136,6 +154,12 @@ class ExchangeClient extends EventEmitter {
         if (errorType === 'auth_error') {
           log.error(`${label} — non-retryable auth error, aborting`, meta);
           throw error;
+        }
+
+        // E12-5: On rate-limit, set global 5-second cooldown
+        if (errorType === 'rate_limit') {
+          this._rateLimitCooldownUntil = Date.now() + 5000;
+          log.warn(`${label} — rate-limit hit, global cooldown set for 5s`);
         }
 
         // Exponential backoff: 1s, 2s, 4s ...
@@ -610,6 +634,10 @@ class ExchangeClient extends EventEmitter {
 
     wsPrivate.on('reconnected', (data) => {
       log.info('WS private — reconnected', { wsKey: data?.wsKey });
+      // E12-7: Reconcile fills that may have been missed during disconnect
+      this._reconcileFillsOnReconnect().catch((err) => {
+        log.error('WS private — fill reconciliation failed', { error: err });
+      });
     });
 
     wsPrivate.on('authenticated', (data) => {
@@ -763,6 +791,7 @@ class ExchangeClient extends EventEmitter {
    * @private
    */
   _handlePublicWsUpdate(rawEvent) {
+    this._lastPublicWsMessage = Date.now();
     const normalised = this._normalizeWsEvent(rawEvent);
 
     switch (normalised.topic) {
@@ -803,6 +832,7 @@ class ExchangeClient extends EventEmitter {
    * @private
    */
   _handlePrivateWsUpdate(rawEvent) {
+    this._lastPrivateWsMessage = Date.now();
     const normalised = this._normalizeWsEvent(rawEvent);
 
     switch (normalised.topic) {
@@ -829,6 +859,83 @@ class ExchangeClient extends EventEmitter {
         this.emit('ws:private', normalised);
         break;
     }
+  }
+
+  // =========================================================================
+  // WS reconnect — fill reconciliation (E12-7)
+  // =========================================================================
+
+  /**
+   * After a private WS reconnect, query REST for recent fills and emit
+   * any that may have been missed during the disconnect window.
+   *
+   * @private
+   */
+  async _reconcileFillsOnReconnect() {
+    try {
+      const restClient = getRestClient();
+      // Fetch last 50 fills from the past 10 minutes
+      const endTime = String(Date.now());
+      const startTime = String(Date.now() - 10 * 60_000);
+      const response = await restClient.getFuturesOrderFills({
+        productType: 'USDT-FUTURES',
+        startTime,
+        endTime,
+        limit: '50',
+      });
+
+      const fills = Array.isArray(response?.data?.fillList)
+        ? response.data.fillList
+        : Array.isArray(response?.data)
+          ? response.data
+          : [];
+
+      if (fills.length > 0) {
+        log.info('WS reconnect fill reconciliation — found recent fills', {
+          count: fills.length,
+        });
+
+        for (const fill of fills) {
+          this.emit('ws:fill', {
+            topic: 'fill',
+            symbol: fill.symbol || fill.instId || null,
+            data: fill,
+            ts: Number(fill.cTime || fill.ts || Date.now()),
+            reconciled: true,
+          });
+        }
+      }
+
+      this.emit(TRADE_EVENTS.FILL_RECONCILIATION_COMPLETE, {
+        fillCount: fills.length,
+        ts: Date.now(),
+      });
+
+      log.info('WS reconnect fill reconciliation complete', { fillCount: fills.length });
+    } catch (err) {
+      log.error('_reconcileFillsOnReconnect — failed', { error: err });
+    }
+  }
+
+  // =========================================================================
+  // WS status / health (E12-12)
+  // =========================================================================
+
+  /**
+   * Return a snapshot of WebSocket health status.
+   *
+   * @returns {{ connected: boolean, lastPublicMessageMs: number, lastPrivateMessageMs: number, publicStale: boolean, privateStale: boolean }}
+   */
+  getWsStatus() {
+    const now = Date.now();
+    const STALE_THRESHOLD_MS = 60_000; // 60s without messages = stale
+    return {
+      connected: this._wsConnected,
+      lastPublicMessageMs: this._lastPublicWsMessage,
+      lastPrivateMessageMs: this._lastPrivateWsMessage,
+      publicStale: this._lastPublicWsMessage > 0 && (now - this._lastPublicWsMessage) > STALE_THRESHOLD_MS,
+      privateStale: this._lastPrivateWsMessage > 0 && (now - this._lastPrivateWsMessage) > STALE_THRESHOLD_MS,
+    };
   }
 }
 

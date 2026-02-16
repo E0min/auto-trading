@@ -116,7 +116,7 @@
 | `useAnalytics` | `hooks/useAnalytics.ts` | 적응형 (Sprint R8) | 자산 곡선 + 세션 통계 |
 | `useHealthCheck` | `hooks/useHealthCheck.ts` | 적응형 (30~120초) | API 지연, 서비스 상태 |
 | `useAdaptivePolling` | `hooks/useAdaptivePolling.ts` | 봇 상태별 동적 | 적응형 폴링 코어 (Sprint R4) |
-| `useBacktest` | `hooks/useBacktest.ts` | 1초 (실행 중) | 백테스트 CRUD + 결과 폴링 |
+| `useBacktest` | `hooks/useBacktest.ts` | 1초 (실행 중) | 백테스트 CRUD + 결과 폴링. Sprint R12: Visibility API(백그라운드 탭 시 폴링 중지, 포그라운드 복귀 시 재개) |
 | `useTournament` | `hooks/useTournament.ts` | 적응형 (Sprint R8) | 토너먼트 정보 + 순위표 |
 | `useRiskEvents` | `hooks/useRiskEvents.ts` | 이벤트 기반 | 리스크 이벤트 조회/확인 처리 |
 | `usePerformanceAnalytics` | `hooks/usePerformanceAnalytics.ts` | 적응형 (Sprint R8) | 전략별/심볼별/일별 성과 데이터 |
@@ -178,17 +178,17 @@ getSocket()      // 현재 소켓 인스턴스 조회 (없으면 null)
 | 컴포넌트 | 설명 |
 |----------|------|
 | `BotControlPanel` | 시작/정지/일시정지/재개/긴급정지 버튼 (LIVE 모드 시작 확인, EmergencyStopDialog 통합, Sprint R8: 정지 확인 다이얼로그 — 열린 포지션 경고). Props: tradingMode, openPositionCount, unrealizedPnl |
-| `TradingModeToggle` | 라이브/페이퍼 모드 전환 |
+| `TradingModeToggle` | 라이브/페이퍼 모드 전환. Sprint R12: 에러 메시지 표시 (5초 자동 해제) |
 | ~~`StrategyPanel`~~ | 삭제됨 (Sprint R10, 데드 코드) |
-| `AccountOverview` | 자산, 잔고, 미실현 PnL |
+| `AccountOverview` | 자산, 잔고, 미실현 PnL. Sprint R12: value flash 효과 (0.1% 이상 변동 시 green/red 배경 500ms) |
 | `RiskStatusPanel` | 서킷 브레이커, 노출, 낙폭 지표 + 복합 리스크 점수 (Sprint R4: DD 40% + Exp 30% + CB 30%, 색상 코딩) |
 | ~~`MarketRegimeIndicator`~~ | 삭제됨 (Sprint R11) |
-| `SymbolRegimeTable` | 심볼별 레짐 분류 테이블 |
+| `SymbolRegimeTable` | 심볼별 레짐 분류 테이블. Sprint R12: 접기/펼치기 토글 (기본 접힘), Card 대신 자체 컨테이너 |
 | `RegimeStrategyRecommendation` | 현재 레짐에 맞는 전략 추천 |
 | `EquityCurveChart` | 대시보드 자산 곡선 (EquityCurveBase 래퍼, Sprint R10) |
-| `DrawdownChart` | Drawdown 시각화 차트 (Sprint R4: 접기/펼치기 토글, 경고/한계선 참조선, 빨간 그래디언트) |
-| `PositionsTable` | 오픈 포지션 (진입가, SL 가격, 현재가, 미실현 PnL, Sprint R3: 수동 청산, Sprint R5: SL 컬럼) |
-| `SignalFeed` | 실시간 시그널 피드 (최대 50개, 최신순, Sprint R4: rejectReason 표시) |
+| `DrawdownChart` | Drawdown 시각화 차트 (Sprint R4: 접기/펼치기 토글, 경고/한계선 참조선, 빨간 그래디언트). Sprint R12: `useId()` 기반 gradient ID로 다중 인스턴스 지원 |
+| `PositionsTable` | 오픈 포지션 (진입가, SL 가격, 현재가, 미실현 PnL, Sprint R3: 수동 청산, Sprint R5: SL 컬럼). Sprint R12: 전략 컬럼 추가 (AD-73, `translateStrategyName()` 적용) |
+| `SignalFeed` | 실시간 시그널 피드 (최대 50개, 최신순, Sprint R4: rejectReason 표시). Sprint R12: 모바일 2줄 레이아웃 (action+symbol+confidence / strategy+risk+time) |
 | `TradesTable` | 거래 내역 + 페이지네이션 |
 | `SystemHealth` | API 상태, 지연, 소켓 연결 |
 | ~~`ClientGate`~~ | 삭제됨 (Sprint R10, 데드 코드) |
@@ -215,8 +215,8 @@ getSocket()      // 현재 소켓 인스턴스 조회 (없으면 null)
 
 | 컴포넌트 | 설명 |
 |----------|------|
-| `BacktestForm` | 백테스트 설정 폼 |
-| `BacktestStatsPanel` | 성과 지표 그리드 (Sprint R10: Sortino+Calmar 추가) |
+| `BacktestForm` | 백테스트 설정 폼. Sprint R12: 레버리지 드롭다운 (1/2/3/5/10/20x), `setInterval`→`timeframe` 변수명 수정 |
+| `BacktestStatsPanel` | 성과 지표 그리드 (Sprint R10: Sortino+Calmar 추가). Sprint R12: Calmar 라벨 "연율화" 추가, leverage>1 시 경고 배너 ("강제 청산 미시뮬레이션"), config prop 추가 |
 | `BacktestEquityCurve` | 백테스트 자산 곡선 (EquityCurveBase 래퍼, Sprint R10) |
 | `BacktestPriceChart` | 가격 차트 + 진입/청산 마커 |
 | `BacktestTradeList` | 거래 상세 목록 |

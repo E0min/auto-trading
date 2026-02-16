@@ -278,6 +278,81 @@
 
 ---
 
+## Tier R12 — 코드베이스 재분석 Round 3 (Round 12)
+
+### Backend T0 (즉시)
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R12-E1 | T0 | Backend | MarketDataCache sweep 타이머 (60초 주기 만료 항목 정리) | E:E12-1 | R12 | done |
+| R12-E2 | T0 | Backend | CoinSelector selectCoins() 재진입 가드 | E:E12-2 | R12 | done |
+| R12-P1 | T0 | Backend | 8개 전략 trailing metadata enabled=false (AD-69) | T:P12-1 | R12 | done |
+| R12-E12 | T0 | Backend | HealthCheck WS deep check + getWsStatus() (AD-71) | E:E12-12 | R12 | done |
+
+### Backend T1 (1주 내)
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R12-E3 | T1 | Backend | TickerAggregator stale 심볼 정리 (30분 경과 제거) | E:E12-3 | R12 | done |
+| R12-E5 | T1 | Backend | ExchangeClient rate limit 전역 cooldown (5초) | E:E12-5 | R12 | done |
+| R12-E7 | T1 | Backend | WS 재연결 fill reconciliation (AD-72) | E:E12-7 | R12 | done |
+| R12-E10 | T1 | Backend | marginMode 삼항 수정 (raw.marginMode || 'crossed') | E:E12-10 | R12 | done |
+| R12-P2 | T1 | Backend | 14개 전략 close reduceOnly:true 일괄 추가 | T:P12-2 | R12 | done |
+| R12-FE08BE | T1 | Backend | positions API에 strategy 필드 merge (AD-73) | E:R12-FE-08-BE | R12 | done |
+
+### Backtest T1
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R12-P3 | T1 | Backtest | 백테스트 레버리지 반영 — margin 기반 사이징 (AD-70) | T:P12-3 | R12 | done |
+| R12-P7 | T1 | Backtest | Calmar Ratio 연율화 (최소 7일 guard) | T:P12-7 | R12 | done |
+
+### Backend T2 (품질)
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R12-E9 | T2 | Backend | BotService.start() 실패 시 rollback (역순 stop) | E:E12-9 | R12 | done |
+| R12-E11 | T2 | Backtest | equityCurve 샘플링 (max 10,000) | E:E12-11 | R12 | done |
+| R12-E13 | T2 | Backend | Logger context 크기 제한 (maxContextSize) | E:E12-13 | R12 | done |
+| R12-E14 | T2 | Backend | Backtest 동시 실행 제한 (MAX=2, 봇 RUNNING 시 1) | E:E12-14 | R12 | done |
+| R12-E15 | T2 | Backend | InstrumentCache staleness 경고 (3회 연속 실패 → WARN) | E:E12-15 | R12 | done |
+| R12-E16 | T2 | Backend | CoinSelector _prevVol24h 정리 (candidates 외 키 삭제) | E:E12-16 | R12 | done |
+| R12-P9 | T2 | Backend | CoinSelector 절대 비용 필터 (maxEffectiveCost 0.15%) | T:P12-9 | R12 | done |
+
+### Frontend T1
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R12-FE03 | T1 | Frontend | addToast 의존성 배열 누락 수정 (2건) | UI:R12-FE-03 | R12 | done |
+| R12-FE04 | T1 | Frontend | BacktestForm setInterval → timeframe 변수명 변경 | UI:R12-FE-04 | R12 | done |
+| R12-FE09 | T1 | Frontend | TradingModeToggle 에러 표시 (onError prop) | UI:R12-FE-09 | R12 | done |
+| R12-FE11 | T1 | Frontend | DrawdownChart gradientId useId() 적용 | UI:R12-FE-11 | R12 | done |
+| R12-FE05 | T1 | Frontend | useBacktest Visibility API (백그라운드 폴링 중지) | UI:R12-FE-05 | R12 | done |
+| R12-FE06 | T1 | Frontend | SignalFeed 모바일 2줄 레이아웃 | UI:R12-FE-06 | R12 | done |
+| R12-FE08 | T1 | Frontend | PositionsTable 전략 컬럼 추가 (AD-73) | UI:R12-FE-08 | R12 | done |
+| R12-FE07 | T1 | Frontend | AccountOverview value flash 효과 | UI:R12-FE-07 | R12 | done |
+| R12-FE01 | T1 | Frontend | useSocket/useMarketIntelligence 이중 구독 정리 | UI:R12-FE-01 | R12 | done |
+| R12-FE10 | T1 | Frontend | SymbolRegimeTable 접기/펼치기 (기본 접힘) | UI:R12-FE-10 | R12 | done |
+| R12-P3FE | T1 | Frontend | BacktestForm 레버리지 드롭다운 + StatsPanel 경고 | UI 보완 | R12 | done |
+| R12-P7FE | T1 | Frontend | Calmar 라벨 "연율화" 추가 | UI 보완 | R12 | done |
+
+### 보류 (R13)
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R12-D1 | — | Backend | E12-4 BotService 재선정 중첩 방지 | E:E12-4 | R12 | rejected |
+| R12-D2 | T3 | Backend | RateLimiter shift() O(n) 최적화 | E:E12-6 | R12 | deferred |
+| R12-D3 | T2 | Backend | PaperEngine mark price SL/TP | E:E12-8 | R12 | deferred |
+| R12-D4 | T2 | Backend | ExposureGuard 레버리지 인지 | T:P12-4 | R12 | deferred |
+| R12-D5 | T2 | Backend | 방향성 집중도 모니터링 | T:P12-5 | R12 | deferred |
+| R12-D6 | T2 | Backend | ATR 동적 TP/SL (2~3 전략 파일럿) | T:P12-6 | R12 | deferred |
+| R12-D7 | T3 | Backtest | 포트폴리오 백테스트 | T:P12-8 | R12 | deferred |
+| R12-D8 | T2 | Frontend | PerformanceTabs stale-while-revalidate | UI:R12-FE-02 | R12 | deferred |
+| R12-D9 | T2 | Frontend | tournament/page.tsx 분할 | UI:R12-FE-12 | R12 | deferred |
+| R12-D10 | T3 | Frontend | 백테스트 결과 비교 기능 | UI:R12-FE-13 | R12 | deferred |
+
+---
+
 ## 아키텍처 결정 참조
 → `decisions/round_1.md` — AD-1~AD-6 참조
 → `decisions/round_2.md` — AD-7~AD-12 참조 (T0-1~T0-9 구현 세부사항)
@@ -290,3 +365,4 @@
 → `decisions/round_9.md` — AD-53~AD-57 참조 (R9 Tier 2 Quality)
 → `decisions/round_10.md` — AD-58~AD-62 참조 (R10 Tier 3 Enhancement)
 → `decisions/round_11.md` — AD-63~AD-68 참조 (R11 코드베이스 재분석 Round 2)
+→ `decisions/round_12.md` — AD-69~AD-73 참조 (R12 코드베이스 재분석 Round 3)

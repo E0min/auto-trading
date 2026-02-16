@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { botApi } from '@/lib/api-client';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
@@ -17,6 +17,13 @@ export default function TradingModeToggle({
 }: TradingModeToggleProps) {
   const [pending, setPending] = useState<'live' | 'paper' | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!error) return;
+    const timer = setTimeout(() => setError(null), 5000);
+    return () => clearTimeout(timer);
+  }, [error]);
 
   const handleSelect = (mode: 'live' | 'paper') => {
     if (mode === currentMode || botRunning || loading) return;
@@ -29,8 +36,8 @@ export default function TradingModeToggle({
     try {
       await botApi.setTradingMode(pending);
       onModeChange(pending);
-    } catch {
-      // error is handled silently — mode stays unchanged
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '모드 전환에 실패했습니다.');
     } finally {
       setLoading(false);
       setPending(null);
@@ -96,6 +103,10 @@ export default function TradingModeToggle({
           Paper
         </button>
       </div>
+
+      {error && (
+        <p className="text-[11px] text-[var(--loss)] mt-1">{error}</p>
+      )}
 
       {/* Confirm dialog: paper → live */}
       <ConfirmDialog

@@ -43,7 +43,7 @@ class RsiPivotStrategy extends StrategyBase {
     gracePeriodMs: 300000,
     warmupCandles: 15,
     volatilityPreference: 'neutral',
-    trailingStop: { enabled: true, activationPercent: '1.0', callbackPercent: '0.8' },
+    trailingStop: { enabled: false, activationPercent: '1.0', callbackPercent: '0.8' },
     description: 'RSI + Pivot 역추세 (양방향)',
     defaultConfig: {
       rsiPeriod: 14,
@@ -184,6 +184,7 @@ class RsiPivotStrategy extends StrategyBase {
             category: this._category,
             suggestedQty: positionSizePercent,
             suggestedPrice: close,
+            reduceOnly: true,
             confidence,
             marketContext: { rsi, price: close, regime: this.getEffectiveRegime(), reason: 'rsi_overbought' },
           };
@@ -200,6 +201,7 @@ class RsiPivotStrategy extends StrategyBase {
             category: this._category,
             suggestedQty: positionSizePercent,
             suggestedPrice: close,
+            reduceOnly: true,
             confidence: '0.7500',
             marketContext: { rsi, price: close, pivotR1: this._pivotData.r1, regime: this.getEffectiveRegime(), reason: 'pivot_r1_reached' },
           };
@@ -219,6 +221,7 @@ class RsiPivotStrategy extends StrategyBase {
             category: this._category,
             suggestedQty: positionSizePercent,
             suggestedPrice: close,
+            reduceOnly: true,
             confidence,
             marketContext: { rsi, price: close, regime: this.getEffectiveRegime(), reason: 'rsi_oversold' },
           };
@@ -235,6 +238,7 @@ class RsiPivotStrategy extends StrategyBase {
             category: this._category,
             suggestedQty: positionSizePercent,
             suggestedPrice: close,
+            reduceOnly: true,
             confidence: '0.7500',
             marketContext: { rsi, price: close, pivotS1: this._pivotData.s1, regime: this.getEffectiveRegime(), reason: 'pivot_s1_reached' },
           };
@@ -396,6 +400,7 @@ class RsiPivotStrategy extends StrategyBase {
           action: SIGNAL_ACTIONS.CLOSE_LONG,
           symbol: this._symbol, category: this._category,
           suggestedQty: positionSizePercent, suggestedPrice: currentPrice,
+          reduceOnly: true,
           confidence: '0.9500',
           marketContext: { price: currentPrice, entryPrice: this._entryPrice, tpPrice, regime: this.getEffectiveRegime(), reason: 'take_profit' },
         };
@@ -404,6 +409,7 @@ class RsiPivotStrategy extends StrategyBase {
           action: SIGNAL_ACTIONS.CLOSE_LONG,
           symbol: this._symbol, category: this._category,
           suggestedQty: positionSizePercent, suggestedPrice: currentPrice,
+          reduceOnly: true,
           confidence: '0.9500',
           marketContext: { price: currentPrice, entryPrice: this._entryPrice, slPrice, regime: this.getEffectiveRegime(), reason: 'stop_loss' },
         };
@@ -417,6 +423,7 @@ class RsiPivotStrategy extends StrategyBase {
           action: SIGNAL_ACTIONS.CLOSE_SHORT,
           symbol: this._symbol, category: this._category,
           suggestedQty: positionSizePercent, suggestedPrice: currentPrice,
+          reduceOnly: true,
           confidence: '0.9500',
           marketContext: { price: currentPrice, entryPrice: this._entryPrice, tpPrice, regime: this.getEffectiveRegime(), reason: 'take_profit' },
         };
@@ -425,6 +432,7 @@ class RsiPivotStrategy extends StrategyBase {
           action: SIGNAL_ACTIONS.CLOSE_SHORT,
           symbol: this._symbol, category: this._category,
           suggestedQty: positionSizePercent, suggestedPrice: currentPrice,
+          reduceOnly: true,
           confidence: '0.9500',
           marketContext: { price: currentPrice, entryPrice: this._entryPrice, slPrice, regime: this.getEffectiveRegime(), reason: 'stop_loss' },
         };

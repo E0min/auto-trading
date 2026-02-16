@@ -111,7 +111,7 @@ export default function Dashboard() {
     } finally {
       setClosingSymbol(null);
     }
-  }, [refetchPositions]);
+  }, [refetchPositions, addToast]);
 
   // T1-11: Drawdown reset handler
   const [resetLoading, setResetLoading] = useState(false);
@@ -126,7 +126,7 @@ export default function Dashboard() {
     } finally {
       setResetLoading(false);
     }
-  }, [refetchBotStatus]);
+  }, [refetchBotStatus, addToast]);
 
   // Initial loading
   if (botLoading && positionsLoading) {

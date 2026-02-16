@@ -79,6 +79,7 @@ Bitget 원시 형식: [ts, open, high, low, close, volCoin, volUsdt]
 | `takerFee` | '0.0006' | 테이커 수수료 (0.06%) |
 | `slippage` | '0.0005' | 슬리피지 (0.05%) |
 | `marketRegime` | null | 고정 시장 레짐 (선택) |
+| `leverage` | '1' | 레버리지 (1~20 정수, Sprint R12 AD-70) |
 
 ### 시뮬레이션 루프
 
@@ -147,7 +148,18 @@ fillPrice = close × (1 + slippage)
 수량 = (cash × positionSizePercent / 100) / fillPrice
 ```
 
-**Equity DI**: 백테스트 엔진은 `strategy.setAccountContext({ getEquity: () => this._cash })`로 현재 가용 자금을 전략에 주입합니다.
+### 레버리지 (Sprint R12, AD-70)
+
+```
+margin = cash × positionSizePercent / 100
+positionValue = margin × leverage
+qty = positionValue / fillPrice
+cash 차감: margin + fee (전체 notional이 아닌 margin만)
+```
+
+레버리지 > 1일 때 결과에 `leverageWarning` 필드가 포함됩니다: "레버리지 Nx 적용 (강제 청산 미시뮬레이션)". cash < 0 방어: margin + fee > cash이면 진입 스킵.
+
+**Equity DI**: 백테스트 엔진은 `strategy.setAccountContext({ getEquity: () => this._calculateEquity(currentPrice) })`로 현재 가용 자금(미실현 PnL 포함)을 전략에 주입합니다.
 
 ### 멀티포지션 지원 (Sprint R10, AD-60)
 
@@ -173,13 +185,12 @@ fillPrice = close × (1 + slippage)
 
 ```
 포지션 없음:  equity = cash
-단일 포지션:
-  롱:    equity = cash + (qty × currentPrice)
-  숏:    equity = cash + entryNotional + unrealizedPnl
-멀티포지션: equity = cash + Σ(각 포지션의 MTM)
+포지션 있음:  equity = cash + Σ(margin + unrealizedPnl)
+  롱: unrealizedPnl = qty × (currentPrice - entryPrice)
+  숏: unrealizedPnl = qty × (entryPrice - currentPrice)
 ```
 
-**R11 변경**: `_calculateEquity()`가 열린 포지션의 미실현 손익(unrealized PnL)을 equity에 포함합니다. 또한 펀딩비가 cash에서 직접 차감되어 equity 곡선에 펀딩 비용이 반영됩니다.
+**R12 변경**: margin 기반 equity 산출. 이전에는 full notional을 사용했으나, 레버리지 도입으로 margin + unrealizedPnl 방식으로 전환. equity 곡선은 최대 10,000 포인트로 샘플링(균등 간격 + 첫/마지막 보존)됩니다.
 
 ---
 
@@ -217,7 +228,7 @@ fillPrice = close × (1 + slippage)
 | `maxDrawdownPercent` | 최대 낙폭 (%) | (peak - trough) / peak × 100 |
 | `sharpeRatio` | 연간화 샤프 비율 | (평균 수익률 × √intervalsPerYear) / 수익률 표준편차 |
 | `sortinoRatio` | 소르티노 비율 (Sprint R10) | (평균 수익률 × √intervalsPerYear) / 하방 편차. 하방만 고려 (MAR=0) |
-| `calmarRatio` | 칼마 비율 (Sprint R10) | totalReturn / maxDrawdownPercent. 수익 대비 최대 낙폭 |
+| `calmarRatio` | 칼마 비율 (Sprint R10, R12 연율화) | annualizedReturn / maxDrawdownPercent. 7일 이상 시 연율화, 미만 시 raw ratio |
 | `totalFees` | 총 수수료 | 모든 거래 수수료 합산 |
 | `totalFundingCost` | 총 펀딩 비용 (Sprint R11) | 시뮬레이션 동안 발생한 펀딩비 절대값 합산 |
 | `finalEquity` | 최종 자산 | 시뮬레이션 종료 시 equity |

@@ -5,7 +5,7 @@ import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import Spinner from '@/components/ui/Spinner';
-import { formatCurrency, formatSymbol, getPnlColor, getPnlSign, translateSide } from '@/lib/utils';
+import { formatCurrency, formatSymbol, getPnlColor, getPnlSign, translateSide, translateStrategyName } from '@/lib/utils';
 import type { Position } from '@/types';
 
 /** Format SL price with 2-4 decimal places depending on magnitude */
@@ -52,6 +52,7 @@ export default function PositionsTable({ positions, loading, onClosePosition, cl
             <thead>
               <tr>
                 <th scope="col">심볼</th>
+                <th scope="col">전략</th>
                 <th scope="col">방향</th>
                 <th scope="col">수량</th>
                 <th scope="col">진입가</th>
@@ -66,13 +67,13 @@ export default function PositionsTable({ positions, loading, onClosePosition, cl
             <tbody>
               {loading && positions.length === 0 ? (
                 <tr>
-                  <td colSpan={onClosePosition ? 10 : 9} className="text-center text-[var(--text-muted)] py-10">
+                  <td colSpan={onClosePosition ? 11 : 10} className="text-center text-[var(--text-muted)] py-10">
                     로딩 중...
                   </td>
                 </tr>
               ) : positions.length === 0 ? (
                 <tr>
-                  <td colSpan={onClosePosition ? 10 : 9} className="text-center text-[var(--text-muted)] py-10">
+                  <td colSpan={onClosePosition ? 11 : 10} className="text-center text-[var(--text-muted)] py-10">
                     활성 포지션 없음
                   </td>
                 </tr>
@@ -82,6 +83,9 @@ export default function PositionsTable({ positions, loading, onClosePosition, cl
                   return (
                     <tr key={`${pos.symbol}-${pos.posSide}-${idx}`}>
                       <td className="font-mono font-medium text-[var(--text-primary)]">{formatSymbol(pos.symbol)}</td>
+                      <td className="text-[11px] text-[var(--text-muted)]">
+                        {pos.strategy ? translateStrategyName(pos.strategy) : '\u2014'}
+                      </td>
                       <td>
                         <Badge variant={pos.posSide === 'long' ? 'success' : 'danger'} dot>
                           {translateSide(pos.posSide)}

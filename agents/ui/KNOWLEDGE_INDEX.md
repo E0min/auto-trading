@@ -40,6 +40,9 @@
 | `proposals/round_11.md` | 코드베이스 재분석 13건: MarketRegimeIndicator 삭제, PaperModeGate, 타입 안전성(RiskStatusExtended, as never), CATEGORY_LABEL 통일, 접근성, lazy loading | Round 11 | active |
 | `proposals/round_11_review.md` | Round 11 교차 리뷰 (Trader+Engineer 제안 검토) | Round 11 | active |
 | `../shared/decisions/round_11.md` | Round 11 합의 결정문서 (26건, AD-63~AD-68) — FE 14건: 데드코드, PaperModeGate, 타입 안전성, formatter 통일, 폼 검증, lazy loading, 접근성 — **구현 완료** | Round 11 | active |
+| `proposals/round_12.md` | 코드베이스 재분석 Round 3: 13건 FE (addToast deps, useBacktest visibility, SignalFeed mobile, DrawdownChart useId, AccountOverview flash, SymbolRegimeTable collapse, PositionsTable strategy, BacktestForm leverage, 이중 구독 정리) | Round 12 | active |
+| `proposals/round_12_review.md` | Round 12 교차 리뷰 (Trader+Engineer 제안 검토) — R12-FE-08 BE 선행 필요 발견, timeframe 변수명 합의, mobile 2줄 레이아웃 동의 | Round 12 | active |
+| `../shared/decisions/round_12.md` | Round 12 합의 결정문서 (31건, AD-69~AD-73) — FE 12건: addToast deps, timeframe, onError, useId, visibility API, mobile 2줄, strategy 컬럼, value flash, 이중 구독, 접기/펼치기, 레버리지 UI, Calmar 라벨 — **구현 완료** | Round 12 | active |
 
 ## Round 1 Key Findings Summary
 - **C1**: Emergency Stop에 확인 다이얼로그 없음 — 실수로 전포지션 청산 위험
@@ -104,13 +107,13 @@
 
 ## Accumulated Insights
 - **레이아웃 진화**: R1 정보 우선순위 역전 발견 → R3 대시보드 재배치 → R4 리스크 패널/드로다운 차트 추가 → R5 7-Row 구조 확정 → R7 grace 배지 추가. 현재 상태: 안정된 레이아웃, 정보 밀도 적정
-- **실시간 상태 표현**: R1 Socket.io 싱글턴 문제 → R3 ref-count 해결 → R4 적응형 폴링(봇 상태별) → R7 3-way 상태 + 카운트다운 + pending/cooldown 표시 → R8 useSocket state 분리 + 3개 훅 적응형 폴링 전환 → R11 useStrategyDetail 적응형 폴링 전환. 현재 상태: 전 폴링 훅 적응형 전환 완료
+- **실시간 상태 표현**: R1 Socket.io 싱글턴 문제 → R3 ref-count 해결 → R4 적응형 폴링(봇 상태별) → R7 3-way 상태 + 카운트다운 + pending/cooldown 표시 → R8 useSocket state 분리 + 3개 훅 적응형 폴링 전환 → R11 useStrategyDetail 적응형 폴링 전환 → R12 useBacktest Visibility API(백그라운드 폴링 중지) + useMarketIntelligence 이중 구독 정리 + AccountOverview value flash(0.1% 임계치). 현재 상태: 전 폴링 훅 적응형+visibility 전환 완료, 이벤트 중복 제거
 - **모드 인식 UX**: R2 TradingModeBanner(paper/live) → R4 RiskStatusPanel 게이지 → R7 레짐 pending/cooldown/grace 시각화 → R8 봇 정지 확인 다이얼로그 + severity toast → R11 PaperModeGate 공통 컴포넌트 추출. 현재 상태: 모드 가드 UI 재사용 가능, 시스템 상태 인식 완비
 - **컴포넌트 패턴**: R1 레짐 색상 4곳 중복 → R6 디자인 토큰 도입 → R7 상태별 색상 체계(green/amber/gray/blue) 표준화 → R8 ErrorToast 신규 컴포넌트 + aria-expanded 일괄 적용 → R11 CATEGORY_LABEL→translateStrategyCategory + formatPnl→formatPnlValue 유틸 승격. 현재 상태: 로컬 상수/함수 → 공통 유틸 통합 패턴 확립
 - **접근성 진화**: R6 aria-disabled/aria-label → R8 포커스 트랩 + aria-expanded → R9 StrategyCard toggle button 분리 → R10 th scope="col" 88개 추가 → R11 DisableModeDialog focus trap + Escape + aria. 현재 상태: 전 다이얼로그 접근성 패턴 통일 (EmergencyStop/DisableMode)
 - **코드 정리 패턴**: R9 MarketRegimeIndicator 데드코드 삭제 → R10 StrategyPanel+ClientGate 삭제 + TOOLTIP_STYLE 4파일 통일 + EquityCurveBase 공통 추출 → R11 MarketRegimeIndicator 최종 삭제 + as never 7건 제거 + EquityCurveBase 제네릭 완화. 현재 상태: 타입 캐스트 최소화, 공통 formatter 확립
 - **타입 안전성 진화**: R1 Recharts `as never` 3곳 발견 → R10 EquityCurveBase 추출 → R11 `as never` 7건 제거(chart-config formatter) + `any` → RiskStatusExtended + EquityCurveBase 제네릭 `<T extends object>`. 현재 상태: 타입 캐스트 제거 완료, 제네릭 기반 타입 안전성
-- **성능 최적화**: R4 적응형 폴링 도입 → R8 useSocket state 분리 → R11 PerformanceTabs lazy loading + BacktestForm 클라이언트 검증. 현재 상태: 번들 최적화 + 불필요 서버 요청 방지
+- **성능 최적화**: R4 적응형 폴링 도입 → R8 useSocket state 분리 → R11 PerformanceTabs lazy loading + BacktestForm 클라이언트 검증 → R12 useBacktest visibility API + addToast deps 수정 + DrawdownChart useId() + SignalFeed mobile 2줄 + SymbolRegimeTable 접기(기본 접힘). 현재 상태: visibility 기반 폴링 제어, gradient ID 고유성, 모바일 최적화
 
 ## Knowledge Management Rules
 1. 새 정보를 받으면 이 인덱스의 기존 항목과 비교

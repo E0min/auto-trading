@@ -41,6 +41,9 @@
 | `proposals/round_11.md` | 코드베이스 재분석 11건: SignalFilter close bypass, trailing stop opt-in 6전략, entryPrice→onFill, volMomentum 수정, PaperEngine TP, 백테스트 equity+funding | Round 11 | active |
 | `proposals/round_11_review.md` | Round 11 교차 리뷰 (Engineer+UI 제안 검토) | Round 11 | active |
 | `../shared/decisions/round_11.md` | Round 11 합의 결정문서 (26건, AD-63~AD-68) — SignalFilter bypass, peakEquity 쿼리, trailing opt-in, 백테스트 equity+funding, PaperEngine TP — **구현 완료** | Round 11 | active |
+| `proposals/round_12.md` | 코드베이스 재분석 Round 3: 9건 (trailing stop dead code 8전략, reduceOnly 14전략, 레버리지 백테스트, Calmar 연율화, 절대 비용 필터) | Round 12 | active |
+| `proposals/round_12_review.md` | Round 12 교차 리뷰 (Engineer+UI 제안 검토) — trailing dead code 정정, reduceOnly 동의, 레버리지 마진 기반 | Round 12 | active |
+| `../shared/decisions/round_12.md` | Round 12 합의 결정문서 (31건, AD-69~AD-73) — trailing metadata 정리, reduceOnly 일괄, 레버리지 백테스트, Calmar 연율화, WS deep check, fill reconciliation — **구현 완료** | Round 12 | active |
 
 ## Round 1 Key Findings Summary
 - **C1**: multi-symbol 라우팅 버그 — `_symbol` 단일 값이라 마지막 심볼만 유효
@@ -94,11 +97,18 @@
 - **백테스트 getEquity 미실현 PnL 포함 (AD-66)**: `getEquity: () => this._cash` → `getEquity: () => this._calculateEquity(currentPrice)`. 전략 포지션 사이징이 미실현 손익 반영, 라이브와 백테스트 간 괴리 해소
 - **백테스트 펀딩 비용 cash 반영 (AD-67)**: `_applyFundingIfDue()`에서 산출된 펀딩 비용을 `this._cash`에 실제 차감/가산. 8시간 간격, cash 음수 방어
 
+## Round 12 Key Findings Summary
+- **Trailing metadata dead code (AD-69)**: 8개 전략의 metadata.trailingStop.enabled=true가 실제로는 dead code — super.onTick() 미호출로 StrategyBase._checkTrailingStop() 실행 안됨. enabled=false로 명확화
+- **close 시그널 reduceOnly 일괄 (14전략)**: MaTrend/AdaptiveRegime 외 14개 전략의 close 시그널에 reduceOnly:true 누락 → RiskEngine bypass 미적용 가능성. 일괄 추가
+- **백테스트 레버리지 (AD-70)**: margin = cash * pct/100, positionValue = margin * leverage. cash에서 margin만 차감, 강제 청산 미시뮬레이션 경고
+- **Calmar Ratio 연율화 (7일 guard)**: 기존 raw return/maxDD → annualizedReturn/maxDD. 7일 미만 백테스트는 raw ratio 유지
+- **CoinSelector 절대 비용 필터 (P12-9)**: spread + taker commission > 0.15% 심볼 제외 — 스프레드 넓은 저유동성 심볼 방지
+
 ## Accumulated Insights
-- **전략 품질 진화**: R1 14/18 전략 IndicatorCache 미제공 크래시 → R2 백테스트 수정 → R5 exchange-side SL 제안 → R7 유예기간으로 전략 활성 시간 보장 → R8 reduceOnly bypass로 SL/TP 실행 보장 → R11 SignalFilter close bypass 수정 + entryPrice onFill 이동 + Bollinger super.onFill 추가. 현재 상태: 전략 시그널 경로 완비, 상태 초기화 정합성 확보
+- **전략 품질 진화**: R1 14/18 전략 IndicatorCache 미제공 크래시 → R2 백테스트 수정 → R5 exchange-side SL 제안 → R7 유예기간으로 전략 활성 시간 보장 → R8 reduceOnly bypass로 SL/TP 실행 보장 → R11 SignalFilter close bypass 수정 + entryPrice onFill 이동 + Bollinger super.onFill 추가 → R12 trailing metadata enabled=false(8전략 dead code 정리) + close 시그널 reduceOnly:true(14전략 일괄). 현재 상태: 전략 시그널 경로 완비, trailing dead code 제거, close 시그널 안전 경로 확보
 - **리스크 관리 체계**: R1 ExposureGuard qty 10,000x 오류 → R2 수정 → R4 포지션 사이징 파이프라인 정비 → R7 유예기간으로 고아 포지션 방지 → R8 RiskEngine reduceOnly bypass + SignalFilter CLOSE bypass → R11 SignalFilter close startsWith 수정으로 실제 청산 바이패스 작동. 현재 상태: 리스크+시그널 필터 청산 경로 완전 검증
 - **레짐 시스템 성숙**: R1 레짐 분류 구축 → R4 7-factor 코인 선정 강화 → R7 삼중 보호 체계(hysteresis+cooldown+grace)로 안정화 → R11 F7 volMomentum 변화율 수정으로 7-factor 독립성 회복. 현재 상태: 노이즈 내성 확보, 코인 선정 스코어링 정확성 개선
-- **수익성 인프라**: R1 Sharpe ~10x 과대평가 → R3 보정 → R5 성과 귀인 → R6 실거래 준비도 → R8 Snapshot 60초 주기 → R9 펀딩비 PnL 추적 → R10 Sortino+Calmar Ratio 추가 → R11 백테스트 equity에 미실현 PnL 포함 + 펀딩비 cash 반영. 현재 상태: 라이브/백테스트 equity 산출 일관화, 펀딩비 실제 차감
+- **수익성 인프라**: R1 Sharpe ~10x 과대평가 → R3 보정 → R5 성과 귀인 → R6 실거래 준비도 → R8 Snapshot 60초 주기 → R9 펀딩비 PnL 추적 → R10 Sortino+Calmar Ratio 추가 → R11 백테스트 equity에 미실현 PnL 포함 + 펀딩비 cash 반영 → R12 Calmar 연율화(7일 guard) + 백테스트 레버리지(margin 기반 사이징 AD-70) + equityCurve 샘플링(max 10K). 현재 상태: Calmar 연율화 정확, 레버리지 백테스트 지원, 메모리 효율화
 - **포지션 관리 진화**: R1 단일 심볼 → R8 PositionManager 전략 매핑 → R9 멀티심볼 라우팅 Phase 1 + InstrumentCache → R10 백테스트 멀티포지션(FIFO). 현재 상태: 전략별 독립 심볼+포지션 관리 체계, 백테스트 멀티포지션 지원
 - **Trailing Stop 도입**: R5 exchange-side SL(presetStopLossPrice) → R10 StrategyBase trailing stop opt-in(6개 추세/모멘텀 전략) → R11 strategyBase.onTick() 자동 호출 활성화 + Breakout/AdaptiveRegime trailingStop metadata 추가. 현재 상태: 6전략 trailing stop 실제 작동, MaTrend/Turtle 자체 구현 통합은 R12 예정
 - **PaperEngine 완성도**: R1 PaperEngine 리스너 누적 → R3 수정 → R11 TP 트리거 시뮬레이션 추가 + 미결 주문 30분 TTL/50건 cap. 현재 상태: SL+TP 양방향 트리거 시뮬레이션, 자원 관리 완비

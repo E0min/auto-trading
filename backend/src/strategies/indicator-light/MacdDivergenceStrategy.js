@@ -51,7 +51,7 @@ class MacdDivergenceStrategy extends StrategyBase {
     gracePeriodMs: 300000,
     warmupCandles: 35,
     volatilityPreference: 'neutral',
-    trailingStop: { enabled: true, activationPercent: '1.0', callbackPercent: '0.8' },
+    trailingStop: { enabled: false, activationPercent: '1.0', callbackPercent: '0.8' },
     description: 'MACD 다이버전스 역추세 전략',
     defaultConfig: {
       macdFast: 12,
@@ -614,6 +614,7 @@ class MacdDivergenceStrategy extends StrategyBase {
       category: this._category,
       suggestedQty: this.config.positionSizePercent,
       suggestedPrice: price,
+      reduceOnly: true,
       confidence,
       reason,
       marketContext: {

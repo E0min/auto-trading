@@ -10,6 +10,7 @@ export interface BacktestConfig {
   makerFee?: string;
   takerFee?: string;
   slippage?: string;
+  leverage?: string;
   marketRegime?: string | null;
 }
 

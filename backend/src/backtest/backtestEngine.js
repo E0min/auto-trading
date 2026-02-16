@@ -182,6 +182,7 @@ class BacktestEngine {
    * @param {string}  [opts.slippage='0.0005']  — slippage rate (0.05%)
    * @param {string|null} [opts.marketRegime=null] — optional fixed market regime
    * @param {string}  [opts.fundingRate='0.0001'] — simulated funding rate per settlement (R8-T2-3)
+   * @param {string}  [opts.leverage='1'] — leverage multiplier (1-20, P12-3 AD-70)
    */
   constructor({
     strategyName,
@@ -194,6 +195,7 @@ class BacktestEngine {
     slippage = '0.0005',
     marketRegime = null,
     fundingRate = DEFAULT_FUNDING_RATE,
+    leverage = '1',
   } = {}) {
     if (!strategyName || typeof strategyName !== 'string') {
       throw new TypeError('BacktestEngine: strategyName must be a non-empty string');
@@ -221,6 +223,7 @@ class BacktestEngine {
     this.slippage = String(slippage);
     this.marketRegime = marketRegime;
     this.fundingRate = String(fundingRate);
+    this.leverage = String(leverage);
 
     // Simulation state (reset on each run)
     this._cash = '0';
@@ -275,6 +278,9 @@ class BacktestEngine {
     this._lastFundingTs = null;
     this._accumulatedFundings = new Map();
     this._totalFundingCost = '0'; // R11-T7: Track total funding cost for metrics
+    this._equitySampleInterval = Math.max(1, Math.floor(klines.length / 10000)); // E12-11
+    this._klineIndex = 0;
+    this._totalKlines = klines.length;
 
     // 2. Create and configure strategy instance
     this._strategy = this._createStrategy();
@@ -295,6 +301,7 @@ class BacktestEngine {
     for (let i = 0; i < klines.length; i++) {
       const kline = klines[i];
       this._currentKline = kline;
+      this._klineIndex = i;
 
       // Clear pending signals before feeding data to strategy
       this._pendingSignals = [];
@@ -370,7 +377,7 @@ class BacktestEngine {
     });
 
     // 7. Build and return result
-    return {
+    const result = {
       config: {
         strategyName: this.strategyName,
         symbol: this.symbol,
@@ -381,6 +388,7 @@ class BacktestEngine {
         slippage: this.slippage,
         marketRegime: this.marketRegime,
         fundingRate: this.fundingRate,
+        leverage: this.leverage,
       },
       trades: this._trades,
       equityCurve: this._equityCurve,
@@ -388,6 +396,13 @@ class BacktestEngine {
       totalTrades: this._trades.length,
       totalFundingCost: this._totalFundingCost, // R11-T7
     };
+
+    // P12-3 AD-70: Add leverage warning
+    if (math.isGreaterThan(this.leverage, '1')) {
+      result.leverageWarning = `레버리지 ${this.leverage}x 적용 (강제 청산 미시뮬레이션)`;
+    }
+
+    return result;
   }
 
   // =========================================================================
@@ -581,8 +596,9 @@ class BacktestEngine {
     // Fill price: slippage applied upward (worse for buyer)
     const fillPrice = math.multiply(kline.close, math.add('1', this.slippage));
 
-    // Position value: metadata-based % of available (remaining) cash (T2-3)
-    const positionValue = math.multiply(this._cash, math.divide(this._positionSizePct, '100'));
+    // Margin-based sizing (P12-3 AD-70): margin = cash * pct, positionValue = margin * leverage
+    const margin = math.multiply(this._cash, math.divide(this._positionSizePct, '100'));
+    const positionValue = math.multiply(margin, this.leverage);
 
     // Quantity
     const qty = math.divide(positionValue, fillPrice);
@@ -591,8 +607,12 @@ class BacktestEngine {
     const notional = math.multiply(qty, fillPrice);
     const fee = math.multiply(notional, this.takerFee);
 
-    // Deduct from cash: notional + fee
-    const totalCost = math.add(notional, fee);
+    // Deduct from cash: margin + fee (only margin, not full notional)
+    const totalCost = math.add(margin, fee);
+    if (math.isGreaterThan(totalCost, this._cash)) {
+      log.debug('OPEN_LONG skipped — insufficient cash for margin + fee', { cash: this._cash, totalCost });
+      return;
+    }
     this._cash = math.subtract(this._cash, totalCost);
 
     // Record position with unique ID
@@ -603,6 +623,7 @@ class BacktestEngine {
       qty,
       entryTime: kline.ts,
       fee,
+      margin,
     });
     this._accumulatedFundings.set(posId, '0');
 
@@ -611,6 +632,8 @@ class BacktestEngine {
       fillPrice,
       qty,
       fee,
+      margin,
+      leverage: this.leverage,
       cash: this._cash,
       ts: kline.ts,
     });
@@ -648,8 +671,9 @@ class BacktestEngine {
     // Fill price: slippage applied downward (worse for short seller)
     const fillPrice = math.multiply(kline.close, math.subtract('1', this.slippage));
 
-    // Position value: metadata-based % of available (remaining) cash (T2-3)
-    const positionValue = math.multiply(this._cash, math.divide(this._positionSizePct, '100'));
+    // Margin-based sizing (P12-3 AD-70): margin = cash * pct, positionValue = margin * leverage
+    const margin = math.multiply(this._cash, math.divide(this._positionSizePct, '100'));
+    const positionValue = math.multiply(margin, this.leverage);
 
     // Quantity
     const qty = math.divide(positionValue, fillPrice);
@@ -658,8 +682,12 @@ class BacktestEngine {
     const notional = math.multiply(qty, fillPrice);
     const fee = math.multiply(notional, this.takerFee);
 
-    // Deduct from cash: notional + fee (margin reserved)
-    const totalCost = math.add(notional, fee);
+    // Deduct from cash: margin + fee (only margin, not full notional)
+    const totalCost = math.add(margin, fee);
+    if (math.isGreaterThan(totalCost, this._cash)) {
+      log.debug('OPEN_SHORT skipped — insufficient cash for margin + fee', { cash: this._cash, totalCost });
+      return;
+    }
     this._cash = math.subtract(this._cash, totalCost);
 
     // Record position with unique ID
@@ -670,6 +698,7 @@ class BacktestEngine {
       qty,
       entryTime: kline.ts,
       fee,
+      margin,
     });
     this._accumulatedFundings.set(posId, '0');
 
@@ -678,6 +707,8 @@ class BacktestEngine {
       fillPrice,
       qty,
       fee,
+      margin,
+      leverage: this.leverage,
       cash: this._cash,
       ts: kline.ts,
     });
@@ -719,12 +750,12 @@ class BacktestEngine {
     // Closing fee
     const closeFee = math.multiply(closeNotional, this.takerFee);
 
-    // Net proceeds returned to cash
-    const netProceeds = math.subtract(closeNotional, closeFee);
-    this._cash = math.add(this._cash, netProceeds);
-
     // PnL = qty * (fillPrice - entryPrice)
     const grossPnl = math.multiply(position.qty, math.subtract(fillPrice, position.entryPrice));
+
+    // Net proceeds: margin + grossPnl - closeFee (margin-based, P12-3 AD-70)
+    const netProceeds = math.subtract(math.add(position.margin, grossPnl), closeFee);
+    this._cash = math.add(this._cash, netProceeds);
 
     // Total fees = opening fee + closing fee
     const totalFee = math.add(position.fee, closeFee);
@@ -800,19 +831,9 @@ class BacktestEngine {
     // Closing fee
     const closeFee = math.multiply(closeNotional, this.takerFee);
 
-    // For shorts, when closing we "buy back" at fillPrice.
-    // The original notional (at entry) was reserved as collateral.
-    // We return: entryNotional + (entryPrice - fillPrice) * qty - closeFee
-    // Simplified: entryNotional - closeNotional - closeFee + entryNotional
-    // Actually:
-    //   When opening short, we deducted: qty * entryPrice + openFee
-    //   When closing short, we receive back the margin plus profit (or minus loss):
-    //     proceeds = qty * entryPrice + qty * (entryPrice - fillPrice) - closeFee
-    //             = qty * (2 * entryPrice - fillPrice) - closeFee
-    //   But simpler way: proceeds = entryNotional + grossPnl - closeFee
-    const entryNotional = math.multiply(position.qty, position.entryPrice);
+    // Margin-based close (P12-3 AD-70): return margin + grossPnl - closeFee
     const grossPnl = math.multiply(position.qty, math.subtract(position.entryPrice, fillPrice));
-    const netProceeds = math.subtract(math.add(entryNotional, grossPnl), closeFee);
+    const netProceeds = math.subtract(math.add(position.margin, grossPnl), closeFee);
     this._cash = math.add(this._cash, netProceeds);
 
     // Total fees
@@ -904,6 +925,13 @@ class BacktestEngine {
    * @private
    */
   _recordEquitySnapshot(kline) {
+    // E12-11: Sample equityCurve to prevent memory issues with long backtests
+    const isFirst = this._klineIndex === 0;
+    const isLast = this._klineIndex === this._totalKlines - 1;
+    const isOnInterval = this._klineIndex % this._equitySampleInterval === 0;
+
+    if (!isFirst && !isLast && !isOnInterval) return;
+
     const equity = this._calculateEquity(kline);
 
     this._equityCurve.push({
@@ -943,16 +971,14 @@ class BacktestEngine {
     let equity = this._cash;
 
     for (const [, pos] of this._positions) {
+      // Margin-based equity (P12-3 AD-70): equity = cash + margin + unrealizedPnl
+      let unrealizedPnl;
       if (pos.side === 'long') {
-        // Mark-to-market value of the long position
-        equity = math.add(equity, math.multiply(pos.qty, kline.close));
+        unrealizedPnl = math.multiply(pos.qty, math.subtract(kline.close, pos.entryPrice));
       } else {
-        // Short position
-        // Unrealized PnL = qty * (entryPrice - currentPrice)
-        const entryNotional = math.multiply(pos.qty, pos.entryPrice);
-        const unrealizedPnl = math.multiply(pos.qty, math.subtract(pos.entryPrice, kline.close));
-        equity = math.add(equity, math.add(entryNotional, unrealizedPnl));
+        unrealizedPnl = math.multiply(pos.qty, math.subtract(pos.entryPrice, kline.close));
       }
+      equity = math.add(equity, math.add(pos.margin, unrealizedPnl));
     }
 
     return equity;

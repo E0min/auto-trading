@@ -25,14 +25,25 @@ const log = createLogger('BacktestRoutes');
  * @param {Object} deps.backtestStore  — BacktestStore singleton
  * @returns {Router}
  */
-function createBacktestRoutes({ dataFetcher, backtestStore }) {
+function createBacktestRoutes({ dataFetcher, backtestStore, botService }) {
   const router = Router();
+  let activeBacktestCount = 0;
 
   // -------------------------------------------------------------------------
   // POST /run — start a new backtest (async)
   // -------------------------------------------------------------------------
   router.post('/run', (req, res) => {
     try {
+      const botRunning = botService && botService.getStatus().running;
+      const maxConcurrent = botRunning ? 1 : 2;
+
+      if (activeBacktestCount >= maxConcurrent) {
+        return res.status(429).json({
+          success: false,
+          error: 'Too many backtests running',
+        });
+      }
+
       const {
         strategyName,
         strategyConfig,
@@ -45,6 +56,7 @@ function createBacktestRoutes({ dataFetcher, backtestStore }) {
         takerFee = '0.0006',
         slippage = '0.0005',
         marketRegime = null,
+        leverage = '1',
       } = req.body;
 
       // Validation
@@ -59,6 +71,15 @@ function createBacktestRoutes({ dataFetcher, backtestStore }) {
         return res.json({
           success: false,
           error: `알 수 없는 전략: "${strategyName}"`,
+        });
+      }
+
+      // Validate leverage (P12-3 AD-70)
+      const leverageNum = parseInt(leverage, 10);
+      if (isNaN(leverageNum) || leverageNum < 1 || leverageNum > 20 || String(leverageNum) !== String(parseInt(leverage, 10))) {
+        return res.json({
+          success: false,
+          error: '레버리지는 1~20 사이의 정수여야 합니다',
         });
       }
 
@@ -81,6 +102,7 @@ function createBacktestRoutes({ dataFetcher, backtestStore }) {
           takerFee: String(takerFee),
           slippage: String(slippage),
           marketRegime,
+          leverage: String(leverageNum),
         },
         metrics: null,
         trades: [],
@@ -90,6 +112,8 @@ function createBacktestRoutes({ dataFetcher, backtestStore }) {
 
       // Return ID immediately
       res.json({ success: true, data: { id } });
+
+      activeBacktestCount++;
 
       // Execute asynchronously
       setImmediate(async () => {
@@ -121,6 +145,7 @@ function createBacktestRoutes({ dataFetcher, backtestStore }) {
             takerFee: String(takerFee),
             slippage: String(slippage),
             marketRegime,
+            leverage: String(leverageNum),
           });
 
           const result = engine.run(klines);
@@ -165,6 +190,8 @@ function createBacktestRoutes({ dataFetcher, backtestStore }) {
             progress: 0,
             error: err.message,
           });
+        } finally {
+          activeBacktestCount--;
         }
       });
     } catch (err) {

@@ -462,6 +462,7 @@ class FundingRateStrategy extends StrategyBase {
       symbol: this._symbol,
       category: this._category,
       suggestedPrice: this._latestPrice,
+      reduceOnly: true,
       confidence: '1.0000',
       leverage: '3',
       marketContext: {
@@ -501,6 +502,7 @@ class FundingRateStrategy extends StrategyBase {
       category: this._category,
       suggestedPrice: this._latestPrice,
       suggestedQty: '50%',
+      reduceOnly: true,
       confidence: '0.8000',
       leverage: '3',
       marketContext: {

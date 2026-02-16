@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import {
   AreaChart,
   Area,
@@ -20,6 +20,8 @@ interface DrawdownChartProps {
 
 export default function DrawdownChart({ equityPoints, maxDrawdownPercent = 10 }: DrawdownChartProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const rawId = useId();
+  const gradientId = `drawdownGradient${rawId.replace(/:/g, '')}`;
   const data = computeDrawdownSeries(equityPoints);
 
   if (data.length === 0) return null;
@@ -62,7 +64,7 @@ export default function DrawdownChart({ equityPoints, maxDrawdownPercent = 10 }:
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
               <defs>
-                <linearGradient id="drawdownGradient" x1="0" y1="0" x2="0" y2="1">
+                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#F87171" stopOpacity={0.05} />
                   <stop offset="100%" stopColor="#F87171" stopOpacity={0.2} />
                 </linearGradient>
@@ -104,7 +106,7 @@ export default function DrawdownChart({ equityPoints, maxDrawdownPercent = 10 }:
                 type="monotone"
                 dataKey="drawdownPct"
                 stroke="var(--loss)"
-                fill="url(#drawdownGradient)"
+                fill={`url(#${gradientId})`}
                 strokeWidth={1}
               />
             </AreaChart>

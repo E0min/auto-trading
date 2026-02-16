@@ -397,21 +397,16 @@ registry.register(TurtleBreakoutStrategy);
 > **범례**: UP=trending_up, DOWN=trending_down, VOL=volatile, RANGE=ranging, QUIET=quiet
 > **유예기간** (Sprint R7): 레짐 변경 시 전략 비활성화 전 OPEN 차단 / CLOSE 허용 기간. `gracePeriodMs` 메타데이터.
 
-### Trailing Stop (Sprint R10, AD-59; R11 강화)
+### Trailing Stop (Sprint R10, AD-59; R11 강화; R12 metadata 정리 AD-69)
 
-StrategyBase에 opt-in 방식의 trailing stop이 내장되어 있습니다. 전략 메타데이터에 `trailingStop` 설정이 있으면 자동 활성화됩니다.
+StrategyBase에 opt-in 방식의 trailing stop이 내장되어 있습니다. 전략 메타데이터에 `trailingStop.enabled: true` 설정이 있으면 자동 활성화됩니다.
 
-**R11 변경**: `onTick()`이 concrete 메서드로 전환되어, trailing stop이 활성화된 전략에서 매 틱마다 `_checkTrailingStop(price)`를 자동 호출합니다. 서브클래스가 별도로 trailing 로직을 호출할 필요 없이, `super.onTick(ticker)`만 호출하면 됩니다. 또한 BollingerReversion, Breakout, AdaptiveRegime 전략에 `super.onFill(fill)` 호출이 추가되어 trailing state 관리가 일관되게 통합되었습니다.
+**R11 변경**: `onTick()`이 concrete 메서드로 전환되어, trailing stop이 활성화된 전략에서 매 틱마다 `_checkTrailingStop(price)`를 자동 호출합니다. 서브클래스가 별도로 trailing 로직을 호출할 필요 없이, `super.onTick(ticker)`만 호출하면 됩니다.
 
-**대상 전략** (6개 추세/모멘텀):
-| 전략 | activationPercent | callbackPercent |
-|------|-------------------|-----------------|
-| TurtleBreakout | 1.5% | 1.0% |
-| Supertrend | 1.5% | 1.0% |
-| MaTrend | 1.5% | 1.0% |
-| SwingStructure | 1.5% | 1.0% |
-| RsiPivot | 1.0% | 0.8% |
-| MacdDivergence | 1.0% | 0.8% |
+**R12 변경 (AD-69)**: 8개 전략(MaTrend, AdaptiveRegime, Turtle, SwingStructure, Breakout, Supertrend, RsiPivot, MacdDivergence)의 `metadata.trailingStop.enabled`를 `false`로 변경. 이유: 이 전략들은 모두 `onTick()`을 오버라이드하면서 `super.onTick()`을 호출하지 않으므로 StrategyBase의 `_checkTrailingStop()`이 실행되지 않음 (dead code). 자체 trailing/exit 로직을 가진 전략은 metadata가 혼동을 줄 수 있으므로 비활성화.
+
+**대상 전략** (현재 StrategyBase trailing 활성 전략: 0개):
+모든 전략이 `trailingStop.enabled: false`이거나 metadata에 trailingStop이 없음. 각 전략이 자체 exit 로직 관리.
 
 **`super.onFill(fill)` 호출 전략** (R10~R11): TurtleBreakout, SwingStructure, MaTrend, Supertrend, RsiPivot, MacdDivergence, BollingerReversion, Breakout, AdaptiveRegime
 
@@ -422,9 +417,12 @@ StrategyBase에 opt-in 방식의 trailing stop이 내장되어 있습니다. 전
 2. trailing SL과 고정 SL 중 더 타이트한 것 적용
 3. onFill() CLOSE 분기에서 trailing state 리셋
 4. `_checkTrailingStop()`을 try-catch로 감싸 fail-safe
-5. AdaptiveRegimeStrategy는 `trailingStop.enabled: false`로 충돌 방지
 
-**비활성 전략** (12개): Grid, Vwap, QuietRangeScalp, FibonacciRetracement, CandlePattern, SupportResistance, Funding 등
+### Close 시그널 reduceOnly (Sprint R12, P12-2)
+
+16개 전략의 close/exit 시그널에 `reduceOnly: true` 속성이 일괄 추가되었습니다. RiskEngine의 reduceOnly bypass (AD-46)와 결합하여, close 시그널이 CircuitBreaker/DrawdownMonitor에 의해 차단되지 않고 항상 실행됩니다.
+
+**비활성 전략** (StrategyBase trailing 미사용): 전체 18개 전략 — 각자 자체 exit 로직 관리
 
 ---
 

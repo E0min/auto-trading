@@ -3,11 +3,12 @@
 import Card from '@/components/ui/Card';
 import Spinner from '@/components/ui/Spinner';
 import { formatCurrency, getPnlColor, getPnlSign, cn } from '@/lib/utils';
-import type { BacktestMetrics } from '@/types/backtest';
+import type { BacktestMetrics, BacktestConfig } from '@/types/backtest';
 
 interface BacktestStatsPanelProps {
   metrics: BacktestMetrics | null;
   loading: boolean;
+  config?: BacktestConfig | null;
 }
 
 interface StatDefinition {
@@ -46,7 +47,7 @@ const STATS: StatDefinition[] = [
     getColor: () => 'text-[var(--loss)]',
   },
   {
-    label: '칼마 비율',
+    label: '칼마 비율 (연율화)',
     getValue: (m) => parseFloat(m.calmarRatio).toFixed(2),
     getColor: (m) => {
       const v = parseFloat(m.calmarRatio);
@@ -130,7 +131,9 @@ const STATS: StatDefinition[] = [
   },
 ];
 
-export default function BacktestStatsPanel({ metrics, loading }: BacktestStatsPanelProps) {
+export default function BacktestStatsPanel({ metrics, loading, config }: BacktestStatsPanelProps) {
+  const leverageNum = config?.leverage ? parseInt(config.leverage, 10) : 1;
+
   return (
     <Card title="성과 통계">
       {loading ? (
@@ -146,6 +149,16 @@ export default function BacktestStatsPanel({ metrics, loading }: BacktestStatsPa
         </div>
       ) : (
         <div>
+          {leverageNum > 1 && (
+            <div className="mb-4 px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 flex items-center gap-2">
+              <svg className="w-4 h-4 text-amber-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-[11px] text-amber-400">
+                레버리지 {leverageNum}x 적용 (강제 청산 미시뮬레이션)
+              </p>
+            </div>
+          )}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {STATS.map((stat) => {
               const value = stat.getValue(metrics);

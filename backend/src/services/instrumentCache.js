@@ -38,6 +38,9 @@ class InstrumentCache {
 
     /** @type {NodeJS.Timeout|null} */
     this._refreshTimer = null;
+
+    /** @type {number} Consecutive refresh failure counter (E12-15) */
+    this._consecutiveFailures = 0;
   }
 
   // =========================================================================
@@ -92,6 +95,7 @@ class InstrumentCache {
       }
 
       this._lastRefresh = Date.now();
+      this._consecutiveFailures = 0;
 
       log.info('Instrument cache refreshed', {
         category,
@@ -99,10 +103,19 @@ class InstrumentCache {
         totalCached: this._instruments.size,
       });
     } catch (err) {
+      this._consecutiveFailures++;
       log.error('Instrument cache refresh failed', {
         category,
         error: err.message,
+        consecutiveFailures: this._consecutiveFailures,
       });
+      if (this._consecutiveFailures >= 3) {
+        log.warn('Instrument cache stale — 3+ consecutive refresh failures', {
+          consecutiveFailures: this._consecutiveFailures,
+          lastRefresh: this._lastRefresh,
+          staleDurationMs: Date.now() - this._lastRefresh,
+        });
+      }
       // Do not throw — cache retains stale data; callers fall back to defaults
     }
   }

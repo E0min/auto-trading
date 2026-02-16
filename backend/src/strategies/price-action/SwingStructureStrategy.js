@@ -56,7 +56,7 @@ class SwingStructureStrategy extends StrategyBase {
     gracePeriodMs: 600000,
     warmupCandles: 20,
     volatilityPreference: 'high',
-    trailingStop: { enabled: true, activationPercent: '1.5', callbackPercent: '1.0' },
+    trailingStop: { enabled: false, activationPercent: '1.5', callbackPercent: '1.0' },
     description: '스윙 구조 추세 — HH/HL/LH/LL 구조 분석 + BOS 돌파 진입',
     defaultConfig: {
       swingLookback: 3,              // Bars each side to confirm a swing point
@@ -454,6 +454,7 @@ class SwingStructureStrategy extends StrategyBase {
     const signal = {
       action, symbol: this._symbol, category: this._category,
       suggestedQty: this.config.positionSizePercent, suggestedPrice: price,
+      reduceOnly: true,
       confidence: toFixed('0.9000', 4), reason,
       marketContext: { ...context, currentPrice: price, atr: this._latestAtr, structure: this._structure },
     };

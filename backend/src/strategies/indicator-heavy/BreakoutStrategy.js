@@ -55,7 +55,7 @@ class BreakoutStrategy extends StrategyBase {
     gracePeriodMs: 900000,
     warmupCandles: 30,
     volatilityPreference: 'high',
-    trailingStop: { enabled: true, activationPercent: '2.0', callbackPercent: '1.5' },
+    trailingStop: { enabled: false, activationPercent: '2.0', callbackPercent: '1.5' },
     description: 'BB 스퀴즈 돌파 전략 — 볼린저밴드가 켈트너채널 안으로 수축 후 돌파 진입',
     defaultConfig: {
       bbPeriod: 20,
@@ -157,6 +157,7 @@ class BreakoutStrategy extends StrategyBase {
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: price,
+          reduceOnly: true,
           confidence: toFixed('0.9500', 4),
           reason: 'stop_loss_opposite_band',
           marketContext: {
@@ -177,6 +178,7 @@ class BreakoutStrategy extends StrategyBase {
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: price,
+          reduceOnly: true,
           confidence: toFixed('0.9500', 4),
           reason: 'stop_loss_opposite_band',
           marketContext: {
@@ -212,6 +214,7 @@ class BreakoutStrategy extends StrategyBase {
             category: this._category,
             suggestedQty: positionSizePercent,
             suggestedPrice: price,
+            reduceOnly: true,
             confidence: toFixed('0.8500', 4),
             reason: 'trailing_stop',
             marketContext: {
@@ -243,6 +246,7 @@ class BreakoutStrategy extends StrategyBase {
             category: this._category,
             suggestedQty: positionSizePercent,
             suggestedPrice: price,
+            reduceOnly: true,
             confidence: toFixed('0.8500', 4),
             reason: 'trailing_stop',
             marketContext: {
@@ -377,6 +381,7 @@ class BreakoutStrategy extends StrategyBase {
             category: this._category,
             suggestedQty: positionSizePercent,
             suggestedPrice: price,
+            reduceOnly: true,
             confidence: toFixed('0.8000', 4),
             reason: 'breakout_failure',
             marketContext: {
@@ -406,6 +411,7 @@ class BreakoutStrategy extends StrategyBase {
             category: this._category,
             suggestedQty: positionSizePercent,
             suggestedPrice: price,
+            reduceOnly: true,
             confidence: toFixed('0.9000', 4),
             reason: 'take_profit',
             marketContext: {
@@ -430,6 +436,7 @@ class BreakoutStrategy extends StrategyBase {
             category: this._category,
             suggestedQty: positionSizePercent,
             suggestedPrice: price,
+            reduceOnly: true,
             confidence: toFixed('0.9000', 4),
             reason: 'take_profit',
             marketContext: {

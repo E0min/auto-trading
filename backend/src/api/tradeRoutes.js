@@ -16,9 +16,10 @@ const log = createLogger('TradeRoutes');
  * @param {object} deps
  * @param {import('../services/traderService')} deps.traderService
  * @param {import('../services/positionManager')} deps.positionManager
+ * @param {import('../services/botService')} [deps.botService]
  * @returns {import('express').Router}
  */
-module.exports = function createTradeRoutes({ traderService, positionManager }) {
+module.exports = function createTradeRoutes({ traderService, positionManager, botService }) {
   const router = require('express').Router();
 
   // GET /api/trades — get trade history
@@ -100,7 +101,17 @@ module.exports = function createTradeRoutes({ traderService, positionManager }) 
     try {
       const positions = positionManager.getPositions();
       const accountState = positionManager.getAccountState();
-      res.json({ success: true, data: { positions, accountState } });
+
+      // R12-FE-08-BE: Merge strategy name into each position if botService is available
+      const enriched = positions.map((pos) => {
+        if (botService && typeof botService.getStrategyForPosition === 'function') {
+          const strategy = botService.getStrategyForPosition(pos.symbol, pos.posSide);
+          return strategy ? { ...pos, strategy } : pos;
+        }
+        return pos;
+      });
+
+      res.json({ success: true, data: { positions: enriched, accountState } });
     } catch (err) {
       log.error('GET /positions — error', { error: err });
       res.status(500).json({ success: false, error: err.message });

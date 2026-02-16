@@ -479,6 +479,7 @@ class GridStrategy extends StrategyBase {
       category: this._category,
       suggestedPrice: exitPrice,
       suggestedQty,
+      reduceOnly: true,
       confidence: '0.70',
       marketContext: {
         strategy: 'GridStrategy',

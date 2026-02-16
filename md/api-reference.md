@@ -122,7 +122,8 @@
         "leverage": "3",
         "liquidationPrice": "62000",
         "margin": "1083.33",
-        "stopLossPrice": "64000"
+        "stopLossPrice": "64000",
+        "strategy": "TurtleBreakoutStrategy"
       }
     ],
     "accountState": {
@@ -194,9 +195,13 @@
   "makerFee": "0.0002",
   "takerFee": "0.0006",
   "slippage": "0.0005",
-  "marketRegime": "trending_up"
+  "marketRegime": "trending_up",
+  "leverage": "1"
 }
 ```
+
+> **leverage** (Sprint R12, AD-70): 1~20 정수. 기본값 `"1"`. margin = cash * pct, positionValue = margin * leverage. 강제 청산은 미시뮬레이션.
+> **동시 실행 제한** (Sprint R12): 봇 RUNNING 시 최대 1건, 정지 시 최대 2건. 초과 요청 시 429 응답.
 
 #### GET /api/backtest/:id 응답
 
@@ -386,10 +391,19 @@
       "database": { "status": "connected", "latency": 5 },
       "websocket": { "status": "connected" }
     },
+    "ws": {
+      "connected": true,
+      "lastPublicMessageMs": 1708200000000,
+      "lastPrivateMessageMs": 1708200000000,
+      "publicStale": false,
+      "privateStale": false
+    },
     "timestamp": "2026-01-15T10:00:00Z"
   }
 }
 ```
+
+> **ws** (Sprint R12, AD-71): ExchangeClient의 `getWsStatus()` 반환값. `publicStale`/`privateStale`은 마지막 메시지로부터 60초 이상 경과 시 `true`.
 
 ---
 

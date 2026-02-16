@@ -121,7 +121,7 @@ export default function BacktestPage() {
           {/* Results */}
           {activeResult && activeResult.status === 'completed' && (
             <>
-              <BacktestStatsPanel metrics={activeResult.metrics} loading={loading} />
+              <BacktestStatsPanel metrics={activeResult.metrics} loading={loading} config={activeResult.config} />
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <BacktestEquityCurve data={equityCurve} loading={loading} />

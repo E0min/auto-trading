@@ -313,6 +313,7 @@ orderManager → paperEngine.matchMarketOrder()
 ### 라이브 모드
 - WebSocket private 채널에서 실시간 포지션 업데이트 수신
 - 주기적으로 REST API로 교차 검증
+- **WS 재연결 fill reconciliation (Sprint R12, AD-72)**: WS private 재연결 시 REST로 최근 60초 fill을 조회하고, 누락된 fill을 `ws:fill` 이벤트로 보상 emit. `clientOid`/`tradeId` 기반 중복 방지
 
 ### 페이퍼 모드
 ```javascript

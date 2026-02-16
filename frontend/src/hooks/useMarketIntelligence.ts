@@ -65,29 +65,10 @@ export function useMarketIntelligence(botState: BotState = 'idle') {
   useAdaptivePolling(fetchAll, 'marketIntel', botState);
 
   // Socket.io real-time listeners (R8-T1-10: named handler pattern)
+  // NOTE: REGIME_CHANGE is handled by useSocket to avoid double subscription (R12-FE-01)
   useEffect(() => {
     mountedRef.current = true;
     const socket = acquireSocket();
-
-    // Regime change → prepend to history
-    const handleRegimeChange = (data: RegimeHistoryEntry) => {
-      if (!mountedRef.current) return;
-      setState((prev) => ({
-        ...prev,
-        regimeContext: {
-          ...prev.regimeContext,
-          regime: data.current,
-          confidence: data.confidence,
-          btcPrice: data.btcPrice,
-          ema9: data.ema9,
-          sma20: data.sma20,
-          sma50: data.sma50,
-          atr: data.atr,
-          factorScores: data.scores,
-        } as RegimeContext,
-        regimeHistory: [...prev.regimeHistory, data].slice(-100),
-      }));
-    };
 
     // Coin selection → refresh scoring
     const handleCoinSelected = () => {
@@ -109,13 +90,11 @@ export function useMarketIntelligence(botState: BotState = 'idle') {
       }).catch(() => {});
     };
 
-    socket.on(SOCKET_EVENTS.REGIME_CHANGE, handleRegimeChange);
     socket.on(SOCKET_EVENTS.COIN_SELECTED, handleCoinSelected);
     socket.on(SOCKET_EVENTS.REGIME_SWITCH, handleRegimeSwitch);
 
     return () => {
       mountedRef.current = false;
-      socket.off(SOCKET_EVENTS.REGIME_CHANGE, handleRegimeChange);
       socket.off(SOCKET_EVENTS.COIN_SELECTED, handleCoinSelected);
       socket.off(SOCKET_EVENTS.REGIME_SWITCH, handleRegimeSwitch);
       releaseSocket();

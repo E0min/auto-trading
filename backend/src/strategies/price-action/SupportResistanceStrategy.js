@@ -527,6 +527,7 @@ class SupportResistanceStrategy extends StrategyBase {
     const signal = {
       action, symbol: this._symbol, category: this._category,
       suggestedQty: this.config.positionSizePercent, suggestedPrice: price,
+      reduceOnly: true,
       confidence: toFixed('0.9000', 4), reason,
       marketContext: { ...context, currentPrice: price, atr: this._latestAtr, srLevelCount: this._srLevels.length },
     };

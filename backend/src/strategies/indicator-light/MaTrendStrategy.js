@@ -39,7 +39,7 @@ class MaTrendStrategy extends StrategyBase {
     gracePeriodMs: 300000,
     warmupCandles: 60,
     volatilityPreference: 'neutral',
-    trailingStop: { enabled: true, activationPercent: '1.5', callbackPercent: '1.0' },
+    trailingStop: { enabled: false, activationPercent: '1.5', callbackPercent: '1.0' },
     description: '멀티타임프레임 EMA 추세추종 + 트레일링 스탑',
     defaultConfig: {
       h1FastEma: 9,

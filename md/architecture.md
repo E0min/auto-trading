@@ -42,6 +42,9 @@ module.exports = function createBotRoutes({ botService, riskEngine }) {
 
 // app.js에서 주입
 app.use('/api/bot', createBotRoutes({ botService, riskEngine }));
+app.use('/api/trades', createTradeRoutes({ traderService, positionManager, botService }));  // R12: botService 추가 (strategy merge)
+app.use('/api/health', createHealthRoutes({ healthCheck, exchangeClient }));  // R12: exchangeClient 추가 (WS status)
+app.use('/api/backtest', createBacktestRoutes({ dataFetcher, backtestStore, botService }));  // R12: botService 추가 (동시 실행 제한)
 app.use('/api/risk', createRiskRoutes({ riskEngine }));
 ```
 

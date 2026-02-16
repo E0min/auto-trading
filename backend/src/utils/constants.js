@@ -89,6 +89,7 @@ const TRADE_EVENTS = Object.freeze({
   POSITION_UPDATED: 'trade:position_updated',
   SIGNAL_GENERATED: 'trade:signal_generated',
   SIGNAL_SKIPPED: 'trade:signal_skipped',
+  FILL_RECONCILIATION_COMPLETE: 'trade:fill_reconciliation_complete',
 });
 
 const DEFAULT_RISK_PARAMS = Object.freeze({

@@ -65,7 +65,7 @@ class TurtleBreakoutStrategy extends StrategyBase {
     gracePeriodMs: 600000,
     warmupCandles: 51,
     volatilityPreference: 'high',
-    trailingStop: { enabled: true, activationPercent: '2.0', callbackPercent: '1.5' },
+    trailingStop: { enabled: false, activationPercent: '2.0', callbackPercent: '1.5' },
     description: '터틀 트레이딩 — Donchian 채널 돌파 + ATR 기반 2% 리스크 룰',
     defaultConfig: {
       entryChannel: 20,       // Donchian entry channel period (N-bar high/low)
@@ -494,6 +494,7 @@ class TurtleBreakoutStrategy extends StrategyBase {
       category: this._category,
       suggestedQty: this.config.positionSizePercent,
       suggestedPrice: price,
+      reduceOnly: true,
       confidence: toFixed('0.9000', 4),
       reason,
       marketContext: {

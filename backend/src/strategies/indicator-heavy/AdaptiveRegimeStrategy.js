@@ -46,7 +46,7 @@ class AdaptiveRegimeStrategy extends StrategyBase {
     gracePeriodMs: 0,
     warmupCandles: 43,
     volatilityPreference: 'high',
-    trailingStop: { enabled: true, activationPercent: '1.5', callbackPercent: '1.0' },
+    trailingStop: { enabled: false, activationPercent: '1.5', callbackPercent: '1.0' },
     description: '장세 적응형 멀티전략 — 시장 국면에 따라 자동으로 매매 모드 전환',
     defaultConfig: {
       emaPeriodFast: 9,

@@ -14,6 +14,7 @@ const { createLogger } = require('../utils/logger');
 const { MARKET_EVENTS, MARKET_REGIMES, CATEGORIES } = require('../utils/constants');
 const MarketDataCache = require('../utils/marketDataCache');
 const {
+  add,
   subtract,
   divide,
   multiply,
@@ -148,7 +149,7 @@ class CoinSelector extends EventEmitter {
    * @param {import('./tickerAggregator')} deps.tickerAggregator
    * @param {import('./marketRegime')}     deps.marketRegime
    */
-  constructor({ exchangeClient, tickerAggregator, marketRegime }) {
+  constructor({ exchangeClient, tickerAggregator, marketRegime, maxEffectiveCost = '0.15' }) {
     super();
 
     if (!exchangeClient) {
@@ -171,12 +172,16 @@ class CoinSelector extends EventEmitter {
     this._cache = new MarketDataCache();
     /** @type {Object} mutable selection criteria */
     this._config = { ...DEFAULT_CONFIG };
+    /** @private — max effective cost threshold in % (P12-9) */
+    this._maxEffectiveCost = String(maxEffectiveCost);
     /** @private — last scoring details for diagnostics */
     this._lastScoringDetails = null;
     /** @private — last active weight profile */
     this._lastWeightProfile = null;
     /** @private — previous vol24h per symbol for volume momentum (R11-T8) */
     this._prevVol24h = new Map();
+    /** @private — re-entrancy guard for selectCoins() */
+    this._selecting = false;
   }
 
   // =========================================================================
@@ -199,6 +204,20 @@ class CoinSelector extends EventEmitter {
    * @returns {Promise<Object[]>}
    */
   async selectCoins(category = CATEGORIES.USDT_FUTURES) {
+    if (this._selecting) {
+      log.warn('selectCoins — already running, skipping re-entrant call');
+      return [];
+    }
+    this._selecting = true;
+    try {
+      return await this._selectCoinsInner(category);
+    } finally {
+      this._selecting = false;
+    }
+  }
+
+  /** @private — inner implementation of selectCoins */
+  async _selectCoinsInner(category) {
     // ---- Collect tickers ----
     let tickers = this._aggregator.getAllTickers();
 
@@ -278,6 +297,28 @@ class CoinSelector extends EventEmitter {
 
     if (candidates.length === 0) {
       log.info('No candidates passed pre-filter');
+      return [];
+    }
+
+    // ---- Step 1b: Effective cost filter (P12-9) ----
+    const TAKER_COMMISSION = '0.06';
+    const preFilterCount = candidates.length;
+    for (let i = candidates.length - 1; i >= 0; i--) {
+      const effectiveCost = add(candidates[i].spread, TAKER_COMMISSION);
+      if (isGreaterThan(effectiveCost, this._maxEffectiveCost)) {
+        candidates.splice(i, 1);
+      }
+    }
+    if (candidates.length < preFilterCount) {
+      log.info('Effective cost filter applied', {
+        removed: preFilterCount - candidates.length,
+        remaining: candidates.length,
+        threshold: this._maxEffectiveCost,
+      });
+    }
+
+    if (candidates.length === 0) {
+      log.info('No candidates passed effective cost filter');
       return [];
     }
 
@@ -398,8 +439,15 @@ class CoinSelector extends EventEmitter {
     const selectedSymbols = selected.map((s) => s.symbol);
 
     // R11-T8: Update _prevVol24h for next polling cycle's volume momentum
+    const candidateSymbols = new Set(candidates.map((c) => c.symbol));
     for (const c of candidates) {
       this._prevVol24h.set(c.symbol, c.vol24h);
+    }
+    // E12-16: Remove stale entries not in current candidates
+    for (const key of this._prevVol24h.keys()) {
+      if (!candidateSymbols.has(key)) {
+        this._prevVol24h.delete(key);
+      }
     }
 
     // Store diagnostics

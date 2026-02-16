@@ -45,17 +45,26 @@ function resolveMinLevel() {
  * @param {object} [defaultContext] — key/value pairs merged into every log entry
  * @returns {{ debug, info, trade, warn, error }}
  */
+const MAX_CONTEXT_SIZE = 2000;
+
 function createLogger(prefix, defaultContext = {}) {
   const minLevel = resolveMinLevel();
 
-  /**
-   * Core write function. Builds a JSON payload and writes it to the
-   * appropriate stream (stderr for WARN/ERROR, stdout otherwise).
-   */
+  function truncateContext(meta) {
+    if (!meta || typeof meta !== 'object') return meta;
+
+    const serialized = JSON.stringify(meta);
+    if (serialized.length <= MAX_CONTEXT_SIZE) return meta;
+
+    const truncated = serialized.slice(0, MAX_CONTEXT_SIZE) + '...[truncated]';
+    return { _truncated: truncated };
+  }
+
   function write(level, message, meta) {
     if (level < minLevel) return;
 
     const traceId = getTraceId();
+    const safeMeta = truncateContext(meta);
 
     const entry = {
       timestamp: new Date().toISOString(),
@@ -64,7 +73,7 @@ function createLogger(prefix, defaultContext = {}) {
       message,
       ...(traceId ? { traceId } : {}),
       ...defaultContext,
-      ...meta,
+      ...safeMeta,
     };
 
     const line = JSON.stringify(entry);

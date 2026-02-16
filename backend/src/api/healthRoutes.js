@@ -13,15 +13,21 @@ const log = createLogger('HealthRoutes');
 /**
  * @param {object} deps
  * @param {import('../services/healthCheck')} deps.healthCheck
+ * @param {import('../services/exchangeClient')} [deps.exchangeClient]
  * @returns {import('express').Router}
  */
-module.exports = function createHealthRoutes({ healthCheck }) {
+module.exports = function createHealthRoutes({ healthCheck, exchangeClient }) {
   const router = require('express').Router();
 
   // GET /api/health — full health check
   router.get('/', async (req, res) => {
     try {
       const report = await healthCheck.check();
+
+      // Append WebSocket status if exchangeClient is available (E12-12)
+      if (exchangeClient && typeof exchangeClient.getWsStatus === 'function') {
+        report.ws = exchangeClient.getWsStatus();
+      }
 
       // Set HTTP status based on overall health
       const statusCode = report.status === 'unhealthy' ? 503 : 200;

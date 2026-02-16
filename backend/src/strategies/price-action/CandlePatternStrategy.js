@@ -730,6 +730,7 @@ class CandlePatternStrategy extends StrategyBase {
       category: this._category,
       suggestedQty: this.config.positionSizePercent,
       suggestedPrice: price,
+      reduceOnly: true,
       confidence: toFixed('0.9000', 4),
       reason,
       marketContext: {

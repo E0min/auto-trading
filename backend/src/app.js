@@ -318,10 +318,10 @@ async function bootstrap() {
 
   // 6. Mount routes
   app.use('/api/bot', createBotRoutes({ botService, riskEngine }));
-  app.use('/api/trades', createTradeRoutes({ traderService, positionManager: activePositionManager }));
+  app.use('/api/trades', createTradeRoutes({ traderService, positionManager: activePositionManager, botService }));
   app.use('/api/analytics', createAnalyticsRoutes({ trackerService }));
-  app.use('/api/health', createHealthRoutes({ healthCheck }));
-  app.use('/api/backtest', createBacktestRoutes({ dataFetcher, backtestStore }));
+  app.use('/api/health', createHealthRoutes({ healthCheck, exchangeClient }));
+  app.use('/api/backtest', createBacktestRoutes({ dataFetcher, backtestStore, botService }));
 
   app.use('/api/regime', createRegimeRoutes({ marketRegime, regimeParamStore, regimeOptimizer, regimeEvaluator, coinSelector, strategyRouter }));
   app.use('/api/risk', createRiskRoutes({ riskEngine }));

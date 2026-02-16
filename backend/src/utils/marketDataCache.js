@@ -9,10 +9,30 @@
 
 const DEFAULT_TTL_MS = 60_000; // 60 seconds
 
+/** Interval for periodic sweep of expired entries (ms) */
+const SWEEP_INTERVAL_MS = 60_000;
+
 class MarketDataCache {
   constructor() {
     /** @type {Map<string, { data: *, expiresAt: number }>} */
     this._store = new Map();
+
+    /** @type {NodeJS.Timeout|null} periodic sweep timer */
+    this._sweepTimer = setInterval(() => this._sweep(), SWEEP_INTERVAL_MS);
+    if (this._sweepTimer.unref) this._sweepTimer.unref();
+  }
+
+  /**
+   * Remove all expired entries from the store.
+   * @private
+   */
+  _sweep() {
+    const now = Date.now();
+    for (const [key, entry] of this._store) {
+      if (now > entry.expiresAt) {
+        this._store.delete(key);
+      }
+    }
   }
 
   /**
@@ -55,6 +75,18 @@ class MarketDataCache {
    * Remove all entries from the cache.
    */
   clear() {
+    this._store.clear();
+  }
+
+  /**
+   * Stop the sweep timer and clear all entries.
+   * Call when shutting down the cache.
+   */
+  destroy() {
+    if (this._sweepTimer) {
+      clearInterval(this._sweepTimer);
+      this._sweepTimer = null;
+    }
     this._store.clear();
   }
 
