@@ -64,13 +64,13 @@ export function useMarketIntelligence(botState: BotState = 'idle') {
 
   useAdaptivePolling(fetchAll, 'marketIntel', botState);
 
-  // Socket.io real-time listeners
+  // Socket.io real-time listeners (R8-T1-10: named handler pattern)
   useEffect(() => {
     mountedRef.current = true;
     const socket = acquireSocket();
 
     // Regime change → prepend to history
-    socket.on(SOCKET_EVENTS.REGIME_CHANGE, (data: RegimeHistoryEntry) => {
+    const handleRegimeChange = (data: RegimeHistoryEntry) => {
       if (!mountedRef.current) return;
       setState((prev) => ({
         ...prev,
@@ -87,33 +87,37 @@ export function useMarketIntelligence(botState: BotState = 'idle') {
         } as RegimeContext,
         regimeHistory: [...prev.regimeHistory, data].slice(-100),
       }));
-    });
+    };
 
     // Coin selection → refresh scoring
-    socket.on(SOCKET_EVENTS.COIN_SELECTED, () => {
+    const handleCoinSelected = () => {
       if (!mountedRef.current) return;
       regimeApi.getCoinScoring().then((data) => {
         if (mountedRef.current) {
           setState((prev) => ({ ...prev, coinScoring: data }));
         }
       }).catch(() => {});
-    });
+    };
 
     // Strategy router regime switch → refresh routing
-    socket.on(SOCKET_EVENTS.REGIME_SWITCH, () => {
+    const handleRegimeSwitch = () => {
       if (!mountedRef.current) return;
       regimeApi.getStrategyRouting().then((data) => {
         if (mountedRef.current) {
           setState((prev) => ({ ...prev, strategyRouting: data }));
         }
       }).catch(() => {});
-    });
+    };
+
+    socket.on(SOCKET_EVENTS.REGIME_CHANGE, handleRegimeChange);
+    socket.on(SOCKET_EVENTS.COIN_SELECTED, handleCoinSelected);
+    socket.on(SOCKET_EVENTS.REGIME_SWITCH, handleRegimeSwitch);
 
     return () => {
       mountedRef.current = false;
-      socket.off(SOCKET_EVENTS.REGIME_CHANGE);
-      socket.off(SOCKET_EVENTS.COIN_SELECTED);
-      socket.off(SOCKET_EVENTS.REGIME_SWITCH);
+      socket.off(SOCKET_EVENTS.REGIME_CHANGE, handleRegimeChange);
+      socket.off(SOCKET_EVENTS.COIN_SELECTED, handleCoinSelected);
+      socket.off(SOCKET_EVENTS.REGIME_SWITCH, handleRegimeSwitch);
       releaseSocket();
     };
   }, []);

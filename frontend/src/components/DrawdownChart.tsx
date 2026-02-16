@@ -51,6 +51,7 @@ export default function DrawdownChart({ equityPoints, maxDrawdownPercent = 10 }:
         </div>
         <button
           onClick={() => setCollapsed(!collapsed)}
+          aria-expanded={!collapsed}
           className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
         >
           {collapsed ? '펼치기' : '접기'}

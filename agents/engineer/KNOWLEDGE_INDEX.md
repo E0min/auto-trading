@@ -28,6 +28,9 @@
 | `proposals/round_7.md` | 레짐 전환 안정화 설계: timestamp 쿨다운, Map+setTimeout+unref 유예기간, 6개 레이스컨디션 방어 | Round 7 | active |
 | `proposals/round_7_review.md` | Round 7 교차 리뷰: hysteresis 8 제안(삼중 보호 감안), 쿨다운 pending 축적 확인, 동적 가중치 보류 | Round 7 | active |
 | `../shared/decisions/round_7.md` | Round 7 합의 결정문서 (17건, AD-40~AD-45) — 삼중 보호 체계, 유예기간 — **구현 완료** | Round 7 | active |
+| `proposals/round_8.md` | 코드베이스 재분석: 16개 발견 (CRITICAL 2/HIGH 6/MEDIUM 8) — Router singleton, timer unref, parseFloat 제거, BacktestStore 제한 | Round 8 | active |
+| `proposals/round_8_review.md` | Round 8 교차 리뷰 (Trader+UI 제안 검토) — decimal.js deferred, 멀티심볼 Phase 1만, 모바일 MEDIUM | Round 8 | active |
+| `../shared/decisions/round_8.md` | Round 8 합의 결정문서 (46건, AD-46~AD-52) — reduceOnly bypass, Snapshot 주기 생성, express limit — **25/27 구현 완료** | Round 8 | active |
 
 ## Round 1 Key Findings Summary
 - **C-1**: unhandledRejection/uncaughtException 핸들러 누락 — 프로세스 즉시 종료 위험
@@ -54,11 +57,20 @@
 - **6개 레이스컨디션 방어**: grace Map 조작의 원자성 보장 (has→get→set 패턴, 중복 타이머 방지, 레짐 복귀 시 즉시 취소)
 - **AD-40 삼중 보호**: Hysteresis(10캔들) + Cooldown(5분) + Grace Period(5~15분) — 3개 독립 레이어로 노이즈 내성 확보
 
+## Round 8 Key Findings Summary
+- **Router Singleton 패턴 정비**: 8개 라우트 파일에서 `Router()` 호출이 팩토리 함수 외부에 위치 — 테스트/재사용 불가. 팩토리 내부로 이동
+- **Timer unref() 전면 적용**: OrphanOrderCleanup, TickerAggregator, PositionManager의 setInterval 타이머가 프로세스 종료 차단. `.unref()` 일괄 추가
+- **parseFloat 직접 사용 제거**: tradeRoutes, tournamentRoutes, tickerAggregator에서 parseFloat → mathUtils 함수로 교체. 정밀도 일관성 확보
+- **BacktestStore 무제한 성장**: FIFO 50제한 추가 — 메모리 O.O.M 방지
+- **_lastTickerEmit Map cleanup**: 10분 stale 기준 5분 주기 정리 — 장기 운영 시 Map 누수 방지
+- **TournamentRoutes 캡슐화**: `_initialBalance`, `_accounts.get()` 직접 접근 → 공개 메서드(`setInitialBalance()`, `getStrategyPositions()`) 사용
+
 ## Accumulated Insights
-- **에러 핸들링 진화**: R1 unhandledRejection 핸들러 누락 → R2 crashHandler 추가 → R3 graceful shutdown 순서 정비 → R6 getAccountInfo 크래시 수정. 현재 상태: 프로세스 안정성 확보, 미처리 예외 없음
-- **리소스 관리 패턴**: R1 CircuitBreaker rapidLosses 무한 성장 → R4 window 기반 정리 → R7 setTimeout+unref() 패턴 도입. 현재 상태: 타이머/배열 누수 방지 패턴 확립
-- **DI 패턴 안정화**: R1 DI 체계 구축 → R2 orderManager/positionManager 분리 → R4 equity DI 개선 → R6 서비스 간 참조 정리. 현재 상태: app.js bootstrap 순서 안정, 순환 참조 없음
+- **에러 핸들링 진화**: R1 unhandledRejection 핸들러 누락 → R2 crashHandler 추가 → R3 graceful shutdown 순서 정비 → R6 getAccountInfo 크래시 수정 → R8 getStatus()/getSignal() try-catch 추가. 현재 상태: 프로세스 안정성 확보, 미처리 예외 없음
+- **리소스 관리 패턴**: R1 CircuitBreaker rapidLosses 무한 성장 → R4 window 기반 정리 → R7 setTimeout+unref() 패턴 도입 → R8 전 타이머 unref() 적용 + _lastTickerEmit 5분 주기 정리 + BacktestStore FIFO 50제한. 현재 상태: 타이머/Map/배열 누수 방지 패턴 확립, 무제한 성장 경로 제거
+- **DI 패턴 안정화**: R1 DI 체계 구축 → R2 orderManager/positionManager 분리 → R4 equity DI 개선 → R6 서비스 간 참조 정리 → R8 Router singleton 팩토리 내부 이동. 현재 상태: app.js bootstrap 순서 안정, 라우트 팩토리 일관성 확보
 - **동시성 제어**: R1 orderManager 동시성 미제어 → R2 mutex 도입 → R7 grace Map 원자적 조작. 현재 상태: 핵심 경로에 동시성 보호 적용 완료
+- **캡슐화 준수**: R8 TournamentRoutes에서 paperAccountManager 내부 필드 직접 접근 제거 → 공개 API 메서드 패턴으로 전환. 현재 상태: 서비스 경계 깨끗
 
 ## Knowledge Management Rules
 1. 새 정보를 받으면 이 인덱스의 기존 항목과 비교

@@ -93,7 +93,24 @@ class RiskEngine extends EventEmitter {
    * @returns {{ approved: boolean, adjustedQty?: string, rejectReason?: string }}
    */
   validateOrder(order) {
-    // ---- Step 0: Equity guard (T0-6 defense-in-depth) ----
+    // ---- Step 0a: reduceOnly bypass (AD-46) ----
+    // Close/SL/TP orders must NEVER be blocked by risk checks.
+    // Blocking a close order would increase risk, not reduce it.
+    if (order.reduceOnly) {
+      log.info('reduceOnly order bypass risk checks', {
+        symbol: order.symbol,
+        side: order.side,
+        qty: order.qty,
+      });
+      this.emit(RISK_EVENTS.ORDER_VALIDATED, {
+        order,
+        adjustedQty: null,
+        bypass: 'reduceOnly',
+      });
+      return { approved: true, reason: 'reduceOnly_bypass' };
+    }
+
+    // ---- Step 0b: Equity guard (T0-6 defense-in-depth) ----
     if (!this.accountState.equity || this.accountState.equity === '0') {
       const result = { approved: false, rejectReason: 'equity_not_initialized' };
       log.warn('Order REJECTED — equity not initialised', { symbol: order.symbol });

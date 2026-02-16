@@ -21,7 +21,11 @@ const {
 } = require('../utils/constants');
 const math = require('../utils/mathUtils');
 const BotSession = require('../models/BotSession');
+const Snapshot = require('../models/Snapshot');
 const registry = require('../strategies');
+
+/** Snapshot generation interval (ms) — AD-52 */
+const SNAPSHOT_INTERVAL_MS = 60_000;
 
 const log = createLogger('BotService');
 
@@ -128,6 +132,9 @@ class BotService extends EventEmitter {
 
     /** @type {Function[]} Listener cleanup references */
     this._eventCleanups = [];
+
+    /** @type {NodeJS.Timeout|null} Snapshot generation timer (AD-52, R8-T1-2) */
+    this._snapshotInterval = null;
 
     log.info('BotService initialised', { paperMode: this.paperMode });
   }
@@ -383,6 +390,17 @@ class BotService extends EventEmitter {
         updateFilterCounts();
       }
 
+      // 11e. Wire up: ORDER_FILLED -> BotSession stats update (R8-T1-3)
+      const onOrderFilledStats = (data) => {
+        this._updateSessionStats(data).catch((err) => {
+          log.error('BotSession stats update failed', { error: err.message });
+        });
+      };
+      this.orderManager.on(TRADE_EVENTS.ORDER_FILLED, onOrderFilledStats);
+      this._eventCleanups.push(() => {
+        this.orderManager.removeListener(TRADE_EVENTS.ORDER_FILLED, onOrderFilledStats);
+      });
+
       // 12. Wire up: strategy SIGNAL_GENERATED -> _handleStrategySignal (T0-2 qty resolution + filter + submit)
       for (const strategy of this.strategies) {
         const onSignal = (signal) => {
@@ -433,6 +451,9 @@ class BotService extends EventEmitter {
       // 15. Set _running = true
       this._running = true;
 
+      // 16. Start periodic Snapshot generation (AD-52, R8-T1-2)
+      this._startSnapshotGeneration(sessionId);
+
       log.info('start — bot started successfully', {
         sessionId,
         strategies: strategyNames,
@@ -473,6 +494,9 @@ class BotService extends EventEmitter {
 
     // 1. Set _running = false
     this._running = false;
+
+    // 1b. Stop snapshot generation (R8-T1-2)
+    this._stopSnapshotGeneration();
 
     // 2. Deactivate all strategies
     for (const strategy of this.strategies) {
@@ -682,13 +706,33 @@ class BotService extends EventEmitter {
 
     const category = this.currentSession.config?.category || CATEGORIES.USDT_FUTURES;
 
-    // Reactivate strategies on selected symbols
-    for (const strategy of this.strategies) {
-      for (const symbol of this._selectedSymbols) {
-        try {
-          strategy.activate(symbol, category);
-        } catch (err) {
-          log.error('resume — error activating strategy', { strategy: strategy.name, error: err });
+    // R8-T0-6: Use StrategyRouter to resume with regime-aware activation
+    if (this.strategyRouter) {
+      try {
+        this.strategyRouter.refresh();
+        log.info('resume — StrategyRouter regime-aware refresh completed');
+      } catch (err) {
+        log.error('resume — StrategyRouter refresh failed, falling back to direct activation', { error: err });
+        // Fallback: activate all strategies on all symbols
+        for (const strategy of this.strategies) {
+          for (const symbol of this._selectedSymbols) {
+            try {
+              strategy.activate(symbol, category);
+            } catch (e) {
+              log.error('resume — error activating strategy', { strategy: strategy.name, error: e });
+            }
+          }
+        }
+      }
+    } else {
+      // No StrategyRouter — direct activation (legacy path)
+      for (const strategy of this.strategies) {
+        for (const symbol of this._selectedSymbols) {
+          try {
+            strategy.activate(symbol, category);
+          } catch (err) {
+            log.error('resume — error activating strategy', { strategy: strategy.name, error: err });
+          }
         }
       }
     }
@@ -787,7 +831,7 @@ class BotService extends EventEmitter {
         active: s.isActive(),
         symbol: s._symbol,
         config: s.getConfig(),
-        lastSignal: s.getSignal(),
+        lastSignal: (() => { try { return s.getSignal(); } catch { return null; } })(),
         targetRegimes: s.getTargetRegimes(),
       })),
       symbols: this._selectedSymbols,
@@ -1178,6 +1222,150 @@ class BotService extends EventEmitter {
     if (math.isZero(qty)) return null;
 
     return qty;
+  }
+
+  // =========================================================================
+  // BotSession stats update (R8-T1-3)
+  // =========================================================================
+
+  /**
+   * Update BotSession stats when a trade is filled.
+   * Increments totalTrades, wins/losses, totalPnl, and tracks peak equity / drawdown.
+   *
+   * @param {object} data — ORDER_FILLED event data { trade, pnl }
+   * @private
+   */
+  async _updateSessionStats(data) {
+    if (!this.currentSession) return;
+
+    const session = this.currentSession;
+    if (!session.stats) session.stats = {};
+
+    // Increment trade count
+    session.stats.totalTrades = (session.stats.totalTrades || 0) + 1;
+
+    // Update PnL stats if available
+    const pnl = data.pnl;
+    if (pnl !== null && pnl !== undefined) {
+      const pnlStr = String(pnl);
+      session.stats.totalPnl = math.add(session.stats.totalPnl || '0', pnlStr);
+
+      if (math.isGreaterThan(pnlStr, '0')) {
+        session.stats.wins = (session.stats.wins || 0) + 1;
+      } else if (math.isLessThan(pnlStr, '0')) {
+        session.stats.losses = (session.stats.losses || 0) + 1;
+      }
+    }
+
+    // Update peak equity and drawdown
+    let currentEquity;
+    if (this.paperMode && this.paperPositionManager) {
+      currentEquity = String(this.paperPositionManager.getEquity());
+    } else {
+      currentEquity = this.positionManager.getAccountState().equity || '0';
+    }
+
+    if (!math.isZero(currentEquity)) {
+      const peakEquity = session.stats.peakEquity || '0';
+      if (math.isGreaterThan(currentEquity, peakEquity)) {
+        session.stats.peakEquity = currentEquity;
+      }
+
+      if (!math.isZero(session.stats.peakEquity)) {
+        const drawdown = math.subtract(session.stats.peakEquity, currentEquity);
+        const currentMaxDD = session.stats.maxDrawdown || '0';
+        if (math.isGreaterThan(drawdown, currentMaxDD)) {
+          session.stats.maxDrawdown = drawdown;
+        }
+      }
+    }
+
+    // Persist (mark modified to ensure Mongoose detects subdocument changes)
+    session.markModified('stats');
+    await session.save();
+  }
+
+  // =========================================================================
+  // Snapshot generation (AD-52, R8-T1-2)
+  // =========================================================================
+
+  /**
+   * Start periodic Snapshot generation at SNAPSHOT_INTERVAL_MS.
+   * @param {string} sessionId
+   * @private
+   */
+  _startSnapshotGeneration(sessionId) {
+    this._stopSnapshotGeneration(); // Clear any existing timer
+
+    this._snapshotInterval = setInterval(async () => {
+      try {
+        await this._generateSnapshot(sessionId);
+      } catch (err) {
+        log.error('Snapshot generation failed', { error: err.message });
+      }
+    }, SNAPSHOT_INTERVAL_MS);
+    if (this._snapshotInterval.unref) this._snapshotInterval.unref();
+
+    log.info('Snapshot generation started', { intervalMs: SNAPSHOT_INTERVAL_MS, sessionId });
+  }
+
+  /**
+   * Stop the periodic Snapshot timer.
+   * @private
+   */
+  _stopSnapshotGeneration() {
+    if (this._snapshotInterval) {
+      clearInterval(this._snapshotInterval);
+      this._snapshotInterval = null;
+    }
+  }
+
+  /**
+   * Generate a single Snapshot — captures current equity, balance,
+   * unrealizedPnl, and position state.
+   * @param {string} sessionId
+   * @private
+   */
+  async _generateSnapshot(sessionId) {
+    let equity, availableBalance, unrealizedPnl, positions;
+
+    if (this.paperMode && this.paperPositionManager) {
+      const state = this.paperPositionManager.getAccountState();
+      equity = state.equity || '0';
+      availableBalance = state.availableBalance || '0';
+      unrealizedPnl = state.unrealizedPnl || '0';
+      positions = this.paperPositionManager.getPositions();
+    } else {
+      const state = this.positionManager.getAccountState();
+      equity = state.equity || '0';
+      availableBalance = state.availableBalance || '0';
+      unrealizedPnl = state.unrealizedPnl || '0';
+      positions = this.positionManager.getPositions();
+    }
+
+    // Skip if equity is still zero (not yet synced)
+    if (math.isZero(equity)) {
+      log.debug('Snapshot skipped — equity is zero');
+      return;
+    }
+
+    await Snapshot.create({
+      sessionId,
+      equity,
+      availableBalance,
+      unrealizedPnl,
+      positions: positions.map((p) => ({
+        symbol: p.symbol,
+        posSide: p.posSide,
+        qty: p.qty,
+        entryPrice: p.entryPrice,
+        markPrice: p.markPrice,
+        unrealizedPnl: p.unrealizedPnl,
+        leverage: p.leverage,
+      })),
+    });
+
+    log.debug('Snapshot generated', { sessionId, equity, positionCount: positions.length });
   }
 
   /**

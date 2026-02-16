@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { tournamentApi } from '@/lib/api-client';
-import type { TournamentInfo, LeaderboardEntry, StrategyDetail } from '@/types';
+import { useAdaptivePolling } from '@/hooks/useAdaptivePolling';
+import type { TournamentInfo, LeaderboardEntry, StrategyDetail, BotState } from '@/types';
 
-export function useTournament(pollInterval = 3000) {
+export function useTournament(botState: BotState = 'running') {
   const [info, setInfo] = useState<TournamentInfo | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -17,17 +18,14 @@ export function useTournament(pollInterval = 3000) {
       setLeaderboard(data.leaderboard);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch leaderboard');
+      setError(err instanceof Error ? err.message : '리더보드 조회 실패');
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    fetchLeaderboard();
-    const id = setInterval(fetchLeaderboard, pollInterval);
-    return () => clearInterval(id);
-  }, [fetchLeaderboard, pollInterval]);
+  // R8-T1-12: Use adaptive polling instead of fixed 3s interval
+  useAdaptivePolling(fetchLeaderboard, 'positions', botState);
 
   const startTournament = useCallback(async (strategies?: string[], initialBalance?: string) => {
     try {
@@ -35,7 +33,7 @@ export function useTournament(pollInterval = 3000) {
       setInfo(result);
       return result;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start tournament');
+      setError(err instanceof Error ? err.message : '토너먼트 시작 실패');
       throw err;
     }
   }, []);
@@ -46,7 +44,7 @@ export function useTournament(pollInterval = 3000) {
       setInfo(result);
       return result;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to stop tournament');
+      setError(err instanceof Error ? err.message : '토너먼트 정지 실패');
       throw err;
     }
   }, []);
@@ -56,7 +54,7 @@ export function useTournament(pollInterval = 3000) {
       await tournamentApi.reset({ initialBalance, clearTrades });
       await fetchLeaderboard();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to reset tournament');
+      setError(err instanceof Error ? err.message : '토너먼트 리셋 실패');
       throw err;
     }
   }, [fetchLeaderboard]);

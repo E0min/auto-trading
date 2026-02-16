@@ -127,6 +127,7 @@ class PositionManager extends EventEmitter {
         log.error('reconciliation — sync failed', { error: err });
       }
     }, RECONCILIATION_INTERVAL_MS);
+    if (this._reconciliationInterval.unref) this._reconciliationInterval.unref();
 
     // Daily reset check
     this._dailyResetInterval = setInterval(() => {
@@ -136,6 +137,7 @@ class PositionManager extends EventEmitter {
         log.error('dailyResetCheck — failed', { error: err });
       }
     }, DAILY_RESET_CHECK_INTERVAL_MS);
+    if (this._dailyResetInterval.unref) this._dailyResetInterval.unref();
 
     log.info('start — PositionManager running', {
       category,

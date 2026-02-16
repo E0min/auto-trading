@@ -2,15 +2,15 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { analyticsApi } from '@/lib/api-client';
+import { useAdaptivePolling } from '@/hooks/useAdaptivePolling';
 import type {
   StrategyPerformanceEntry,
   SymbolPerformanceEntry,
   DailyPerformanceEntry,
+  BotState,
 } from '@/types';
 
-const POLLING_INTERVAL = 30_000; // 30 seconds
-
-export function usePerformanceAnalytics(sessionId: string | null) {
+export function usePerformanceAnalytics(sessionId: string | null, botState: BotState = 'idle') {
   const [byStrategy, setByStrategy] = useState<Record<string, StrategyPerformanceEntry> | null>(null);
   const [bySymbol, setBySymbol] = useState<Record<string, SymbolPerformanceEntry> | null>(null);
   const [daily, setDaily] = useState<DailyPerformanceEntry[] | null>(null);
@@ -48,27 +48,17 @@ export function usePerformanceAnalytics(sessionId: string | null) {
     }
   }, []);
 
-  // Initial fetch when sessionId changes
+  // Clear data when sessionId changes to null
   useEffect(() => {
-    if (sessionId) {
-      fetchData();
-    } else {
+    if (!sessionId) {
       setByStrategy(null);
       setBySymbol(null);
       setDaily(null);
     }
-  }, [sessionId, fetchData]);
+  }, [sessionId]);
 
-  // Polling when sessionId is available
-  useEffect(() => {
-    if (!sessionId) return;
-
-    const intervalId = setInterval(() => {
-      fetchData();
-    }, POLLING_INTERVAL);
-
-    return () => clearInterval(intervalId);
-  }, [sessionId, fetchData]);
+  // R8-T1-11: Use adaptive polling instead of fixed interval
+  useAdaptivePolling(fetchData, 'trades', botState);
 
   return { byStrategy, bySymbol, daily, loading, error, refetch: fetchData };
 }

@@ -6,8 +6,8 @@
  * Factory function receives service dependencies and returns an Express router.
  */
 
-const router = require('express').Router();
 const { createLogger } = require('../utils/logger');
+const { add, isGreaterThan, isLessThan, toFixed } = require('../utils/mathUtils');
 const Signal = require('../models/Signal');
 
 const log = createLogger('TradeRoutes');
@@ -19,6 +19,7 @@ const log = createLogger('TradeRoutes');
  * @returns {import('express').Router}
  */
 module.exports = function createTradeRoutes({ traderService, positionManager }) {
+  const router = require('express').Router();
 
   // GET /api/trades — get trade history
   router.get('/', async (req, res) => {
@@ -145,16 +146,14 @@ module.exports = function createTradeRoutes({ traderService, positionManager }) 
 
       let wins = 0;
       let losses = 0;
-      let totalPnl = 0;
+      let totalPnl = '0';
 
       for (const t of trades) {
         if (t.pnl) {
-          const pnl = parseFloat(t.pnl);
-          if (!isNaN(pnl)) {
-            totalPnl += pnl;
-            if (pnl > 0) wins++;
-            else if (pnl < 0) losses++;
-          }
+          const pnlStr = String(t.pnl);
+          totalPnl = add(totalPnl, pnlStr);
+          if (isGreaterThan(pnlStr, '0')) wins++;
+          else if (isLessThan(pnlStr, '0')) losses++;
         }
       }
 
@@ -179,7 +178,7 @@ module.exports = function createTradeRoutes({ traderService, positionManager }) 
           wins,
           losses,
           winRate,
-          totalPnl: totalPnl.toFixed(4),
+          totalPnl: toFixed(totalPnl, 4),
           recentTrades: trades.slice(0, 5),
           recentSignals,
         },

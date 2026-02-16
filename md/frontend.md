@@ -110,16 +110,16 @@
 | 훅 | 파일 | 폴링 간격 | 용도 |
 |----|------|----------|------|
 | `useBotStatus` | `hooks/useBotStatus.ts` | 적응형 (5~60초) | 봇 상태, 전략, 리스크 메트릭 |
-| `useSocket` | `hooks/useSocket.ts` | 이벤트 기반 | 실시간 시그널, 레짐, circuit_reset, exposure_adjusted, unhandled_error, drawdown_reset (ticker는 useRef) |
+| `useSocket` | `hooks/useSocket.ts` | 이벤트 기반 | 실시간 시그널, 레짐, circuit_reset, exposure_adjusted, unhandled_error, drawdown_reset (ticker는 useRef). Sprint R8: 6개 독립 useState로 분리 |
 | `usePositions` | `hooks/usePositions.ts` | 적응형 (3~60초) | 오픈 포지션 + 계정 상태 |
 | `useTrades` | `hooks/useTrades.ts` | 적응형 (10~60초) | 거래 내역 + 미체결 주문 |
-| `useAnalytics` | `hooks/useAnalytics.ts` | 1회 | 자산 곡선 + 세션 통계 |
+| `useAnalytics` | `hooks/useAnalytics.ts` | 적응형 (Sprint R8) | 자산 곡선 + 세션 통계 |
 | `useHealthCheck` | `hooks/useHealthCheck.ts` | 적응형 (30~120초) | API 지연, 서비스 상태 |
 | `useAdaptivePolling` | `hooks/useAdaptivePolling.ts` | 봇 상태별 동적 | 적응형 폴링 코어 (Sprint R4) |
 | `useBacktest` | `hooks/useBacktest.ts` | 1초 (실행 중) | 백테스트 CRUD + 결과 폴링 |
-| `useTournament` | `hooks/useTournament.ts` | 3초 | 토너먼트 정보 + 순위표 |
+| `useTournament` | `hooks/useTournament.ts` | 적응형 (Sprint R8) | 토너먼트 정보 + 순위표 |
 | `useRiskEvents` | `hooks/useRiskEvents.ts` | 이벤트 기반 | 리스크 이벤트 조회/확인 처리 |
-| `usePerformanceAnalytics` | `hooks/usePerformanceAnalytics.ts` | 30초 (Sprint R5) | 전략별/심볼별/일별 성과 데이터 |
+| `usePerformanceAnalytics` | `hooks/usePerformanceAnalytics.ts` | 적응형 (Sprint R8) | 전략별/심볼별/일별 성과 데이터 |
 
 ### 훅 사용 패턴
 
@@ -158,6 +158,7 @@ getSocket()      // 현재 소켓 인스턴스 조회 (없으면 null)
 | `Badge` | 상태/라벨 배지 (success, danger, neutral 등) |
 | `Spinner` | 로딩 표시기 (sm, md, lg) |
 | `ConfirmDialog` | 확인 모달 (Sprint R3: PositionsTable 청산 확인에도 사용) |
+| `ErrorToast` | Severity 기반 에러 토스트 (Sprint R8, AD-47): critical=persistent, warning=10초, info=5초. `useToasts()` 훅 제공 |
 
 ### Error Boundary (Sprint R3)
 
@@ -174,7 +175,7 @@ getSocket()      // 현재 소켓 인스턴스 조회 (없으면 null)
 
 | 컴포넌트 | 설명 |
 |----------|------|
-| `BotControlPanel` | 시작/정지/일시정지/재개/긴급정지 버튼 (LIVE 모드 시작 확인, EmergencyStopDialog 통합). Props: tradingMode, openPositionCount, unrealizedPnl |
+| `BotControlPanel` | 시작/정지/일시정지/재개/긴급정지 버튼 (LIVE 모드 시작 확인, EmergencyStopDialog 통합, Sprint R8: 정지 확인 다이얼로그 — 열린 포지션 경고). Props: tradingMode, openPositionCount, unrealizedPnl |
 | `TradingModeToggle` | 라이브/페이퍼 모드 전환 |
 | `StrategyPanel` | 전략 선택기 (3단 필터: 카테고리, 방향, 변동성) |
 | `AccountOverview` | 자산, 잔고, 미실현 PnL |
@@ -189,7 +190,7 @@ getSocket()      // 현재 소켓 인스턴스 조회 (없으면 null)
 | `TradesTable` | 거래 내역 + 페이지네이션 |
 | `SystemHealth` | API 상태, 지연, 소켓 연결 |
 | `ClientGate` | 서버/클라이언트 경계 안전 컴포넌트 |
-| `EmergencyStopDialog` | 긴급 정지 체크박스 확인 다이얼로그 |
+| `EmergencyStopDialog` | 긴급 정지 체크박스 확인 다이얼로그 (Sprint R8: Escape 키, 포커스 트랩, 배경 클릭 닫기) |
 | `TradingModeBanner` | 트레이딩 모드 배너 (LIVE=빨강 펄스, PAPER=초록 배너) |
 | `RiskAlertBanner` | 심각도 기반 리스크 알림 배너 (critical=수동 닫기, warning=30초, info=10초 자동 닫기) |
 

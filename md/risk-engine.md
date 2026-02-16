@@ -12,6 +12,16 @@
 
 `validateOrder()`는 equity가 `'0'`이거나 falsy일 경우, 서브 엔진 검증 없이 **즉시 거부**합니다. 이는 봇 시작 직후 계정 상태가 동기화되기 전에 주문이 들어오는 경우를 방지합니다. `ExposureGuard`에서도 동일하게 equity=0일 때 division-by-zero를 방지하는 가드가 추가되었습니다.
 
+### reduceOnly bypass (Sprint R8, AD-46)
+
+`validateOrder()`는 `reduceOnly: true`인 주문(SL/TP/CLOSE)에 대해 **CircuitBreaker와 DrawdownMonitor 검증을 건너뛰고** ExposureGuard만 적용합니다. 이를 통해 서킷 브레이커 발동 중이거나 낙폭 중단 상태에서도 기존 포지션의 청산이 보장됩니다.
+
+```
+주문 요청 → equity=0 체크 → reduceOnly인가?
+  ├─ 예 → ExposureGuard만 검증 → 승인/거부
+  └─ 아니오 → CircuitBreaker → DrawdownMonitor → ExposureGuard → 승인/거부
+```
+
 ## 기본 리스크 파라미터
 
 ```javascript

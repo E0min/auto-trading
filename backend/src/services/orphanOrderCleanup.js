@@ -84,6 +84,7 @@ class OrphanOrderCleanup {
         log.error('periodic cleanup — failed', { error: err });
       }
     }, this._cleanupIntervalMs);
+    if (this._interval.unref) this._interval.unref();
 
     log.info('start — orphan order cleanup scheduled');
   }

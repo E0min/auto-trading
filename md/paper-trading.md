@@ -164,6 +164,13 @@ getLeaderboard()
 // 전략별 계정 상태
 getStrategyAccountState('MaTrend')
 // → { equity, availableBalance, unrealizedPnl, positions[] }
+
+// Sprint R8: 초기 잔고 설정 (캡슐화 준수)
+setInitialBalance('20000')
+
+// Sprint R8: 전략별 포지션 조회 (캡슐화 준수)
+getStrategyPositions('MaTrend')
+// → [{ symbol, posSide, qty, entryPrice, ..., strategy: 'MaTrend' }]
 ```
 
 ### 리더보드

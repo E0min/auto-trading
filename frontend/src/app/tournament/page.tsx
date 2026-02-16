@@ -49,7 +49,7 @@ export default function TournamentPage() {
     stopTournament,
     resetTournament,
     getStrategyDetail,
-  } = useTournament(3000);
+  } = useTournament('running');
 
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
   const [strategyDetail, setStrategyDetail] = useState<StrategyDetail | null>(null);

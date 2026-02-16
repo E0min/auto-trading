@@ -6,8 +6,8 @@
  * Only mounted when PAPER_TRADING=true and TOURNAMENT_MODE=true.
  */
 
-const router = require('express').Router();
 const { createLogger } = require('../utils/logger');
+const { isGreaterThan, isLessThan } = require('../utils/mathUtils');
 const Trade = require('../models/Trade');
 
 const log = createLogger('TournamentRoutes');
@@ -18,6 +18,7 @@ const log = createLogger('TournamentRoutes');
  * @returns {import('express').Router}
  */
 module.exports = function createTournamentRoutes({ paperAccountManager }) {
+  const router = require('express').Router();
 
   // GET /api/tournament/info — tournament metadata
   router.get('/info', (req, res) => {
@@ -36,7 +37,7 @@ module.exports = function createTournamentRoutes({ paperAccountManager }) {
       const { strategies, initialBalance } = req.body || {};
 
       if (initialBalance) {
-        paperAccountManager._initialBalance = initialBalance;
+        paperAccountManager.setInitialBalance(initialBalance);
       }
 
       const strategyNames = strategies || [];
@@ -141,22 +142,16 @@ module.exports = function createTournamentRoutes({ paperAccountManager }) {
         log.warn('GET /strategy/:name — trade query failed', { error: dbErr });
       }
 
-      // Compute win/loss stats
+      // Compute win/loss stats (R8-T1-7: use mathUtils instead of parseFloat)
       const closedTrades = recentTrades.filter((t) => t.pnl != null);
-      const wins = closedTrades.filter((t) => parseFloat(t.pnl) > 0).length;
-      const losses = closedTrades.filter((t) => parseFloat(t.pnl) <= 0).length;
+      const wins = closedTrades.filter((t) => isGreaterThan(String(t.pnl), '0')).length;
+      const losses = closedTrades.filter((t) => isLessThan(String(t.pnl), '0') || String(t.pnl) === '0').length;
       const winRate = closedTrades.length > 0
         ? ((wins / closedTrades.length) * 100).toFixed(1)
         : '0';
 
-      // Get positions for this strategy
-      const positions = [];
-      const account = paperAccountManager._accounts.get(name);
-      if (account) {
-        for (const pos of account.getPositions()) {
-          positions.push({ ...pos, strategy: name });
-        }
-      }
+      // Get positions for this strategy (R8-T1-8: use public API)
+      const positions = paperAccountManager.getStrategyPositions(name);
 
       res.json({
         success: true,

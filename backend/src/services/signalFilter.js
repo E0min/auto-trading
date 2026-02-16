@@ -131,6 +131,15 @@ class SignalFilter extends EventEmitter {
     // Clean up stale entries periodically
     this._cleanup(now);
 
+    // --- CLOSE/reduceOnly bypass (R8-T0-4) ---
+    // SL/TP/close signals must never be blocked by cooldown or duplicate filters.
+    const isClose = action === 'CLOSE' || signal.reduceOnly;
+    if (isClose) {
+      this._stats.passed++;
+      this.emit('signal:passed', { signal, bypass: 'close_signal' });
+      return { passed: true, reason: null };
+    }
+
     // --- Filter 1: Cooldown ---
     const cooldownResult = this._checkCooldown(strategy, now);
     if (!cooldownResult.passed) {

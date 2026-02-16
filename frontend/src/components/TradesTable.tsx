@@ -40,6 +40,7 @@ export default function TradesTable({ trades, loading }: TradesTableProps) {
       <button
         type="button"
         onClick={() => setCollapsed((v) => !v)}
+        aria-expanded={!collapsed}
         className="w-full flex items-center justify-between -mt-1 mb-2"
       >
         <div className="flex items-center gap-2">

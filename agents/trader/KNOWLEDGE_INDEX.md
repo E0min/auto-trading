@@ -29,6 +29,9 @@
 | `proposals/round_7.md` | 레짐 변경 빈도 문제 분석: hysteresisMinCandles=15 제안, 유예기간 설계, 고아 포지션 리스크 | Round 7 | active |
 | `proposals/round_7_review.md` | Round 7 교차 리뷰: Engineer 8→12 절충, 쿨다운 5분 동의, 유예기간 카테고리별 차등 보완 | Round 7 | active |
 | `../shared/decisions/round_7.md` | Round 7 합의 결정문서 (17건, AD-40~AD-45) — 삼중 보호 체계, 유예기간 — **구현 완료** | Round 7 | active |
+| `proposals/round_8.md` | 코드베이스 재분석: 19개 발견 (CRITICAL 3/HIGH 6/MEDIUM 7/LOW 3) — reduceOnly bypass, 멀티심볼, 전략 warm-up | Round 8 | active |
+| `proposals/round_8_review.md` | Round 8 교차 리뷰 (Engineer+UI 제안 검토) — decimal.js 이견, 캡슐화 동의, 접근성 동의 | Round 8 | active |
+| `../shared/decisions/round_8.md` | Round 8 합의 결정문서 (46건, AD-46~AD-52) — reduceOnly bypass, severity toast, Snapshot 생성 — **25/27 구현 완료** | Round 8 | active |
 
 ## Round 1 Key Findings Summary
 - **C1**: multi-symbol 라우팅 버그 — `_symbol` 단일 값이라 마지막 심볼만 유효
@@ -53,11 +56,18 @@
 - **삼중 보호 합의**: hysteresis 10캔들 + 쿨다운 5분 + 유예기간 3~15분 = 최소 18분 버퍼. 80% 전략이 1 사이클 완료 가능
 - **유예 중 시그널 필터링**: OPEN 차단 + CLOSE(SL/TP) 허용 — 기존 포지션 보호와 신규 진입 방지 양립
 
+## Round 8 Key Findings Summary
+- **reduceOnly bypass (AD-46)**: RiskEngine이 SL/TP/CLOSE 주문까지 차단 — CircuitBreaker/DrawdownMonitor bypass 조건 추가로 청산 실행 보장
+- **SignalFilter CLOSE bypass**: 쿨다운이 청산 시그널도 차단하는 설계 결함 → CLOSE/SL/TP 시그널은 쿨다운 무시
+- **Snapshot 주기적 생성 (AD-52)**: 주식 곡선 60초 간격 스냅샷 — equity/cash/unrealizedPnl 추적, paper/live 자동 전환
+- **BotSession 실시간 통계**: ORDER_FILLED 이벤트 수신 → totalTrades/wins/losses/totalPnl/peakEquity/maxDrawdown 즉시 반영
+- **PositionManager 전략 매핑 미구현**: 범위가 크고 멀티심볼 라우팅과 함께 다음 라운드에서 구현이 효율적
+
 ## Accumulated Insights
-- **전략 품질 진화**: R1 14/18 전략 IndicatorCache 미제공 크래시 → R2 백테스트 수정 → R5 exchange-side SL 제안 → R7 유예기간으로 전략 활성 시간 보장. 현재 상태: 전략 안정성 대폭 개선, exchange-side SL은 향후 과제
-- **리스크 관리 체계**: R1 ExposureGuard qty 10,000x 오류 → R2 수정 → R4 포지션 사이징 파이프라인 정비 → R7 유예기간으로 고아 포지션 방지. 현재 상태: 리스크 파이프라인 정상 작동
+- **전략 품질 진화**: R1 14/18 전략 IndicatorCache 미제공 크래시 → R2 백테스트 수정 → R5 exchange-side SL 제안 → R7 유예기간으로 전략 활성 시간 보장 → R8 reduceOnly bypass로 SL/TP 실행 보장. 현재 상태: 전략 안정성 및 청산 경로 완비
+- **리스크 관리 체계**: R1 ExposureGuard qty 10,000x 오류 → R2 수정 → R4 포지션 사이징 파이프라인 정비 → R7 유예기간으로 고아 포지션 방지 → R8 RiskEngine reduceOnly bypass + SignalFilter CLOSE bypass. 현재 상태: 리스크 파이프라인 정상 작동, 청산 경로 보호
 - **레짐 시스템 성숙**: R1 레짐 분류 구축 → R4 7-factor 코인 선정 강화 → R7 삼중 보호 체계(hysteresis+cooldown+grace)로 안정화. 현재 상태: 노이즈 내성 확보, 자동 최적화 범위 확장
-- **수익성 인프라**: R1 Sharpe ratio ~10x 과대평가 발견 → R3 보정 → R5 성과 귀인 API → R6 실거래 준비도. 현재 상태: 백테스트 신뢰도 확보, 실거래 전환 가능 수준
+- **수익성 인프라**: R1 Sharpe ratio ~10x 과대평가 발견 → R3 보정 → R5 성과 귀인 API → R6 실거래 준비도 → R8 Snapshot 60초 주기 + BotSession 실시간 통계. 현재 상태: 실시간 성과 추적 완비, 실거래 전환 가능 수준
 
 ## Knowledge Management Rules
 1. 새 정보를 받으면 이 인덱스의 기존 항목과 비교

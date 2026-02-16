@@ -6,7 +6,6 @@
  * Factory function receives service dependencies and returns an Express router.
  */
 
-const router = require('express').Router();
 const { createLogger } = require('../utils/logger');
 const registry = require('../strategies');
 
@@ -19,6 +18,7 @@ const log = createLogger('BotRoutes');
  * @returns {import('express').Router}
  */
 module.exports = function createBotRoutes({ botService, riskEngine }) {
+  const router = require('express').Router();
 
   // POST /api/bot/start — start bot with optional config body
   router.post('/start', async (req, res) => {

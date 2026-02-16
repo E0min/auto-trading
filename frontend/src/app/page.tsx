@@ -25,6 +25,7 @@ import SignalFeed from '@/components/SignalFeed';
 import TradesTable from '@/components/TradesTable';
 import SystemHealth from '@/components/SystemHealth';
 import Spinner from '@/components/ui/Spinner';
+import ErrorToast, { useToasts } from '@/components/ui/ErrorToast';
 import { useRiskEvents } from '@/hooks/useRiskEvents';
 import { tradeApi, riskApi } from '@/lib/api-client';
 import type { Position } from '@/types';
@@ -79,7 +80,7 @@ export default function Dashboard() {
   const {
     equityCurve,
     loading: analyticsLoading,
-  } = useAnalytics(botStatus.sessionId);
+  } = useAnalytics(botStatus.sessionId, botStatus.status);
 
   const {
     health,
@@ -87,8 +88,8 @@ export default function Dashboard() {
     error: healthError,
   } = useHealthCheck();
 
-  // Inline error message (replaces alert())
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // R8-T0-9: Severity-based error toasts (AD-47)
+  const { toasts, addToast, dismissToast } = useToasts();
 
   // T1-8: Close position handler
   const [closingSymbol, setClosingSymbol] = useState<string | null>(null);
@@ -106,8 +107,7 @@ export default function Dashboard() {
       });
       await refetchPositions();
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : '포지션 청산에 실패했습니다.');
-      setTimeout(() => setErrorMsg(null), 5000);
+      addToast(err instanceof Error ? err.message : '포지션 청산에 실패했습니다.', 'critical');
     } finally {
       setClosingSymbol(null);
     }
@@ -122,8 +122,7 @@ export default function Dashboard() {
       await riskApi.resetDrawdown(type);
       await refetchBotStatus();
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : '드로다운 리셋에 실패했습니다.');
-      setTimeout(() => setErrorMsg(null), 5000);
+      addToast(err instanceof Error ? err.message : '드로다운 리셋에 실패했습니다.', 'critical');
     } finally {
       setResetLoading(false);
     }
@@ -304,12 +303,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Inline error toast */}
-      {errorMsg && (
-        <div className="fixed bottom-4 right-4 z-50 bg-[var(--loss)]/10 border border-[var(--loss)]/30 text-[var(--loss)] text-sm px-4 py-3 rounded-lg backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2">
-          {errorMsg}
-        </div>
-      )}
+      {/* R8-T0-9: Severity-based error toasts (AD-47) */}
+      <ErrorToast toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

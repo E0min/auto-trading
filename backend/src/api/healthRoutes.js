@@ -6,7 +6,6 @@
  * Factory function receives service dependencies and returns an Express router.
  */
 
-const router = require('express').Router();
 const { createLogger } = require('../utils/logger');
 
 const log = createLogger('HealthRoutes');
@@ -17,6 +16,7 @@ const log = createLogger('HealthRoutes');
  * @returns {import('express').Router}
  */
 module.exports = function createHealthRoutes({ healthCheck }) {
+  const router = require('express').Router();
 
   // GET /api/health — full health check
   router.get('/', async (req, res) => {

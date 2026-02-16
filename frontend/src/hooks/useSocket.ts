@@ -13,67 +13,41 @@ export interface StrategyGraceInfo {
   graceExpiresAt: string | null;
 }
 
-interface SocketState {
-  connected: boolean;
-  signals: Signal[];
-  positions: Position[];
-  regime: MarketRegimeData | null;
-  symbolRegimes: Record<string, SymbolRegimeEntry>;
-  riskEvents: RiskEvent[];
-  lastTicker: Record<string, { lastPrice: string; volume24h: string }>;
-  strategyGraceStates: Record<string, StrategyGraceInfo>;
-}
-
 export function useSocket() {
   const socketRef = useRef<Socket | null>(null);
   const tickerRef = useRef<Record<string, { lastPrice: string; volume24h: string }>>({});
-  const [state, setState] = useState<SocketState>({
-    connected: false,
-    signals: [],
-    positions: [],
-    regime: null,
-    symbolRegimes: {},
-    riskEvents: [],
-    lastTicker: {},
-    strategyGraceStates: {},
-  });
+
+  // R8-T1-9: Split state to prevent unnecessary re-renders
+  const [connected, setConnected] = useState(false);
+  const [signals, setSignals] = useState<Signal[]>([]);
+  const [regime, setRegime] = useState<MarketRegimeData | null>(null);
+  const [symbolRegimes, setSymbolRegimes] = useState<Record<string, SymbolRegimeEntry>>({});
+  const [riskEvents, setRiskEvents] = useState<RiskEvent[]>([]);
+  const [strategyGraceStates, setStrategyGraceStates] = useState<Record<string, StrategyGraceInfo>>({});
 
   useEffect(() => {
     const socket = acquireSocket();
     socketRef.current = socket;
 
     // Named handlers so they can be removed with off()
-    const handleConnect = () => {
-      setState(prev => ({ ...prev, connected: true }));
-    };
-
-    const handleDisconnect = () => {
-      setState(prev => ({ ...prev, connected: false }));
-    };
+    const handleConnect = () => setConnected(true);
+    const handleDisconnect = () => setConnected(false);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleSignalGenerated = (data: any) => {
       const signal: Signal = data.signal || data;
-      setState(prev => ({
-        ...prev,
-        signals: [signal, ...prev.signals].slice(0, 50),
-      }));
+      setSignals(prev => [signal, ...prev].slice(0, 50));
     };
 
-    const handleRegimeChange = (data: MarketRegimeData) => {
-      setState(prev => ({ ...prev, regime: data }));
-    };
+    const handleRegimeChange = (data: MarketRegimeData) => setRegime(data);
 
     const handleSymbolRegimeUpdate = (data: { symbol: string; current: string; confidence: number }) => {
-      setState(prev => ({
+      setSymbolRegimes(prev => ({
         ...prev,
-        symbolRegimes: {
-          ...prev.symbolRegimes,
-          [data.symbol]: {
-            regime: data.current as SymbolRegimeEntry['regime'],
-            confidence: data.confidence,
-            warmedUp: true,
-          },
+        [data.symbol]: {
+          regime: data.current as SymbolRegimeEntry['regime'],
+          confidence: data.confidence,
+          warmedUp: true,
         },
       }));
     };
@@ -86,40 +60,16 @@ export function useSocket() {
       };
     };
 
-    const handleCircuitBreak = (data: RiskEvent) => {
-      setState(prev => ({
-        ...prev,
-        riskEvents: [data, ...prev.riskEvents].slice(0, 20),
-      }));
+    // Risk event handlers — all update the same riskEvents array
+    const addRiskEvent = (data: RiskEvent) => {
+      setRiskEvents(prev => [data, ...prev].slice(0, 20));
     };
 
-    const handleDrawdownWarning = (data: RiskEvent) => {
-      setState(prev => ({
-        ...prev,
-        riskEvents: [data, ...prev.riskEvents].slice(0, 20),
-      }));
-    };
-
-    const handleDrawdownHalt = (data: RiskEvent) => {
-      setState(prev => ({
-        ...prev,
-        riskEvents: [data, ...prev.riskEvents].slice(0, 20),
-      }));
-    };
-
-    const handleCircuitReset = (data: RiskEvent) => {
-      setState(prev => ({
-        ...prev,
-        riskEvents: [data, ...prev.riskEvents].slice(0, 20),
-      }));
-    };
-
-    const handleExposureAdjusted = (data: RiskEvent) => {
-      setState(prev => ({
-        ...prev,
-        riskEvents: [data, ...prev.riskEvents].slice(0, 20),
-      }));
-    };
+    const handleCircuitBreak = addRiskEvent;
+    const handleDrawdownWarning = addRiskEvent;
+    const handleDrawdownHalt = addRiskEvent;
+    const handleCircuitReset = addRiskEvent;
+    const handleExposureAdjusted = addRiskEvent;
 
     const handleUnhandledError = (data: { type: string; reason?: string; timestamp: string }) => {
       const errorEvent: RiskEvent = {
@@ -131,48 +81,36 @@ export function useSocket() {
         acknowledged: false,
         createdAt: data.timestamp,
       };
-      setState(prev => ({
-        ...prev,
-        riskEvents: [errorEvent, ...prev.riskEvents].slice(0, 20),
-      }));
+      setRiskEvents(prev => [errorEvent, ...prev].slice(0, 20));
     };
 
     // Grace period handlers
     const handleGraceStarted = (data: GraceStartedEvent) => {
-      setState(prev => ({
+      setStrategyGraceStates(prev => ({
         ...prev,
-        strategyGraceStates: {
-          ...prev.strategyGraceStates,
-          [data.strategy]: {
-            graceState: 'grace_period' as GraceState,
-            graceExpiresAt: data.graceExpiresAt,
-          },
+        [data.strategy]: {
+          graceState: 'grace_period' as GraceState,
+          graceExpiresAt: data.graceExpiresAt,
         },
       }));
     };
 
     const handleGraceCancelled = (data: GraceCancelledEvent) => {
-      setState(prev => ({
+      setStrategyGraceStates(prev => ({
         ...prev,
-        strategyGraceStates: {
-          ...prev.strategyGraceStates,
-          [data.strategy]: {
-            graceState: 'active' as GraceState,
-            graceExpiresAt: null,
-          },
+        [data.strategy]: {
+          graceState: 'active' as GraceState,
+          graceExpiresAt: null,
         },
       }));
     };
 
     const handleStrategyDeactivated = (data: StrategyDeactivatedEvent) => {
-      setState(prev => ({
+      setStrategyGraceStates(prev => ({
         ...prev,
-        strategyGraceStates: {
-          ...prev.strategyGraceStates,
-          [data.strategy]: {
-            graceState: 'inactive' as GraceState,
-            graceExpiresAt: null,
-          },
+        [data.strategy]: {
+          graceState: 'inactive' as GraceState,
+          graceExpiresAt: null,
         },
       }));
     };
@@ -216,12 +154,24 @@ export function useSocket() {
   }, []);
 
   const clearSignals = useCallback(() => {
-    setState(prev => ({ ...prev, signals: [] }));
+    setSignals([]);
   }, []);
 
   const clearRiskEvents = useCallback(() => {
-    setState(prev => ({ ...prev, riskEvents: [] }));
+    setRiskEvents([]);
   }, []);
 
-  return { ...state, tickerRef, clearSignals, clearRiskEvents };
+  return {
+    connected,
+    signals,
+    positions: [] as Position[], // Maintained for backward compatibility
+    regime,
+    symbolRegimes,
+    riskEvents,
+    lastTicker: {} as Record<string, { lastPrice: string; volume24h: string }>,
+    strategyGraceStates,
+    tickerRef,
+    clearSignals,
+    clearRiskEvents,
+  };
 }

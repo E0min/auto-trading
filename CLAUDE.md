@@ -74,6 +74,7 @@ exchangeClient (싱글턴) → riskEngine → orderManager/positionManager
 - `CircuitBreaker` — 연속 손실 감지
 - `DrawdownMonitor` — 최대 낙폭/일일 손실 추적
 - `ExposureGuard` — 포지션 크기/총 노출 제한
+- **reduceOnly bypass**: SL/TP/CLOSE 주문은 CircuitBreaker/DrawdownMonitor를 건너뛰고 ExposureGuard만 적용 (AD-46)
 
 ### EventEmitter 기반 통신
 서비스 간 통신은 EventEmitter 이벤트로 처리. 이벤트 상수는 `utils/constants.js`에 정의 (`TRADE_EVENTS`, `RISK_EVENTS`, `MARKET_EVENTS`). Socket.io를 통해 프론트엔드에 전달.
@@ -136,7 +137,7 @@ exchangeClient (싱글턴) → riskEngine → orderManager/positionManager
 - `backtest/dataFetcher.js` — Bitget에서 kline 데이터 페이지네이션 수집, `data/klines/`에 캐싱
 - `backtest/backtestEngine.js` — kline 시뮬레이션 루프 (전략에 kline→ticker 순서로 피드, 슬리피지/수수료 적용)
 - `backtest/backtestMetrics.js` — 승률, PnL, 최대 낙폭, Sharpe, Profit Factor 등 산출
-- `backtest/backtestStore.js` — 결과 인메모리 저장소 (싱글턴 Map)
+- `backtest/backtestStore.js` — 결과 인메모리 저장소 (싱글턴 Map, FIFO 50건 제한)
 
 ## Mongoose 모델 (`models/`)
 

@@ -199,6 +199,7 @@ export default function BacktestForm({ strategies, running, onSubmit }: Backtest
           <button
             type="button"
             onClick={() => setShowAdvanced((prev) => !prev)}
+            aria-expanded={showAdvanced}
             className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
           >
             <svg

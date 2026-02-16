@@ -121,6 +121,7 @@ class TickerAggregator extends EventEmitter {
         this._lastRecalcTs = Date.now();
         this._doRecalculate();
       }, delay);
+      if (this._recalcTimer.unref) this._recalcTimer.unref();
     }
   }
 
@@ -298,11 +299,13 @@ class TickerAggregator extends EventEmitter {
 
     if (tickers.length === 0) return [];
 
-    // Sort by absolute change24h descending
+    // Sort by absolute change24h descending (R8-T1-7: use isGreaterThan instead of parseFloat)
     tickers.sort((a, b) => {
-      const absA = parseFloat(abs(a.change24h || '0'));
-      const absB = parseFloat(abs(b.change24h || '0'));
-      return absB - absA;
+      const absA = abs(a.change24h || '0');
+      const absB = abs(b.change24h || '0');
+      if (isGreaterThan(absA, absB)) return -1;
+      if (isLessThan(absA, absB)) return 1;
+      return 0;
     });
 
     return tickers.slice(0, Math.min(n, tickers.length));

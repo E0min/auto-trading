@@ -6,7 +6,6 @@
  * Factory function receives service dependencies and returns an Express router.
  */
 
-const router = require('express').Router();
 const { createLogger } = require('../utils/logger');
 
 const log = createLogger('AnalyticsRoutes');
@@ -17,6 +16,7 @@ const log = createLogger('AnalyticsRoutes');
  * @returns {import('express').Router}
  */
 module.exports = function createAnalyticsRoutes({ trackerService }) {
+  const router = require('express').Router();
 
   // GET /api/analytics/session/:sessionId — session stats
   router.get('/session/:sessionId', async (req, res) => {

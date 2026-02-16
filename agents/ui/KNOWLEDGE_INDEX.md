@@ -28,6 +28,9 @@
 | `proposals/round_7.md` | 레짐 빈도 문제 FE 대응: 중간 상태(pending/grace) 시각화, 3-way 배지, 카운트다운 타이머 설계 | Round 7 | active |
 | `proposals/round_7_review.md` | Round 7 교차 리뷰: hysteresis 15분 시 UX 반응성 우려, pending 캔들 카운트 표시 필수, 쿨다운 잔여 표시 | Round 7 | active |
 | `../shared/decisions/round_7.md` | Round 7 합의 결정문서 (17건, AD-40~AD-45) — 삼중 보호 체계, 유예기간 — **구현 완료** | Round 7 | active |
+| `proposals/round_8.md` | 코드베이스 재분석: 23개 발견 (CRITICAL 2/HIGH 11/MEDIUM 9/LOW 1) — 포커스 트랩, severity toast, state 분리, 적응형 폴링 | Round 8 | active |
+| `proposals/round_8_review.md` | Round 8 교차 리뷰 (Trader+Engineer 제안 검토) — 모바일 반응형 동의, 토너먼트 캡슐화 동의, named handler 동의 | Round 8 | active |
+| `../shared/decisions/round_8.md` | Round 8 합의 결정문서 (46건, AD-46~AD-52) — severity toast AD-47, Escape/포커스 트랩, aria-expanded — **25/27 구현 완료** | Round 8 | active |
 
 ## Round 1 Key Findings Summary
 - **C1**: Emergency Stop에 확인 다이얼로그 없음 — 실수로 전포지션 청산 위험
@@ -53,11 +56,19 @@
 - **useCountdown 훅**: `graceExpiresAt` timestamp 기반 범용 카운트다운 — 1초 간격 갱신, 만료 시 자동 정리
 - **레짐 상태 표시**: pending 캔들 카운트 (`3/10 캔들 확인`), 쿨다운 잔여 시간, 전환 빈도 경고(안정/빈번/과다)
 
+## Round 8 Key Findings Summary
+- **EmergencyStopDialog 접근성**: Escape 키 닫기, Tab 포커스 트랩, 배경 클릭 닫기, 포커스 저장/복원 — 모달 접근성 완비
+- **Severity-based Error Toast (AD-47)**: 3-tier 분류 — critical(persistent), warning(10s), info(5s). `useToasts()` 훅으로 전역 관리
+- **useSocket state 분리**: 단일 SocketState 객체 → 6개 독립 useState — 불필요한 리렌더 방지 (특히 signals 업데이트 시 regime/riskEvents 영향 차단)
+- **적응형 폴링 확산**: usePerformanceAnalytics, useTournament, useAnalytics → 봇 상태 기반 `useAdaptivePolling` 훅 통합. idle 시 30초, active 시 3~5초
+- **aria-expanded 일괄 적용**: TradesTable, DrawdownChart, BacktestForm의 collapsible 버튼에 접근성 속성 추가
+
 ## Accumulated Insights
 - **레이아웃 진화**: R1 정보 우선순위 역전 발견 → R3 대시보드 재배치 → R4 리스크 패널/드로다운 차트 추가 → R5 7-Row 구조 확정 → R7 grace 배지 추가. 현재 상태: 안정된 레이아웃, 정보 밀도 적정
-- **실시간 상태 표현**: R1 Socket.io 싱글턴 문제 → R3 ref-count 해결 → R4 적응형 폴링(봇 상태별) → R7 3-way 상태 + 카운트다운 + pending/cooldown 표시. 현재 상태: 모든 중간 상태의 시각적 피드백 완비
-- **모드 인식 UX**: R2 TradingModeBanner(paper/live) → R4 RiskStatusPanel 게이지 → R7 레짐 pending/cooldown/grace 시각화. 현재 상태: 사용자가 시스템의 "왜"를 이해할 수 있는 UI
-- **컴포넌트 패턴**: R1 레짐 색상 4곳 중복 → R6 디자인 토큰 도입 → R7 상태별 색상 체계(green/amber/gray/blue) 표준화. 현재 상태: 색상/상태 매핑 일관성 확보
+- **실시간 상태 표현**: R1 Socket.io 싱글턴 문제 → R3 ref-count 해결 → R4 적응형 폴링(봇 상태별) → R7 3-way 상태 + 카운트다운 + pending/cooldown 표시 → R8 useSocket state 분리 + 3개 훅 적응형 폴링 전환. 현재 상태: 리렌더 최적화 + 전 훅 적응형 폴링 적용 완료
+- **모드 인식 UX**: R2 TradingModeBanner(paper/live) → R4 RiskStatusPanel 게이지 → R7 레짐 pending/cooldown/grace 시각화 → R8 봇 정지 확인 다이얼로그 + severity toast. 현재 상태: 사용자가 시스템의 "왜"를 이해하고 실수를 방지할 수 있는 UI
+- **컴포넌트 패턴**: R1 레짐 색상 4곳 중복 → R6 디자인 토큰 도입 → R7 상태별 색상 체계(green/amber/gray/blue) 표준화 → R8 ErrorToast 신규 컴포넌트 + aria-expanded 일괄 적용. 현재 상태: 색상/상태 매핑 일관성 확보, 접근성 기반 정비
+- **접근성 진화**: R6 aria-disabled/aria-label 네비게이션 → R8 EmergencyStopDialog 포커스 트랩 + Escape + aria-expanded 3개 컴포넌트. 현재 상태: WCAG 기본 수준 접근성 확보
 
 ## Knowledge Management Rules
 1. 새 정보를 받으면 이 인덱스의 기존 항목과 비교

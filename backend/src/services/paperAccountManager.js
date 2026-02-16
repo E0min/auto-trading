@@ -218,6 +218,27 @@ class PaperAccountManager extends EventEmitter {
   }
 
   /**
+   * Set the initial balance for future accounts / resets.
+   * @param {string} balance
+   */
+  setInitialBalance(balance) {
+    if (balance) {
+      this._initialBalance = balance;
+    }
+  }
+
+  /**
+   * Get positions for a specific strategy (tournament mode).
+   * @param {string} name — strategy name
+   * @returns {Array<object>}
+   */
+  getStrategyPositions(name) {
+    const account = this._accounts.get(name);
+    if (!account) return [];
+    return account.getPositions().map((pos) => ({ ...pos, strategy: name }));
+  }
+
+  /**
    * Get a single strategy's account state.
    * @param {string} name — strategy name
    * @returns {{ equity: string, availableBalance: string, unrealizedPnl: string }|null}

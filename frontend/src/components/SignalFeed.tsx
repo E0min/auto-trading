@@ -2,7 +2,7 @@
 
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
-import { formatSymbol, formatTime, translateSide, translateRejectReason } from '@/lib/utils';
+import { formatSymbol, formatTime, translateSide, translateRejectReason, translateStrategyName } from '@/lib/utils';
 import type { Signal } from '@/types';
 
 interface SignalFeedProps {
@@ -37,8 +37,8 @@ export default function SignalFeed({ signals }: SignalFeedProps) {
                 </span>
               </div>
               <div className="flex items-center gap-3 text-[11px]">
-                <span className="text-[var(--text-muted)]">
-                  {signal.strategy}
+                <span className="text-[var(--text-muted)]" title={signal.strategy}>
+                  {translateStrategyName(signal.strategy)}
                 </span>
                 <span className="text-[var(--text-muted)] font-mono">
                   {Math.round(signal.confidence * 100)}%

@@ -15,6 +15,9 @@ const { createLogger } = require('../utils/logger');
 
 const log = createLogger('BacktestStore');
 
+/** Maximum number of stored results before FIFO eviction (AD-49) */
+const MAX_STORED_RESULTS = 50;
+
 class BacktestStore {
   constructor() {
     /** @type {Map<string, Object>} */
@@ -25,6 +28,7 @@ class BacktestStore {
    * Store a backtest result under the given id.
    *
    * A `createdAt` timestamp is automatically attached to the result.
+   * If the store exceeds MAX_STORED_RESULTS, the oldest entry is evicted (FIFO).
    *
    * @param {string} id     — unique backtest run identifier
    * @param {Object} result — full backtest result (config, metrics, trades, equityCurve, etc.)
@@ -37,6 +41,13 @@ class BacktestStore {
     };
     this._results.set(id, entry);
     log.info('Result saved', { id, tradesCount: result.trades?.length });
+
+    // FIFO eviction when over limit (R8-T0-2)
+    while (this._results.size > MAX_STORED_RESULTS) {
+      const oldestKey = this._results.keys().next().value;
+      this._results.delete(oldestKey);
+      log.info('Evicted oldest backtest result (FIFO)', { evictedId: oldestKey, storeSize: this._results.size });
+    }
   }
 
   /**

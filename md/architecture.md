@@ -200,6 +200,14 @@ process.on('uncaughtException', (err) => { /* 로깅 후 safeShutdown() */ });
 
 `app.js`의 Socket.io ticker 릴레이에 심볼별 1000ms 쓰로틀이 적용됩니다. 같은 심볼의 ticker 이벤트가 1초 이내에 반복 발생하면 프론트엔드로의 전달을 건너뜁니다.
 
+### _lastTickerEmit Map Cleanup (Sprint R8)
+
+`_lastTickerEmit` Map은 5분 주기로 stale 항목(10분 이상 미갱신)을 자동 삭제합니다. 장기 운영 시 더 이상 구독하지 않는 심볼의 타임스탬프가 쌓이는 것을 방지합니다. 정리 타이머는 `.unref()`로 프로세스 종료를 차단하지 않습니다.
+
+### express.json() Body Limit (Sprint R8)
+
+`express.json({ limit: '1mb' })`로 요청 본문 크기가 명시적으로 1MB로 제한됩니다.
+
 ### Socket.io → 프론트엔드 전달
 
 botService가 백엔드 이벤트를 수신하여 Socket.io로 프론트엔드에 전달합니다:

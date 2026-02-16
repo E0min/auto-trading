@@ -224,7 +224,7 @@ async function bootstrap() {
   const app = express();
 
   // 5. Middleware
-  app.use(express.json());
+  app.use(express.json({ limit: '1mb' }));
 
   // CORS middleware (no external cors package)
   app.use((req, res, next) => {
@@ -382,6 +382,7 @@ async function bootstrap() {
   // Market events (throttled to 1 emit per symbol per second)
   const _lastTickerEmit = new Map();
   const TICKER_THROTTLE_MS = 1000;
+  const TICKER_CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
   marketData.on(MARKET_EVENTS.TICKER_UPDATE, (data) => {
     const now = Date.now();
@@ -390,6 +391,18 @@ async function bootstrap() {
     _lastTickerEmit.set(data.symbol, now);
     io.emit('market:ticker', data);
   });
+
+  // R8-T1-6: Periodic cleanup of stale _lastTickerEmit entries
+  const _tickerCleanupTimer = setInterval(() => {
+    const now = Date.now();
+    const staleThreshold = 10 * 60 * 1000; // 10 minutes
+    for (const [symbol, ts] of _lastTickerEmit) {
+      if (now - ts > staleThreshold) {
+        _lastTickerEmit.delete(symbol);
+      }
+    }
+  }, TICKER_CLEANUP_INTERVAL_MS);
+  if (_tickerCleanupTimer.unref) _tickerCleanupTimer.unref();
 
   marketData.on(MARKET_EVENTS.KLINE_UPDATE, (data) => {
     io.emit('market:kline', data);

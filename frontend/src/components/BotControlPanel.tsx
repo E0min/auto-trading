@@ -44,6 +44,7 @@ export default function BotControlPanel({
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [showEmergencyDialog, setShowEmergencyDialog] = useState(false);
   const [showLiveConfirm, setShowLiveConfirm] = useState(false);
+  const [showStopConfirm, setShowStopConfirm] = useState(false);
 
   const handleAction = async (action: string, fn: () => Promise<void>) => {
     setLoadingAction(action);
@@ -99,7 +100,13 @@ export default function BotControlPanel({
                 variant="ghost"
                 size="sm"
                 loading={loadingAction === 'stop'}
-                onClick={() => handleAction('stop', onStop)}
+                onClick={() => {
+                  if (openPositionCount > 0) {
+                    setShowStopConfirm(true);
+                  } else {
+                    handleAction('stop', onStop);
+                  }
+                }}
               >
                 정지
               </Button>
@@ -137,6 +144,20 @@ export default function BotControlPanel({
         title="실거래 모드 시작"
         message="실제 자금으로 거래를 시작합니다. 계속하시겠습니까?"
         confirmLabel="시작"
+        variant="danger"
+      />
+
+      {/* R8-T0-10: Bot stop confirmation with open position warning */}
+      <ConfirmDialog
+        open={showStopConfirm}
+        onCancel={() => setShowStopConfirm(false)}
+        onConfirm={() => {
+          setShowStopConfirm(false);
+          handleAction('stop', onStop);
+        }}
+        title="봇 정지"
+        message={`현재 ${openPositionCount}개의 열린 포지션이 있습니다 (미실현 PnL: $${unrealizedPnl || '0.00'}). 봇을 정지하면 전략이 비활성화되고 새로운 주문이 중단됩니다. 열린 포지션은 유지됩니다.`}
+        confirmLabel="정지"
         variant="danger"
       />
     </>

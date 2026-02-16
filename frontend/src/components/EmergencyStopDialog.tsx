@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 interface EmergencyStopDialogProps {
   isOpen: boolean;
@@ -14,21 +14,74 @@ export default function EmergencyStopDialog({
   isOpen, onClose, onConfirm, openPositionCount, unrealizedPnl,
 }: EmergencyStopDialogProps) {
   const [confirmed, setConfirmed] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
-  if (!isOpen) return null;
-
-  const handleConfirm = () => {
+  const handleConfirm = useCallback(() => {
     if (confirmed) {
       onConfirm();
       onClose();
       setConfirmed(false);
     }
-  };
+  }, [confirmed, onConfirm, onClose]);
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setConfirmed(false);
     onClose();
-  };
+  }, [onClose]);
+
+  // R8-T0-8: Escape key handler + focus management
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // Save previously focused element
+    previousFocusRef.current = document.activeElement as HTMLElement;
+
+    // Focus the dialog container
+    requestAnimationFrame(() => {
+      dialogRef.current?.focus();
+    });
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        handleClose();
+        return;
+      }
+
+      // Focus trap: Tab cycles within dialog
+      if (e.key === 'Tab' && dialogRef.current) {
+        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+          'button, input, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length === 0) return;
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      // Restore focus on close
+      previousFocusRef.current?.focus();
+    };
+  }, [isOpen, handleClose]);
+
+  if (!isOpen) return null;
 
   return (
     <div
@@ -36,8 +89,13 @@ export default function EmergencyStopDialog({
       role="alertdialog"
       aria-modal="true"
       aria-labelledby="emergency-stop-title"
+      onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
     >
-      <div className="bg-zinc-900 border border-red-500/50 rounded-lg p-6 max-w-md w-full mx-4 shadow-2xl">
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="bg-zinc-900 border border-red-500/50 rounded-lg p-6 max-w-md w-full mx-4 shadow-2xl outline-none"
+      >
         <div className="flex items-center gap-3 mb-4">
           <svg className="w-6 h-6 text-red-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />

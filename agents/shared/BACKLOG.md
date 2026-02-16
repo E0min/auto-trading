@@ -134,12 +134,80 @@
 | BUG-1 | P0 | Backend | Map 직렬화 버그 수정 (performanceTracker) | R5 | R5 | done |
 | T3-8 | P3 | Backend | EventEmitter maxListeners(20) 설정 | E:R6-12 | R6 | done |
 | T3-9 | P3 | Backend | Socket.io CORS + 인증 (FE 동시 배포 필요) | E:R6-7 | R6 | deferred |
-| T3-10 | P3 | Backend | InstrumentCache 심볼별 lot step | E:R6-14 | R6 | deferred |
+| T3-10 | P3 | Backend | InstrumentCache 심볼별 lot step | E:R6-14 | R6 | agreed (→R8-T1-1) |
 | T3-11 | P3 | Frontend | Toast 알림 시스템 (full 구현) | UI:R6-2 | R6 | deferred |
 | T3-12 | P3 | Frontend | 전략-레짐 호환성 매트릭스 | UI:S1-1 | R6 | deferred |
 | T3-13 | P3 | Frontend | 백테스트 심볼 입력 프리셋 | UI:R6-10 | R6 | deferred |
 | T3-14 | P3 | Frontend | 레버리지 표시 보완 (StrategyDetail, Tournament) | UI:S1-2 | R6 | deferred |
 | T3-15 | P3 | Backend | positionSide 전체 리팩토링 (13개 전략) | T:R6-4 | R6 | deferred |
+
+## Tier R8 — 코드베이스 재분석 (Round 8)
+
+### Backend T0 (실거래 전 필수)
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R8-T0-1 | T0 | Backend | Router Singleton → 팩토리 내부 이동 (8개 파일) | E:C-1 | R8 | done |
+| R8-T0-2 | T0 | Backend | BacktestStore LRU 제한 (MAX_STORED=50) | E:C-2 | R8 | done |
+| R8-T0-3 | T0 | Backend | RiskEngine reduceOnly bypass (SL/TP 실행 보장) | T:H-5 | R8 | done |
+| R8-T0-4 | T0 | Backend | SignalFilter CLOSE 쿨다운 bypass | T:M-2 | R8 | done |
+| R8-T0-5 | T0 | Backend | PositionManager 전략 메타데이터 주입 | T:C-3 | R8 | deferred |
+| R8-T0-6 | T0 | Backend | resume() StrategyRouter 연동 | T:L-1, E:H-2 | R8 | done |
+| R8-T0-7 | T0 | Backend | getStatus() getSignal() try-catch | E:H-6 | R8 | done |
+| R8-T0-8 | T0 | Frontend | EmergencyStopDialog Escape + 포커스 트랩 | UI:C-1 | R8 | done |
+| R8-T0-9 | T0 | Frontend | 에러 토스트 severity 분류 (persistent/auto) | UI:C-2 | R8 | done |
+| R8-T0-10 | T0 | Frontend | 봇 중지 확인 다이얼로그 | UI:H-6 | R8 | done |
+
+### Backend/Frontend T1 (1주 내)
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R8-T1-1 | T1 | Backend | InstrumentCache 심볼별 lot step (T3-10 승격) | E:M-1 | R8 | deferred |
+| R8-T1-2 | T1 | Backend | Snapshot 주기적 생성 (60초) | E:M-8 | R8 | done |
+| R8-T1-3 | T1 | Backend | BotSession stats 실시간 업데이트 | E:M-7 | R8 | done |
+| R8-T1-4 | T1 | Backend | OrphanOrderCleanup unref() + 조건부 활성화 | E:H-3 | R8 | done |
+| R8-T1-5 | T1 | Backend | TickerAggregator timer unref() | E:H-4 | R8 | done |
+| R8-T1-6 | T1 | Backend | _lastTickerEmit Map cleanup | E:H-1 | R8 | done |
+| R8-T1-7 | T1 | Backend | parseFloat 직접 사용 제거 (3곳) | E:M-4,M-5 | R8 | done |
+| R8-T1-8 | T1 | Backend | TournamentRoutes 캡슐화 위반 수정 | E:H-5 | R8 | done |
+| R8-T1-9 | T1 | Frontend | useSocket state 분리 | UI:H-1 | R8 | done |
+| R8-T1-10 | T1 | Frontend | useMarketIntelligence named handler | UI:H-2 | R8 | done |
+| R8-T1-11 | T1 | Frontend | usePerformanceAnalytics 적응형 폴링 | UI:H-3 | R8 | done |
+| R8-T1-12 | T1 | Frontend | useTournament 적응형 폴링 | UI:H-8 | R8 | done |
+| R8-T1-13 | T1 | Frontend | useAnalytics 폴링 추가 | UI:M-4 | R8 | done |
+| R8-T1-14 | T1 | Frontend | SignalFeed 전략명 번역 | UI:H-7 | R8 | done |
+| R8-T1-15 | T1 | Frontend | useTournament 에러 한국어 통일 | UI:H-9 | R8 | done |
+| R8-T1-16 | T1 | Frontend | collapsible aria-expanded 일괄 추가 | UI:H-11 | R8 | done |
+
+### Tier 2 (2주 내)
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R8-T2-1 | T2 | Backend | 멀티심볼 라우팅 Phase 1 | T:C-1 | R8 | agreed |
+| R8-T2-2 | T2 | Backend | 전략 warm-up 기간 | T:M-3 | R8 | agreed |
+| R8-T2-3 | T2 | Backend | 펀딩비 PnL 반영 | T:H-4 | R8 | agreed |
+| R8-T2-4 | T2 | Backend | 코인 재선정 주기 | T:H-3 | R8 | agreed |
+| R8-T2-5 | T2 | Backend | Paper 모드 전환 경고 강화 | E:M-2 | R8 | agreed |
+| R8-T2-6 | T2 | Backend | StateRecovery 활성화 (Paper 검증 후) | E:M-3 | R8 | agreed |
+| R8-T2-7 | T2 | Backend | express.json() limit 명시 | E:M-6 | R8 | done |
+| R8-T2-8 | T2 | Frontend | StrategyCard toggle 접근성 | UI:H-10 | R8 | agreed |
+| R8-T2-9 | T2 | Frontend | MarketRegimeIndicator 삭제 | UI:H-12 | R8 | agreed |
+| R8-T2-10 | T2 | Frontend | 대시보드 헤더 모바일 반응형 | UI:H-4 | R8 | agreed |
+| R8-T2-11 | T2 | Frontend | AccountOverview 모바일 레이아웃 | UI:H-5 | R8 | agreed |
+| R8-T2-12 | T2 | Frontend | RegimeFlowMap 모바일 대응 | UI:M-6 | R8 | agreed |
+
+### Tier 3 (장기)
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R8-T3-1 | T3 | Backtest | 백테스트 멀티포지션 지원 | T:H-2 | R8 | agreed |
+| R8-T3-2 | T3 | Backend | Trailing Stop 구현 | T:H-1 | R8 | agreed |
+| R8-T3-3 | T3 | Backend | DrawdownMonitor peakEquity 영속성 | T:M-6 | R8 | agreed |
+| R8-T3-4 | T3 | Backtest | Sortino Ratio 산출 | T:M-1 | R8 | agreed |
+| R8-T3-5 | T3 | Frontend | 데드 코드 삭제 (StrategyPanel, ClientGate) | UI:A-1,A-2 | R8 | agreed |
+| R8-T3-6 | T3 | Frontend | EquityCurveChart 공통 추출 | UI:M-8 | R8 | agreed |
+| R8-T3-7 | T3 | Frontend | th scope="col" 일괄 추가 | UI:M-5 | R8 | agreed |
+| R8-T3-8 | T3 | Frontend | TOOLTIP_STYLE 통일 | UI:L-1 | R8 | agreed |
 
 ---
 
@@ -151,3 +219,4 @@
 → `decisions/round_5.md` — AD-25~AD-31 참조 (T3-1~T3-7 + BUG-1 구현 세부사항)
 → `decisions/round_6.md` — AD-32~AD-39 참조 (R6 실거래 준비도 강화)
 → `decisions/round_7.md` — AD-40~AD-45 참조 (R7 레짐 안정화 + 유예기간)
+→ `decisions/round_8.md` — AD-46~AD-52 참조 (R8 코드베이스 재분석)

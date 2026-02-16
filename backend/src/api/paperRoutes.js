@@ -6,7 +6,6 @@
  * Only mounted when PAPER_TRADING=true.
  */
 
-const router = require('express').Router();
 const { createLogger } = require('../utils/logger');
 const Trade = require('../models/Trade');
 
@@ -19,6 +18,7 @@ const log = createLogger('PaperRoutes');
  * @returns {import('express').Router}
  */
 module.exports = function createPaperRoutes({ paperEngine, paperPositionManager }) {
+  const router = require('express').Router();
 
   // GET /api/paper/status — mode + balance + position summary
   router.get('/status', (req, res) => {
