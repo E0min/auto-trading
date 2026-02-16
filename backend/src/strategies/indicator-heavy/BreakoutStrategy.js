@@ -53,6 +53,8 @@ class BreakoutStrategy extends StrategyBase {
     maxConcurrentPositions: 1,
     cooldownMs: 300000,
     gracePeriodMs: 900000,
+    warmupCandles: 30,
+    volatilityPreference: 'high',
     description: 'BB 스퀴즈 돌파 전략 — 볼린저밴드가 켈트너채널 안으로 수축 후 돌파 진입',
     defaultConfig: {
       bbPeriod: 20,

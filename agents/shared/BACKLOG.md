@@ -151,7 +151,7 @@
 | R8-T0-2 | T0 | Backend | BacktestStore LRU 제한 (MAX_STORED=50) | E:C-2 | R8 | done |
 | R8-T0-3 | T0 | Backend | RiskEngine reduceOnly bypass (SL/TP 실행 보장) | T:H-5 | R8 | done |
 | R8-T0-4 | T0 | Backend | SignalFilter CLOSE 쿨다운 bypass | T:M-2 | R8 | done |
-| R8-T0-5 | T0 | Backend | PositionManager 전략 메타데이터 주입 | T:C-3 | R8 | deferred |
+| R8-T0-5 | T0 | Backend | PositionManager 전략-포지션 매핑 (Map 1:1) | T:C-3 | R8→R9 | done |
 | R8-T0-6 | T0 | Backend | resume() StrategyRouter 연동 | T:L-1, E:H-2 | R8 | done |
 | R8-T0-7 | T0 | Backend | getStatus() getSignal() try-catch | E:H-6 | R8 | done |
 | R8-T0-8 | T0 | Frontend | EmergencyStopDialog Escape + 포커스 트랩 | UI:C-1 | R8 | done |
@@ -162,7 +162,7 @@
 
 | ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
 |----|--------|------|------|--------|--------|------|
-| R8-T1-1 | T1 | Backend | InstrumentCache 심볼별 lot step (T3-10 승격) | E:M-1 | R8 | deferred |
+| R8-T1-1 | T1 | Backend | InstrumentCache 심볼별 lot step (AD-53) | E:M-1 | R8→R9 | done |
 | R8-T1-2 | T1 | Backend | Snapshot 주기적 생성 (60초) | E:M-8 | R8 | done |
 | R8-T1-3 | T1 | Backend | BotSession stats 실시간 업데이트 | E:M-7 | R8 | done |
 | R8-T1-4 | T1 | Backend | OrphanOrderCleanup unref() + 조건부 활성화 | E:H-3 | R8 | done |
@@ -183,18 +183,18 @@
 
 | ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
 |----|--------|------|------|--------|--------|------|
-| R8-T2-1 | T2 | Backend | 멀티심볼 라우팅 Phase 1 | T:C-1 | R8 | agreed |
-| R8-T2-2 | T2 | Backend | 전략 warm-up 기간 | T:M-3 | R8 | agreed |
-| R8-T2-3 | T2 | Backend | 펀딩비 PnL 반영 | T:H-4 | R8 | agreed |
-| R8-T2-4 | T2 | Backend | 코인 재선정 주기 | T:H-3 | R8 | agreed |
-| R8-T2-5 | T2 | Backend | Paper 모드 전환 경고 강화 | E:M-2 | R8 | agreed |
-| R8-T2-6 | T2 | Backend | StateRecovery 활성화 (Paper 검증 후) | E:M-3 | R8 | agreed |
+| R8-T2-1 | T2 | Backend | 멀티심볼 라우팅 Phase 1 (AD-55) | T:C-1 | R8→R9 | done |
+| R8-T2-2 | T2 | Backend | 전략 warm-up 기간 (AD-54) | T:M-3 | R8→R9 | done |
+| R8-T2-3 | T2 | Backend | 펀딩비 PnL Phase 1 데이터 수집 (AD-57) | T:H-4 | R8→R9 | done |
+| R8-T2-4 | T2 | Backend | 코인 재선정 4h 주기 (AD-56) | T:H-3 | R8→R9 | done |
+| R8-T2-5 | T2 | Backend | Paper 모드 전환 경고 강화 (force 파라미터) | E:M-2 | R8→R9 | done |
+| R8-T2-6 | T2 | Backend | StateRecovery + OrphanCleanup 활성화 (age 필터) | E:M-3 | R8→R9 | done |
 | R8-T2-7 | T2 | Backend | express.json() limit 명시 | E:M-6 | R8 | done |
-| R8-T2-8 | T2 | Frontend | StrategyCard toggle 접근성 | UI:H-10 | R8 | agreed |
-| R8-T2-9 | T2 | Frontend | MarketRegimeIndicator 삭제 | UI:H-12 | R8 | agreed |
-| R8-T2-10 | T2 | Frontend | 대시보드 헤더 모바일 반응형 | UI:H-4 | R8 | agreed |
-| R8-T2-11 | T2 | Frontend | AccountOverview 모바일 레이아웃 | UI:H-5 | R8 | agreed |
-| R8-T2-12 | T2 | Frontend | RegimeFlowMap 모바일 대응 | UI:M-6 | R8 | agreed |
+| R8-T2-8 | T2 | Frontend | StrategyCard toggle 접근성 (button 분리+aria) | UI:H-10 | R8→R9 | done |
+| R8-T2-9 | T2 | Frontend | MarketRegimeIndicator 데드코드 검토 (사용처 없음 확인) | UI:H-12 | R8→R9 | done |
+| R8-T2-10 | T2 | Frontend | 대시보드 헤더 모바일 반응형 (lg: 브레이크포인트) | UI:H-4 | R8→R9 | done |
+| R8-T2-11 | T2 | Frontend | AccountOverview 모바일 레이아웃 (총자산 분리) | UI:H-5 | R8→R9 | done |
+| R8-T2-12 | T2 | Frontend | RegimeFlowMap 모바일 대응 (grid-cols-1 lg:) | UI:M-6 | R8→R9 | done |
 
 ### Tier 3 (장기)
 
@@ -220,3 +220,4 @@
 → `decisions/round_6.md` — AD-32~AD-39 참조 (R6 실거래 준비도 강화)
 → `decisions/round_7.md` — AD-40~AD-45 참조 (R7 레짐 안정화 + 유예기간)
 → `decisions/round_8.md` — AD-46~AD-52 참조 (R8 코드베이스 재분석)
+→ `decisions/round_9.md` — AD-53~AD-57 참조 (R9 Tier 2 Quality)

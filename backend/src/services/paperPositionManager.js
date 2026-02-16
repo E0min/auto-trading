@@ -80,11 +80,16 @@ class PaperPositionManager extends EventEmitter {
     this._balance = math.subtract(this._balance, fee);
 
     let pnl = null;
+    let accumulatedFunding = '0';
     let position = null;
 
     if (reduceOnly) {
       // Closing (reduce) — calculate PnL and reduce/remove position
-      pnl = this._closePosition(key, qty, fillPrice, posSide);
+      const closeResult = this._closePosition(key, qty, fillPrice, posSide);
+      if (closeResult !== null) {
+        pnl = closeResult.pnl;
+        accumulatedFunding = closeResult.accumulatedFunding || '0';
+      }
       position = this._positions.get(key) || null;
     } else {
       // Opening — create or increase position
@@ -118,11 +123,12 @@ class PaperPositionManager extends EventEmitter {
       fillPrice,
       fee,
       pnl,
+      accumulatedFunding,
       balance: this._balance,
       reduceOnly,
     });
 
-    return { pnl, position };
+    return { pnl, position, accumulatedFunding };
   }
 
   // =========================================================================
@@ -166,6 +172,7 @@ class PaperPositionManager extends EventEmitter {
       marginMode: 'crossed',
       liquidationPrice: '0',
       strategy: strategy || null,
+      accumulatedFunding: '0',
       updatedAt: new Date(),
     };
 
@@ -183,7 +190,7 @@ class PaperPositionManager extends EventEmitter {
    * @param {string} closeQty
    * @param {string} closePrice
    * @param {string} posSide
-   * @returns {string|null} realised PnL (String) or null
+   * @returns {{ pnl: string, accumulatedFunding: string }|null} realised PnL + funding or null
    * @private
    */
   _closePosition(key, closeQty, closePrice, posSide) {
@@ -204,6 +211,9 @@ class PaperPositionManager extends EventEmitter {
       pnl = math.multiply(math.subtract(entryPrice, closePrice), closeQty);
     }
 
+    // Capture accumulated funding before position is removed (R8-T2-3)
+    const accumulatedFunding = position.accumulatedFunding || '0';
+
     // Credit PnL to balance
     this._balance = math.add(this._balance, pnl);
 
@@ -213,14 +223,65 @@ class PaperPositionManager extends EventEmitter {
     if (math.isZero(remainingQty) || math.isLessThan(remainingQty, '0')) {
       // Fully closed
       this._positions.delete(key);
-      log.info('_closePosition — fully closed', { key, pnl });
+      log.info('_closePosition — fully closed', { key, pnl, accumulatedFunding });
     } else {
       position.qty = remainingQty;
       position.updatedAt = new Date();
       log.info('_closePosition — partially closed', { key, remainingQty, pnl });
     }
 
-    return pnl;
+    return { pnl, accumulatedFunding };
+  }
+
+  // =========================================================================
+  // Funding PnL accumulation (R8-T2-3, Phase 1 — data collection only)
+  // =========================================================================
+
+  /**
+   * Apply a funding rate to all open positions for a given symbol.
+   * Formula: fundingPnl = positionSize * fundingRate * -1
+   *   (payer = negative, receiver = positive)
+   *
+   * Phase 1: data collection only — does NOT modify balance or PnL.
+   *
+   * @param {string} symbol
+   * @param {string} fundingRate — funding rate as decimal string (e.g. '0.0001')
+   */
+  applyFunding(symbol, fundingRate) {
+    if (!fundingRate || math.isZero(fundingRate)) return;
+
+    for (const [key, position] of this._positions) {
+      if (position.symbol !== symbol) continue;
+
+      // positionSize = qty * markPrice (notional value)
+      const posSize = math.multiply(position.qty, position.markPrice || position.entryPrice);
+      // fundingPnl = positionSize * fundingRate * -1
+      const fundingPnl = math.multiply(math.multiply(posSize, fundingRate), '-1');
+
+      position.accumulatedFunding = math.add(
+        position.accumulatedFunding || '0',
+        fundingPnl,
+      );
+
+      log.debug('applyFunding — accumulated', {
+        key,
+        fundingRate,
+        fundingPnl,
+        accumulatedFunding: position.accumulatedFunding,
+      });
+    }
+  }
+
+  /**
+   * Get accumulated funding for a position.
+   *
+   * @param {string} symbol
+   * @param {string} posSide
+   * @returns {string} accumulated funding PnL
+   */
+  getAccumulatedFunding(symbol, posSide) {
+    const pos = this._positions.get(`${symbol}:${posSide}`);
+    return pos ? (pos.accumulatedFunding || '0') : '0';
   }
 
   // =========================================================================

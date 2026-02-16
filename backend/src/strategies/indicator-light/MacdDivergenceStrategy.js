@@ -49,6 +49,8 @@ class MacdDivergenceStrategy extends StrategyBase {
     maxConcurrentPositions: 1,
     cooldownMs: 120000,
     gracePeriodMs: 300000,
+    warmupCandles: 35,
+    volatilityPreference: 'neutral',
     description: 'MACD 다이버전스 역추세 전략',
     defaultConfig: {
       macdFast: 12,

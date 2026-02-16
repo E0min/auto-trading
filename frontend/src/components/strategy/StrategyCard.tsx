@@ -92,18 +92,15 @@ export default function StrategyCard({
         !recommended && !active && !isGracePeriod && 'opacity-50',
       )}
     >
-      {/* Card header — clickable to expand */}
-      <button
-        type="button"
-        onClick={onExpand}
-        className="w-full flex items-center gap-3 px-4 py-3 text-left"
-      >
-        {/* Toggle button */}
-        <div
+      {/* Card header */}
+      <div className="flex items-center gap-3 px-4 py-3">
+        {/* Toggle button — separated for accessibility */}
+        <button
+          type="button"
           className="flex-shrink-0"
           onClick={handleToggleClick}
-          role="switch"
-          aria-checked={active}
+          aria-pressed={active}
+          aria-label={`${translateStrategyName(strategy.name)} 전략 ${active ? '비활성화' : '활성화'}`}
         >
           {toggling ? (
             <Spinner size="sm" />
@@ -122,79 +119,88 @@ export default function StrategyCard({
               {active && !isGracePeriod && <div className="w-1.5 h-1.5 rounded-full bg-[var(--profit)]" />}
             </div>
           )}
-        </div>
+        </button>
 
-        {/* Strategy info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-[var(--text-primary)] truncate">
-              {strategy.name}
-            </span>
-            {recommended && (
-              <span className="text-[10px] text-[var(--accent)]">
-                추천
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-[11px] text-[var(--text-muted)] truncate">
-              {translateStrategyName(strategy.name)}
-            </span>
-            <span className="text-[10px] text-[var(--border-muted)]">|</span>
-            <span className="text-[10px] text-[var(--text-muted)]">
-              {CATEGORY_LABEL[category] || category}
-            </span>
-          </div>
-          {/* Regime tags — dot + text only */}
-          {regimes.length > 0 && (
-            <div className="flex gap-2 mt-1.5">
-              {regimes.slice(0, 3).map((r) => (
-                <span
-                  key={r}
-                  className={cn('inline-flex items-center gap-1 text-[10px]', getRegimeColor(r))}
-                >
-                  <span className={cn('w-1 h-1 rounded-full', getRegimeDotColor(r))} />
-                  {translateRegime(r)}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Right side: risk + status + countdown */}
-        <div className="flex-shrink-0 flex items-center gap-3">
-          <span className={cn('text-[10px] font-medium', risk.color)}>
-            {risk.label}
-          </span>
-          {isGracePeriod ? (
+        {/* Expand button — rest of the row */}
+        <button
+          type="button"
+          onClick={onExpand}
+          aria-expanded={expanded}
+          aria-label={`${translateStrategyName(strategy.name)} 전략 상세 ${expanded ? '접기' : '펼치기'}`}
+          className="flex-1 min-w-0 flex items-center gap-3 text-left"
+        >
+          {/* Strategy info */}
+          <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <Badge variant="warning" dot>
-                유예 중
-              </Badge>
-              <span className="text-[10px] font-mono text-amber-400">
-                {countdownExpired ? '만료 중...' : `${countdownFormatted}`}
+              <span className="text-sm font-medium text-[var(--text-primary)] truncate">
+                {strategy.name}
+              </span>
+              {recommended && (
+                <span className="text-[10px] text-[var(--accent)]">
+                  추천
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-[11px] text-[var(--text-muted)] truncate">
+                {translateStrategyName(strategy.name)}
+              </span>
+              <span className="text-[10px] text-[var(--border-muted)]">|</span>
+              <span className="text-[10px] text-[var(--text-muted)]">
+                {CATEGORY_LABEL[category] || category}
               </span>
             </div>
-          ) : (
-            <Badge variant={active ? 'success' : 'neutral'} dot>
-              {active ? '활성' : '비활성'}
-            </Badge>
-          )}
-          {/* Chevron */}
-          <svg
-            className={cn(
-              'w-3.5 h-3.5 text-[var(--text-muted)] transition-transform',
-              expanded && 'rotate-180',
+            {/* Regime tags — dot + text only */}
+            {regimes.length > 0 && (
+              <div className="flex gap-2 mt-1.5">
+                {regimes.slice(0, 3).map((r) => (
+                  <span
+                    key={r}
+                    className={cn('inline-flex items-center gap-1 text-[10px]', getRegimeColor(r))}
+                  >
+                    <span className={cn('w-1 h-1 rounded-full', getRegimeDotColor(r))} />
+                    {translateRegime(r)}
+                  </span>
+                ))}
+              </div>
             )}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-          </svg>
-        </div>
-      </button>
+          </div>
+
+          {/* Right side: risk + status + countdown */}
+          <div className="flex-shrink-0 flex items-center gap-3">
+            <span className={cn('text-[10px] font-medium', risk.color)}>
+              {risk.label}
+            </span>
+            {isGracePeriod ? (
+              <div className="flex items-center gap-2">
+                <Badge variant="warning" dot>
+                  유예 중
+                </Badge>
+                <span className="text-[10px] font-mono text-amber-400">
+                  {countdownExpired ? '만료 중...' : `${countdownFormatted}`}
+                </span>
+              </div>
+            ) : (
+              <Badge variant={active ? 'success' : 'neutral'} dot>
+                {active ? '활성' : '비활성'}
+              </Badge>
+            )}
+            {/* Chevron */}
+            <svg
+              className={cn(
+                'w-3.5 h-3.5 text-[var(--text-muted)] transition-transform',
+                expanded && 'rotate-180',
+              )}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </button>
+      </div>
 
       {/* Expanded detail */}
       {expanded && (

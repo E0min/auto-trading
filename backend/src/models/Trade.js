@@ -95,6 +95,10 @@ const tradeSchema = new mongoose.Schema(
     pnl: {
       type: String,
     },
+    fundingPnl: {
+      type: String,
+      default: '0',
+    },
     metadata: {
       type: mongoose.Schema.Types.Mixed,
     },

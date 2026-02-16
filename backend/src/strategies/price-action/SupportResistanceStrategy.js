@@ -44,6 +44,8 @@ class SupportResistanceStrategy extends StrategyBase {
     maxConcurrentPositions: 2,
     cooldownMs: 120000,
     gracePeriodMs: 600000,
+    warmupCandles: 30,
+    volatilityPreference: 'neutral',
     description: '지지저항 돌파 -- 수평 S/R 레벨 식별 + 리테스트 확인 후 돌파 진입',
     defaultConfig: {
       lookback: 3,                    // Swing detection lookback (each side)

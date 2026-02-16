@@ -52,6 +52,14 @@ class StrategyBase extends EventEmitter {
     /** @type {{ getEquity: () => string }|null} Account context for equity injection */
     this._accountContext = null;
 
+    // R9-T2: Warm-up tracking — suppress signals until enough klines received
+    /** @type {number} Number of klines required before signals are allowed */
+    this._warmupCandles = this.constructor.metadata?.warmupCandles || 0;
+    /** @type {number} Number of klines received since activation */
+    this._receivedCandles = 0;
+    /** @type {boolean} Whether warm-up is complete */
+    this._warmedUp = this._warmupCandles === 0;
+
     this._log = createLogger(`Strategy:${name}`);
   }
 
@@ -117,7 +125,11 @@ class StrategyBase extends EventEmitter {
     this._category = category;
     this._active = true;
 
-    this._log.info('Strategy activated', { symbol, category });
+    // R9-T2: Reset warm-up state on activation
+    this._receivedCandles = 0;
+    this._warmedUp = this._warmupCandles === 0;
+
+    this._log.info('Strategy activated', { symbol, category, warmupCandles: this._warmupCandles });
   }
 
   /**
@@ -297,6 +309,42 @@ class StrategyBase extends EventEmitter {
     return this._marketRegime;
   }
 
+  // ---------------------------------------------------------------------------
+  // R9-T2: Warm-up tracking
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Track an incoming kline for warm-up progress.
+   * Called by BotService before onKline() on each kline update.
+   */
+  trackKline() {
+    if (!this._warmedUp) {
+      this._receivedCandles++;
+      if (this._receivedCandles >= this._warmupCandles) {
+        this._warmedUp = true;
+        this._log.info('Warm-up complete', { candles: this._receivedCandles });
+      }
+    }
+  }
+
+  /**
+   * @returns {boolean} whether the warm-up period is complete
+   */
+  isWarmedUp() {
+    return this._warmedUp;
+  }
+
+  /**
+   * @returns {{ warmedUp: boolean, received: number, required: number }}
+   */
+  getWarmupProgress() {
+    return {
+      warmedUp: this._warmedUp,
+      received: this._receivedCandles,
+      required: this._warmupCandles,
+    };
+  }
+
   /**
    * Emit a trading signal through the EventEmitter.
    *
@@ -308,6 +356,15 @@ class StrategyBase extends EventEmitter {
   emitSignal(signalData) {
     if (!signalData || typeof signalData !== 'object') {
       this._log.warn('emitSignal called with invalid signalData', { signalData });
+      return;
+    }
+
+    // R9-T2: Suppress signals during warm-up period
+    if (!this._warmedUp) {
+      this._log.debug('Signal suppressed — warming up', {
+        received: this._receivedCandles,
+        required: this._warmupCandles,
+      });
       return;
     }
 

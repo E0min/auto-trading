@@ -149,14 +149,14 @@ export default function Dashboard() {
       <TradingModeBanner mode={tradingMode} isLoading={botLoading} />
       <RiskAlertBanner events={riskEvents} onDismiss={dismissRisk} onAcknowledge={acknowledgeRisk} />
 
-      <div className="flex-1 px-6 py-8 max-w-[1440px] mx-auto w-full">
+      <div className="flex-1 px-4 lg:px-6 py-6 lg:py-8 max-w-[1440px] mx-auto w-full">
         {/* Header */}
-        <header className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-6">
+        <header className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6 lg:mb-8">
+          <div className="flex flex-wrap items-center gap-3 lg:gap-6">
             <h1 className="text-lg font-semibold text-[var(--text-primary)] tracking-tight">
               Bitget 자동매매
             </h1>
-            <div className="w-px h-5 bg-[var(--border-subtle)]" />
+            <div className="hidden lg:block w-px h-5 bg-[var(--border-subtle)]" />
             <TradingModeToggle
               currentMode={botStatus.tradingMode ?? (botStatus.paperMode ? 'paper' : 'live')}
               botRunning={botStatus.running}
@@ -200,14 +200,14 @@ export default function Dashboard() {
               )}
             </div>
           </div>
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4 lg:gap-6">
             <SystemHealth
               health={health}
               latency={latency}
               socketConnected={socketConnected}
               error={healthError}
             />
-            <div className="w-px h-5 bg-[var(--border-subtle)]" />
+            <div className="hidden lg:block w-px h-5 bg-[var(--border-subtle)]" />
             <BotControlPanel
               status={botStatus.status}
               running={botStatus.running}

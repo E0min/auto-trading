@@ -29,6 +29,7 @@ const OrphanOrderCleanup = require('./services/orphanOrderCleanup');
 const HealthCheck = require('./services/healthCheck');
 const BotService = require('./services/botService');
 const IndicatorCache = require('./services/indicatorCache');
+const InstrumentCache = require('./services/instrumentCache');
 const PaperEngine = require('./services/paperEngine');
 const PaperPositionManager = require('./services/paperPositionManager');
 const PaperAccountManager = require('./services/paperAccountManager');
@@ -170,6 +171,7 @@ async function bootstrap() {
 
   // Pipeline modules
   const indicatorCache = new IndicatorCache({ marketData });
+  const instrumentCache = new InstrumentCache({ exchangeClient });
   const strategyRouter = new StrategyRouter({ marketRegime });
   const signalFilter = new SignalFilter();
 
@@ -204,6 +206,7 @@ async function bootstrap() {
     coinSelector,
     marketRegime,
     indicatorCache,
+    instrumentCache,
     strategyRouter,
     signalFilter,
     paperEngine: PAPER_TRADING ? paperEngine : null,
@@ -213,6 +216,8 @@ async function bootstrap() {
     regimeOptimizer,
     symbolRegimeManager,
     fundingDataService,
+    stateRecovery,          // R8-T2-6
+    orphanOrderCleanup,     // R8-T2-6
   });
 
   // 3. Initialize wrapper services

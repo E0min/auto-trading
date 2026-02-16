@@ -23,10 +23,10 @@ export default function RegimeFlowMap({ data }: RegimeFlowMapProps) {
     <div className="space-y-4">
       {/* Multi-column grid: regime → active → grace (if any) → inactive */}
       <div className={cn(
-        'grid gap-3',
+        'grid gap-3 grid-cols-1',
         grace.length > 0
-          ? 'grid-cols-[140px_1fr_1fr_1fr]'
-          : 'grid-cols-[140px_1fr_1fr]',
+          ? 'lg:grid-cols-[140px_1fr_1fr_1fr]'
+          : 'lg:grid-cols-[140px_1fr_1fr]',
       )}>
         {/* Left: current regime */}
         <div className="flex items-start">
@@ -123,7 +123,7 @@ export default function RegimeFlowMap({ data }: RegimeFlowMapProps) {
       </div>
 
       {/* Regime breakdown matrix */}
-      <div className="grid grid-cols-5 gap-2 pt-3 border-t border-[var(--border-subtle)]">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 pt-3 border-t border-[var(--border-subtle)]">
         {ALL_REGIMES.map((regime) => {
           const bd = regimeBreakdown?.[regime.toUpperCase()] ??
                      regimeBreakdown?.[regime] ??

@@ -27,6 +27,10 @@ const log = createLogger('OrphanOrderCleanup');
 /** Default cleanup interval: 5 minutes */
 const DEFAULT_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
+/** R8-T2-6: Minimum order age (ms) before orphan candidacy — avoids cancelling recent orders
+ *  whose Trade records may not be persisted to DB yet */
+const MIN_ORPHAN_AGE_MS = 2 * 60 * 1000;
+
 // ---------------------------------------------------------------------------
 // OrphanOrderCleanup class
 // ---------------------------------------------------------------------------
@@ -145,6 +149,18 @@ class OrphanOrderCleanup {
     for (const order of exchangeOrders) {
       const orderId = order.orderId || order.ordId;
       if (!orderId) continue;
+
+      // R8-T2-6: Skip orders younger than MIN_ORPHAN_AGE_MS — DB sync may be incomplete
+      const cTime = Number(order.cTime || order.ctime || order.createTime || 0);
+      const ageMs = cTime ? Date.now() - cTime : Infinity;
+      if (ageMs < MIN_ORPHAN_AGE_MS) {
+        log.debug('cleanup — skipping recent order (age < threshold)', {
+          orderId,
+          ageMs,
+          thresholdMs: MIN_ORPHAN_AGE_MS,
+        });
+        continue;
+      }
 
       const symbol = order.symbol || order.instId || 'unknown';
       const side = order.side || 'unknown';

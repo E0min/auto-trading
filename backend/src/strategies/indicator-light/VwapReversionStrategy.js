@@ -64,6 +64,8 @@ class VwapReversionStrategy extends StrategyBase {
     maxConcurrentPositions: 2,
     cooldownMs: 60000,
     gracePeriodMs: 300000,
+    warmupCandles: 20,
+    volatilityPreference: 'low',
     description: 'VWAP 회귀 전략 — 가격이 VWAP에서 크게 이탈했을 때 회귀를 기대',
     defaultConfig: {
       rsiPeriod: 14,

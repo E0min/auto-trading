@@ -44,6 +44,8 @@ class AdaptiveRegimeStrategy extends StrategyBase {
     maxConcurrentPositions: 1,
     cooldownMs: 120000,
     gracePeriodMs: 0,
+    warmupCandles: 43,
+    volatilityPreference: 'high',
     description: '장세 적응형 멀티전략 — 시장 국면에 따라 자동으로 매매 모드 전환',
     defaultConfig: {
       emaPeriodFast: 9,

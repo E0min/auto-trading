@@ -57,7 +57,8 @@ npx jest --coverage                        # 커버리지 포함 실행
 ```
 exchangeClient (싱글턴) → riskEngine → orderManager/positionManager
 → marketData → tickerAggregator → coinSelector/marketRegime
-→ indicatorCache/fundingDataService/strategyRouter/signalFilter → botService (오케스트레이터)
+→ indicatorCache/instrumentCache/fundingDataService/strategyRouter/signalFilter
+→ stateRecovery/orphanOrderCleanup → botService (오케스트레이터)
 
 미들웨어 체인: CORS → traceContext → apiKeyAuth → httpMetrics → rateLimiter → routes
 ```
@@ -92,7 +93,7 @@ exchangeClient (싱글턴) → riskEngine → orderManager/positionManager
 - `strategies/indicator-heavy/` (3): QuietRangeScalp, Breakout, AdaptiveRegime
 
 ### 전략 메타데이터
-각 전략 클래스의 static `metadata`에 `targetRegimes`, `riskLevel`, `maxConcurrentPositions`, `cooldownMs`, `gracePeriodMs`, `defaultConfig` 정의. `strategyRouter.js`가 시장 레짐 변경 시 `targetRegimes` 기반으로 전략을 자동 활성화/비활성화. 비활성화 시 `gracePeriodMs` 동안 유예기간 적용 (OPEN 차단, CLOSE 허용).
+각 전략 클래스의 static `metadata`에 `targetRegimes`, `riskLevel`, `maxConcurrentPositions`, `cooldownMs`, `gracePeriodMs`, `warmupCandles`, `volatilityPreference`, `defaultConfig` 정의. `warmupCandles`는 전략 활성화 후 시그널 차단 기간 (StrategyBase emitSignal 게이트). `volatilityPreference`(`'high'`/`'low'`/`'neutral'`)는 멀티심볼 배정 시 변동성 선호도. `strategyRouter.js`가 시장 레짐 변경 시 `targetRegimes` 기반으로 전략을 자동 활성화/비활성화. 비활성화 시 `gracePeriodMs` 동안 유예기간 적용 (OPEN 차단, CLOSE 허용).
 
 ### 시장 레짐
 `marketRegime.js`가 시장 상태를 분류: `TRENDING_UP`, `TRENDING_DOWN`, `RANGING`, `VOLATILE`, `QUIET`. 삼중 보호 체계: hysteresis(10캔들) + 전환 쿨다운(5분) + 전략 유예기간(5~15분). 레짐별 코인 선정 가중치도 차별화 (`coinSelector.js`의 7-factor 스코어링).
@@ -141,7 +142,7 @@ exchangeClient (싱글턴) → riskEngine → orderManager/positionManager
 
 ## Mongoose 모델 (`models/`)
 
-- `Trade` — 주문 정보 (금액 필드 전부 String)
+- `Trade` — 주문 정보 (금액 필드 전부 String, `fundingPnl` 포함)
 - `BotSession` — 봇 세션 상태/설정/통계
 - `Signal` — 전략 시그널 (confidence, riskApproved, marketContext 포함)
 - `Snapshot` — 주식 곡선용 시점별 스냅샷 (sessionId, equity, cash, unrealizedPnl)

@@ -1,11 +1,11 @@
-# Sprint State — Round 8
+# Sprint State — Round 9
 
 ## Meta
-- round: 8
-- topic: 코드베이스 재분석 — 새 개선과제 발굴
-- started: 2026-02-16T23:40:00Z
-- last_updated: 2026-02-17T03:00:00Z
-- current_phase: 6
+- round: 9
+- topic: Tier 2 Quality — R8 미구현 agreed 항목 (11건) + deferred 2건 재활성화
+- started: 2026-02-17T04:00:00Z
+- last_updated: 2026-02-17T08:00:00Z
+- current_phase: 7
 - status: in_progress
 
 ## Phase Progress
@@ -19,76 +19,49 @@
 - [ ] Phase 7 — Commit & Push
 
 ## Phase 0 Result
-- 대상 항목: 자유 분석 (R7 이관 7건 + BACKLOG deferred 8건 포함)
-- Track A: 자유 분석 (Backend)
-- Track B: 자유 분석 (Backtest)
-- Track C: 자유 분석 (Frontend)
-- BACKLOG 현황: 81/89 done (91%), 8 deferred
+- BACKLOG 미완료: 11건 agreed (T2) + 8건 agreed (T3) + 2건 deferred (R8-T0-5, R8-T1-1)
+- 최우선 Tier: Tier 2 (11건)
+- Track A (Backend): R8-T2-1, R8-T2-2, R8-T2-3, R8-T2-4, R8-T2-5, R8-T2-6
+- Track B (Backtest): — (T2에 해당 없음)
+- Track C (Frontend): R8-T2-8, R8-T2-9, R8-T2-10, R8-T2-11, R8-T2-12
+- 재활성화 검토: R8-T0-5 (PositionManager 전략 매핑), R8-T1-1 (InstrumentCache lot step)
 
 ## Phase 1 Result
-- Trader: agents/trader/proposals/round_8.md (19개 발견, CRITICAL 3 / HIGH 6 / MEDIUM 7 / LOW 3)
-- Engineer: agents/engineer/proposals/round_8.md (16개 발견, CRITICAL 2 / HIGH 6 / MEDIUM 8)
-- UI/UX: agents/ui/proposals/round_8.md (23개 발견, CRITICAL 2 / HIGH 11 / MEDIUM 9 / LOW 1)
+- Trader: agents/trader/proposals/round_9.md (860줄, 8건 분석, deferred 2건 모두 재활성화 권장)
+- Engineer: agents/engineer/proposals/round_9.md (12개 소스 분석, R8-T1-1 재활성화 필수 판단)
+- UI/UX: agents/ui/proposals/round_9.md (616줄, FE 5건 코드레벨 분석, 총 2h20m 예상)
+- 3/3 공통: R8-T0-5 + R8-T1-1 재활성화 동의
 
 ## Phase 2 Result
-- Trader review: agents/trader/proposals/round_8_review.md
-- Engineer review: agents/engineer/proposals/round_8_review.md
-- UI review: agents/ui/proposals/round_8_review.md
-- 핵심 이견: decimal.js 도입 (Trader CRITICAL vs Engineer deferred)
-- 3/3 합의: 11건, 2/3 합의: 3건
+- Trader review: agents/trader/proposals/round_9_review.md
+- Engineer review: agents/engineer/proposals/round_9_review.md
+- UI review: agents/ui/proposals/round_9_review.md
+- 핵심 이견: (1) 펀딩비 PnL 관측용 vs Trade 반영, (2) BTCUSDT 배정 제외 여부, (3) unsubscribeSymbols 존재 오인
+- 3/3 합의: 13건 전체 동의 기반, 조건부 4건
 
 ## Phase 3 Result
-- 결정문서: agents/shared/decisions/round_8.md
-- 합의 항목: 46건 (T0: 10, T1: 16, T2: 12, T3: 8)
-- 아키텍처 결정: 7건 (AD-46 ~ AD-52)
-- deferred 유지: 5건
-- BACKLOG 업데이트 완료 (T3-10 승격, 46건 신규 추가)
-- 이견 해소: decimal.js = 모니터링 후 결정, 멀티심볼 = Phase 1만, 모바일 = MEDIUM
+- 결정문서: agents/shared/decisions/round_9.md
+- 합의 항목: 13건 (BE 8건 + FE 5건)
+- 아키텍처 결정: 5건 (AD-53 ~ AD-57)
+- 재활성화: R8-T0-5, R8-T1-1 (deferred → agreed)
+- 이견 해소: BTCUSDT 배정 허용(Engineer), warm-up StrategyBase(2/3), 펀딩비 Phase 분할
+- BACKLOG 업데이트 완료
 
 ## Phase 4 Result
-- 워크트리: 미사용 (master에서 직접 작업)
-- 구현 범위: T0 (10건) + T1 (16건) + T2-7 (1건) = 27건 중 25건 구현
+- 구현 완료: 13/13건
+- 변경 파일: 32개 (신규 1개 + 수정 31개), +1153/-216줄
+- 신규 파일: backend/src/services/instrumentCache.js
+- BE 테스트: 51/51 pass (mathUtils 100% coverage)
+- FE 빌드: 성공 (4 routes, 0 errors)
+- 구현 상세:
+  - BE Phase 1: InstrumentCache(AD-53) + warm-up(AD-54) — 22파일
+  - BE Phase 2: 전략 매핑(R8-T0-5) + 멀티심볼(AD-55) — 21파일
+  - BE Phase 3: 펀딩비 PnL(AD-57) + 코인 재선정(AD-56) — 4파일
+  - BE Phase 4: Paper 경고(R8-T2-5) + StateRecovery(R8-T2-6) — 4파일
+  - FE: 접근성(T2-8) + 모바일 반응형(T2-10~12) — 4파일
 
-### Backend 구현 완료 (16건)
-| ID | 항목 | 파일 |
-|----|------|------|
-| R8-T0-1 | Router Singleton 팩토리 내부 이동 | botRoutes, tradeRoutes, analyticsRoutes, healthRoutes, paperRoutes, tournamentRoutes |
-| R8-T0-2 | BacktestStore FIFO 50제한 | backtestStore.js |
-| R8-T0-3 | RiskEngine reduceOnly bypass | riskEngine.js |
-| R8-T0-4 | SignalFilter CLOSE bypass | signalFilter.js |
-| R8-T0-6 | resume() StrategyRouter 연동 | botService.js |
-| R8-T0-7 | getStatus() getSignal() try-catch | botService.js |
-| R8-T1-2 | Snapshot 주기적 생성 (60초) | botService.js (AD-52) |
-| R8-T1-3 | BotSession stats 실시간 업데이트 | botService.js |
-| R8-T1-4 | OrphanOrderCleanup unref() | orphanOrderCleanup.js |
-| R8-T1-5 | TickerAggregator timer unref() | tickerAggregator.js |
-| R8-T1-6 | _lastTickerEmit Map cleanup | app.js |
-| R8-T1-7 | parseFloat 직접 사용 제거 | tradeRoutes, tournamentRoutes, tickerAggregator |
-| R8-T1-8 | TournamentRoutes 캡슐화 수정 | tournamentRoutes.js, paperAccountManager.js |
-| R8-T2-7 | express.json() limit 1mb | app.js |
-| - | PositionManager timer unref() | positionManager.js |
+## Phase 5 Result
+- KNOWLEDGE_INDEX: 코드 변경 반영 (Phase 7에서 커밋 시 포함)
 
-### Frontend 구현 완료 (9건)
-| ID | 항목 | 파일 |
-|----|------|------|
-| R8-T0-8 | EmergencyStopDialog Escape + 포커스 트랩 | EmergencyStopDialog.tsx |
-| R8-T0-9 | 에러 토스트 severity 기반 (AD-47) | ui/ErrorToast.tsx (신규), page.tsx |
-| R8-T0-10 | 봇 정지 확인 다이얼로그 | BotControlPanel.tsx |
-| R8-T1-9 | useSocket state 분리 | useSocket.ts |
-| R8-T1-10 | useMarketIntelligence named handler | useMarketIntelligence.ts |
-| R8-T1-11 | usePerformanceAnalytics 적응형 폴링 | usePerformanceAnalytics.ts |
-| R8-T1-12 | useTournament 적응형 폴링 | useTournament.ts |
-| R8-T1-13 | useAnalytics 폴링 추가 | useAnalytics.ts |
-| R8-T1-14 | SignalFeed 전략명 번역 | SignalFeed.tsx |
-| R8-T1-15 | useTournament 에러 한국어 | useTournament.ts |
-| R8-T1-16 | collapsible aria-expanded | TradesTable, DrawdownChart, BacktestForm |
-
-### 미구현 항목 (2건)
-| ID | 항목 | 사유 |
-|----|------|------|
-| R8-T0-5 | PositionManager 전략 매핑 (3.5h) | 범위가 크고 다음 라운드의 멀티심볼과 함께 구현이 효율적 |
-| R8-T1-1 | InstrumentCache lot step (2h) | R8-T0-5와 연계, 다음 라운드로 이관 |
-
-### 검증
-- Frontend build: 성공
-- Backend tests: 51/51 passed (100%)
+## Phase 6 Result
+- CLAUDE.md 업데이트: DI 순서에 instrumentCache 추가, 전략 메타데이터에 warmupCandles/volatilityPreference 추가

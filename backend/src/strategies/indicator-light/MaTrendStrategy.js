@@ -37,6 +37,8 @@ class MaTrendStrategy extends StrategyBase {
     maxConcurrentPositions: 1,
     cooldownMs: 300000,
     gracePeriodMs: 300000,
+    warmupCandles: 60,
+    volatilityPreference: 'neutral',
     description: '멀티타임프레임 EMA 추세추종 + 트레일링 스탑',
     defaultConfig: {
       h1FastEma: 9,

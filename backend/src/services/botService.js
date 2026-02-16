@@ -27,6 +27,9 @@ const registry = require('../strategies');
 /** Snapshot generation interval (ms) — AD-52 */
 const SNAPSHOT_INTERVAL_MS = 60_000;
 
+/** Coin reselection interval (ms) — AD-56, R8-T2-4: 4 hours */
+const COIN_RESELECTION_INTERVAL_MS = 4 * 60 * 60 * 1000;
+
 const log = createLogger('BotService');
 
 // ---------------------------------------------------------------------------
@@ -63,7 +66,10 @@ class BotService extends EventEmitter {
     regimeEvaluator,
     regimeOptimizer,
     symbolRegimeManager,
+    instrumentCache,
     fundingDataService,
+    stateRecovery,
+    orphanOrderCleanup,
   }) {
     super();
 
@@ -115,8 +121,17 @@ class BotService extends EventEmitter {
     /** @type {import('./symbolRegimeManager')|null} */
     this.symbolRegimeManager = symbolRegimeManager || null;
 
+    /** @type {import('./instrumentCache')|null} */
+    this.instrumentCache = instrumentCache || null;
+
     /** @type {import('./fundingDataService')|null} */
     this.fundingDataService = fundingDataService || null;
+
+    /** @type {import('./stateRecovery')|null} R8-T2-6 */
+    this.stateRecovery = stateRecovery || null;
+
+    /** @type {import('./orphanOrderCleanup')|null} R8-T2-6 */
+    this.orphanOrderCleanup = orphanOrderCleanup || null;
 
     /** @type {object|null} Current BotSession Mongoose document */
     this.currentSession = null;
@@ -135,6 +150,18 @@ class BotService extends EventEmitter {
 
     /** @type {NodeJS.Timeout|null} Snapshot generation timer (AD-52, R8-T1-2) */
     this._snapshotInterval = null;
+
+    /** @type {Map<string, string>} R8-T0-5: strategy-position mapping (key = `${symbol}:${side}`, value = strategyName) */
+    this._strategyPositionMap = new Map();
+
+    /** @type {Map<string, string>} R8-T2-3: cumulative funding PnL per position (key = `${symbol}:${side}`, value = total funding as String) */
+    this._positionFundingMap = new Map();
+
+    /** @type {NodeJS.Timeout|null} R8-T2-4: Coin reselection timer (AD-56) */
+    this._reselectionTimer = null;
+
+    /** @type {boolean} R8-T2-4: Guard flag to prevent concurrent reselections */
+    this._reselectionInProgress = false;
 
     log.info('BotService initialised', { paperMode: this.paperMode });
   }
@@ -187,6 +214,23 @@ class BotService extends EventEmitter {
 
       // 4. Start positionManager
       await this.positionManager.start(category);
+
+      // 4b. Refresh InstrumentCache (R9-T1: per-symbol lot step)
+      if (this.instrumentCache) {
+        await this.instrumentCache.refresh(category);
+        this.instrumentCache.startAutoRefresh(category);
+      }
+
+      // 4c. State recovery — reconcile DB vs exchange (R8-T2-6, live mode only)
+      if (this.stateRecovery && !this.paperMode) {
+        try {
+          const recoveryResult = await this.stateRecovery.recover(category);
+          log.info('State recovery completed', recoveryResult);
+        } catch (err) {
+          log.error('State recovery failed (non-fatal)', { error: err.message });
+          // NOT fatal — continue startup
+        }
+      }
 
       // 5. Start marketData, indicatorCache, tickerAggregator, marketRegime
       this.marketData.start();
@@ -241,6 +285,15 @@ class BotService extends EventEmitter {
         this._eventCleanups.push(() => {
           this.strategyRouter.stop();
         });
+
+        // AD-55: Assign per-strategy symbols after start — reassigns active strategies
+        if (selectedCoins.length > 0) {
+          this.strategyRouter.assignSymbols(
+            this._selectedSymbols,
+            selectedCoins,
+            (strategyName) => this._strategyHasOpenPosition(strategyName),
+          );
+        }
 
         // Grace period events → socket.io (R7-C3, AD-45)
         const onGraceStarted = (data) => { this.emit('strategy:grace_started', data); };
@@ -301,6 +354,27 @@ class BotService extends EventEmitter {
         });
       }
 
+      // 10d. Wire up: fundingDataService → funding PnL accumulation per position (R8-T2-3)
+      if (this.fundingDataService) {
+        const onFundingForPositions = (data) => {
+          if (!data || !data.symbol || !data.fundingRate) return;
+          const symbol = data.symbol;
+          const fundingRate = data.fundingRate;
+
+          if (this.paperMode && this.paperPositionManager) {
+            // Paper mode: delegate to PaperPositionManager.applyFunding
+            this.paperPositionManager.applyFunding(symbol, fundingRate);
+          } else {
+            // Live mode: accumulate in _positionFundingMap
+            this._accumulateLiveFunding(symbol, fundingRate);
+          }
+        };
+        this.fundingDataService.on(MARKET_EVENTS.FUNDING_UPDATE, onFundingForPositions);
+        this._eventCleanups.push(() => {
+          this.fundingDataService.removeListener(MARKET_EVENTS.FUNDING_UPDATE, onFundingForPositions);
+        });
+      }
+
       // 11. Wire up: marketData TICKER_UPDATE -> strategy.onTick
       const onTickerUpdate = (ticker) => {
         for (const strategy of this.strategies) {
@@ -318,10 +392,14 @@ class BotService extends EventEmitter {
         this.marketData.removeListener(MARKET_EVENTS.TICKER_UPDATE, onTickerUpdate);
       });
 
-      // 11b. Wire up: marketData KLINE_UPDATE -> strategy.onKline
+      // 11b. Wire up: marketData KLINE_UPDATE -> strategy.trackKline + strategy.onKline
       const onKlineUpdate = (kline) => {
         for (const strategy of this.strategies) {
           if (strategy.isActive() && strategy._symbol === kline.symbol) {
+            // R9-T2: Track kline for warm-up progress (before onKline)
+            if (typeof strategy.trackKline === 'function') {
+              strategy.trackKline();
+            }
             try {
               strategy.onKline(kline);
             } catch (err) {
@@ -401,6 +479,30 @@ class BotService extends EventEmitter {
         this.orderManager.removeListener(TRADE_EVENTS.ORDER_FILLED, onOrderFilledStats);
       });
 
+      // 11f. Wire up: ORDER_FILLED -> strategy-position mapping + funding removal (R8-T0-5, R8-T2-3)
+      const onOrderFilledMapping = (data) => {
+        if (!data || !data.trade) return;
+        const trade = data.trade;
+        // Remove mapping when a close/reduceOnly order fills
+        if (trade.reduceOnly) {
+          const side = trade.posSide || (trade.side === 'sell' ? 'long' : 'short');
+          this._removeStrategyPositionMapping(trade.symbol, side);
+          // R8-T2-3: Remove funding PnL tracking for closed position (live mode)
+          if (!this.paperMode) {
+            const funding = this._removePositionFunding(trade.symbol, side);
+            if (!math.isZero(funding)) {
+              log.info('Position funding PnL captured on close', {
+                symbol: trade.symbol, side, fundingPnl: funding,
+              });
+            }
+          }
+        }
+      };
+      this.orderManager.on(TRADE_EVENTS.ORDER_FILLED, onOrderFilledMapping);
+      this._eventCleanups.push(() => {
+        this.orderManager.removeListener(TRADE_EVENTS.ORDER_FILLED, onOrderFilledMapping);
+      });
+
       // 12. Wire up: strategy SIGNAL_GENERATED -> _handleStrategySignal (T0-2 qty resolution + filter + submit)
       for (const strategy of this.strategies) {
         const onSignal = (signal) => {
@@ -448,11 +550,22 @@ class BotService extends EventEmitter {
         });
       }
 
+      // 14d. Start orphan order cleanup (R8-T2-6, live mode only)
+      if (this.orphanOrderCleanup && !this.paperMode) {
+        this.orphanOrderCleanup.start(category);
+        this._eventCleanups.push(() => {
+          this.orphanOrderCleanup.stop();
+        });
+      }
+
       // 15. Set _running = true
       this._running = true;
 
       // 16. Start periodic Snapshot generation (AD-52, R8-T1-2)
       this._startSnapshotGeneration(sessionId);
+
+      // 17. Start periodic coin reselection timer (AD-56, R8-T2-4)
+      this._startCoinReselectionTimer(category);
 
       log.info('start — bot started successfully', {
         sessionId,
@@ -497,6 +610,18 @@ class BotService extends EventEmitter {
 
     // 1b. Stop snapshot generation (R8-T1-2)
     this._stopSnapshotGeneration();
+
+    // 1c. Stop coin reselection timer (R8-T2-4)
+    this._stopCoinReselectionTimer();
+
+    // 1d. Stop orphan order cleanup (R8-T2-6)
+    if (this.orphanOrderCleanup) {
+      try {
+        this.orphanOrderCleanup.stop();
+      } catch (err) {
+        log.error('stop — error stopping orphanOrderCleanup', { error: err });
+      }
+    }
 
     // 2. Deactivate all strategies
     for (const strategy of this.strategies) {
@@ -550,6 +675,15 @@ class BotService extends EventEmitter {
         this.symbolRegimeManager.stop();
       } catch (err) {
         log.error('stop — error stopping symbolRegimeManager', { error: err });
+      }
+    }
+
+    // 3e. Stop instrumentCache (R9-T1)
+    if (this.instrumentCache) {
+      try {
+        this.instrumentCache.stop();
+      } catch (err) {
+        log.error('stop — error stopping instrumentCache', { error: err });
       }
     }
 
@@ -634,9 +768,11 @@ class BotService extends EventEmitter {
       this.paperPositionManager.stopTournament();
     }
 
-    // 8. Clear strategy list
+    // 8. Clear strategy list and mappings
     this.strategies = [];
     this._selectedSymbols = [];
+    this._strategyPositionMap.clear();
+    this._positionFundingMap.clear();
 
     log.info('stop — bot stopped', { reason });
 
@@ -789,15 +925,35 @@ class BotService extends EventEmitter {
    * Switch between paper and live trading modes at runtime.
    * Bot must be stopped before switching.
    *
+   * R8-T2-5: When switching from live → paper, warns if open positions exist
+   * unless force=true is passed.
+   *
    * @param {'paper'|'live'} mode
-   * @throws {Error} if bot is currently running
+   * @param {object} [opts]
+   * @param {boolean} [opts.force=false] — skip open-position warning
+   * @throws {Error} if bot is currently running or open positions exist without force
    */
-  setTradingMode(mode) {
+  setTradingMode(mode, { force = false } = {}) {
     if (this._running) {
       throw new Error('봇이 실행 중입니다. 먼저 정지해주세요.');
     }
 
+    const prevMode = this.paperMode ? 'paper' : 'live';
+
     if (mode === 'paper') {
+      // R8-T2-5: Warn if switching from live → paper with open positions
+      if (!this.paperMode && !force) {
+        const positions = this.positionManager ? this.positionManager.getPositions() : [];
+        if (positions && positions.length > 0) {
+          const symbols = positions.map(p => `${p.symbol}:${p.posSide}`).join(', ');
+          throw new Error(
+            `라이브 포지션이 ${positions.length}개 열려 있습니다 (${symbols}). ` +
+            `Paper 모드로 전환하면 이 포지션은 수동 관리해야 합니다. ` +
+            `force=true 파라미터로 강제 전환 가능합니다.`
+          );
+        }
+      }
+
       if (this.paperEngine && this.paperPositionManager) {
         this.orderManager.setPaperMode(this.paperEngine, this.paperPositionManager);
       }
@@ -810,6 +966,9 @@ class BotService extends EventEmitter {
     } else {
       throw new Error(`Invalid trading mode: ${mode}`);
     }
+
+    // R8-T2-5: Emit mode change event
+    this.emit('trading_mode_changed', { from: prevMode, to: mode });
   }
 
   // =========================================================================
@@ -856,6 +1015,11 @@ class BotService extends EventEmitter {
       status.router = this.strategyRouter.getStatus();
     }
 
+    // R8-T0-5: Include strategy-position mapping
+    if (this._strategyPositionMap.size > 0) {
+      status.strategyPositionMap = Object.fromEntries(this._strategyPositionMap);
+    }
+
     // Include SignalFilter stats
     if (this.signalFilter) {
       status.signalFilter = this.signalFilter.getStats();
@@ -882,6 +1046,52 @@ class BotService extends EventEmitter {
     }
 
     return status;
+  }
+
+  // =========================================================================
+  // R8-T0-5: Strategy-Position mapping
+  // =========================================================================
+
+  /**
+   * Get the strategy name that owns a position.
+   *
+   * @param {string} symbol — e.g. 'BTCUSDT'
+   * @param {string} side   — 'long' | 'short'
+   * @returns {string|null} strategy name or null if not mapped
+   */
+  getStrategyForPosition(symbol, side) {
+    return this._strategyPositionMap.get(`${symbol}:${side}`) || null;
+  }
+
+  /**
+   * Remove a strategy-position mapping entry (called on position close).
+   *
+   * @param {string} symbol
+   * @param {string} side
+   * @private
+   */
+  _removeStrategyPositionMapping(symbol, side) {
+    const key = `${symbol}:${side}`;
+    if (this._strategyPositionMap.has(key)) {
+      log.debug('Strategy-position mapping removed', {
+        key, strategy: this._strategyPositionMap.get(key),
+      });
+      this._strategyPositionMap.delete(key);
+    }
+  }
+
+  /**
+   * Check if a strategy has any open position (used by AD-55 symbol preservation).
+   *
+   * @param {string} strategyName
+   * @returns {boolean}
+   * @private
+   */
+  _strategyHasOpenPosition(strategyName) {
+    for (const [, owner] of this._strategyPositionMap) {
+      if (owner === strategyName) return true;
+    }
+    return false;
   }
 
   // =========================================================================
@@ -1216,10 +1426,27 @@ class BotService extends EventEmitter {
 
     let qty = math.divide(allocatedValue, price);
 
-    // Floor to lot step (default 0.0001; Phase 2 will use per-symbol lot info)
-    qty = math.floorToStep(qty, '0.0001');
+    // Floor to per-symbol lot step from InstrumentCache (R9-T1)
+    const lotStep = this.instrumentCache
+      ? this.instrumentCache.getLotStep(signal.symbol)
+      : '0.0001';
+    qty = math.floorToStep(qty, lotStep);
 
     if (math.isZero(qty)) return null;
+
+    // Validate against minimum order quantity (R9-T1)
+    if (this.instrumentCache) {
+      const minQty = this.instrumentCache.getMinQty(signal.symbol);
+      if (minQty && !math.isZero(minQty) && math.isLessThan(qty, minQty)) {
+        log.warn('_resolveSignalQuantity — qty below minQty', {
+          symbol: signal.symbol,
+          qty,
+          minQty,
+          lotStep,
+        });
+        return null;
+      }
+    }
 
     return qty;
   }
@@ -1439,9 +1666,17 @@ class BotService extends EventEmitter {
       return;
     }
 
+    // Block signals during symbol reassignment (AD-55)
+    if (this.strategyRouter && this.strategyRouter.isSymbolUpdateInProgress()) {
+      log.debug('_handleStrategySignal — blocked during symbol reassignment', {
+        strategy: signal.strategy, symbol: signal.symbol,
+      });
+      return;
+    }
+
     // Submit with resolved qty
     try {
-      await this.orderManager.submitOrder({
+      const result = await this.orderManager.submitOrder({
         ...signal,
         qty: resolvedQty,
         price: signal.suggestedPrice || signal.price,
@@ -1449,11 +1684,272 @@ class BotService extends EventEmitter {
         resolvedQty,
         sessionId,
       });
+
+      // R8-T0-5: Record strategy-position mapping on OPEN success
+      if (result && (signal.action === SIGNAL_ACTIONS.OPEN_LONG || signal.action === SIGNAL_ACTIONS.OPEN_SHORT)) {
+        const side = signal.action === SIGNAL_ACTIONS.OPEN_LONG ? 'long' : 'short';
+        const mapKey = `${signal.symbol}:${side}`;
+        const existing = this._strategyPositionMap.get(mapKey);
+        if (existing && existing !== signal.strategy) {
+          log.warn('_handleStrategySignal — strategy-position map overwrite', {
+            key: mapKey, previous: existing, new: signal.strategy,
+          });
+        }
+        this._strategyPositionMap.set(mapKey, signal.strategy);
+        log.debug('Strategy-position mapping recorded', { key: mapKey, strategy: signal.strategy });
+      }
     } catch (err) {
       log.error('orderManager.submitOrder error from strategy signal', {
         strategy: signal.strategy,
         error: err,
       });
+    }
+  }
+
+  // =========================================================================
+  // R8-T2-3: Live mode funding PnL accumulation
+  // =========================================================================
+
+  /**
+   * Accumulate funding PnL for open positions in live mode.
+   * Formula: fundingPnl = positionSize * fundingRate * -1
+   *   (payer=negative, receiver=positive)
+   *
+   * Phase 1: data collection only — does NOT modify PnL calculations.
+   *
+   * @param {string} symbol
+   * @param {string} fundingRate — funding rate as decimal string
+   * @private
+   */
+  _accumulateLiveFunding(symbol, fundingRate) {
+    if (!fundingRate || math.isZero(fundingRate)) return;
+
+    const positions = this.positionManager ? this.positionManager.getPositions() : [];
+    for (const pos of positions) {
+      if (pos.symbol !== symbol) continue;
+
+      const side = pos.posSide || 'long';
+      const key = `${symbol}:${side}`;
+      const posSize = math.multiply(pos.qty || '0', pos.markPrice || pos.entryPrice || '0');
+      // fundingPnl = positionSize * fundingRate * -1
+      const fundingPnl = math.multiply(math.multiply(posSize, fundingRate), '-1');
+
+      const prev = this._positionFundingMap.get(key) || '0';
+      this._positionFundingMap.set(key, math.add(prev, fundingPnl));
+
+      log.debug('_accumulateLiveFunding — accumulated', {
+        key,
+        fundingRate,
+        fundingPnl,
+        total: this._positionFundingMap.get(key),
+      });
+    }
+  }
+
+  /**
+   * Get accumulated funding PnL for a position in live mode.
+   *
+   * @param {string} symbol
+   * @param {string} side — 'long' | 'short'
+   * @returns {string} accumulated funding PnL
+   */
+  getPositionFunding(symbol, side) {
+    return this._positionFundingMap.get(`${symbol}:${side}`) || '0';
+  }
+
+  /**
+   * Remove funding PnL tracking for a closed position (called alongside strategy-position mapping removal).
+   *
+   * @param {string} symbol
+   * @param {string} side
+   * @returns {string} the accumulated funding at time of removal
+   * @private
+   */
+  _removePositionFunding(symbol, side) {
+    const key = `${symbol}:${side}`;
+    const funding = this._positionFundingMap.get(key) || '0';
+    this._positionFundingMap.delete(key);
+    return funding;
+  }
+
+  // =========================================================================
+  // R8-T2-4: Coin reselection timer (AD-56)
+  // =========================================================================
+
+  /**
+   * Start the periodic coin reselection timer.
+   * @param {string} category
+   * @private
+   */
+  _startCoinReselectionTimer(category) {
+    this._stopCoinReselectionTimer(); // Clear any existing timer
+
+    this._reselectionTimer = setInterval(() => {
+      this._performCoinReselection(category).catch((err) => {
+        log.error('Coin reselection failed', { error: err.message });
+      });
+    }, COIN_RESELECTION_INTERVAL_MS);
+    if (this._reselectionTimer.unref) this._reselectionTimer.unref();
+
+    log.info('Coin reselection timer started', {
+      intervalMs: COIN_RESELECTION_INTERVAL_MS,
+      intervalHours: COIN_RESELECTION_INTERVAL_MS / (60 * 60 * 1000),
+    });
+  }
+
+  /**
+   * Stop the periodic coin reselection timer.
+   * @private
+   */
+  _stopCoinReselectionTimer() {
+    if (this._reselectionTimer) {
+      clearInterval(this._reselectionTimer);
+      this._reselectionTimer = null;
+    }
+  }
+
+  /**
+   * Perform a coin reselection cycle.
+   *
+   * Staged transition order (AD-56):
+   *   1. Select new coins via coinSelector
+   *   2. Compare with current symbols — if same set, skip
+   *   3. Protect symbols with open positions (don't remove them)
+   *   4. Subscribe new symbols first
+   *   5. Reassign strategies
+   *   6. THEN unsubscribe removed symbols
+   *   7. Emit coins_reselected event
+   *
+   * @param {string} category
+   * @private
+   */
+  async _performCoinReselection(category) {
+    // Guard: bot must be running
+    if (!this._running) return;
+
+    // Guard: prevent concurrent reselections
+    if (this._reselectionInProgress) {
+      log.warn('_performCoinReselection — already in progress, skipping');
+      return;
+    }
+
+    this._reselectionInProgress = true;
+
+    try {
+      log.info('_performCoinReselection — starting coin reselection');
+
+      // 1. Select new coins
+      const selectedCoins = await this.coinSelector.selectCoins(category);
+      if (!this._running) return; // Bail if bot stopped during async call
+
+      const newSymbols = selectedCoins.map((c) => c.symbol);
+
+      // Always include BTCUSDT — MarketRegime depends on BTC kline data
+      if (!newSymbols.includes('BTCUSDT')) {
+        newSymbols.unshift('BTCUSDT');
+      }
+
+      // 2. Compare with current symbols — if same set, skip
+      const currentSet = new Set(this._selectedSymbols);
+      const newSet = new Set(newSymbols);
+      const sameSet = currentSet.size === newSet.size && [...currentSet].every((s) => newSet.has(s));
+
+      if (sameSet) {
+        log.info('_performCoinReselection — same symbol set, skipping');
+        return;
+      }
+
+      // 3. Identify added, removed, and kept symbols
+      const added = newSymbols.filter((s) => !currentSet.has(s));
+      const removed = this._selectedSymbols.filter((s) => !newSet.has(s));
+      const kept = newSymbols.filter((s) => currentSet.has(s));
+
+      // 3b. Protect symbols with open positions
+      const positionManager = this.paperMode ? this.paperPositionManager : this.positionManager;
+      const protectedSymbols = [];
+      if (positionManager) {
+        const openPositions = positionManager.getPositions();
+        for (const pos of openPositions) {
+          if (removed.includes(pos.symbol)) {
+            protectedSymbols.push(pos.symbol);
+          }
+        }
+      }
+
+      // Remove protected symbols from the "removed" list
+      const actualRemoved = removed.filter((s) => !protectedSymbols.includes(s));
+
+      // Merge: new symbols + protected symbols that would have been removed
+      const finalSymbols = [...newSymbols];
+      for (const sym of protectedSymbols) {
+        if (!finalSymbols.includes(sym)) {
+          finalSymbols.push(sym);
+        }
+      }
+
+      if (!this._running) return; // Bail if bot stopped
+
+      // 4. Subscribe new symbols FIRST (staged transition)
+      if (added.length > 0) {
+        this.marketData.subscribeSymbols(added, category);
+      }
+
+      // 5. Reassign strategies
+      if (this.strategyRouter && selectedCoins.length > 0) {
+        this.strategyRouter.assignSymbols(
+          finalSymbols,
+          selectedCoins,
+          (strategyName) => this._strategyHasOpenPosition(strategyName),
+        );
+      }
+
+      // 6. THEN unsubscribe removed symbols (only those without open positions)
+      if (actualRemoved.length > 0) {
+        this.marketData.unsubscribeSymbols(actualRemoved, category);
+      }
+
+      // Update internal symbol list
+      this._selectedSymbols = finalSymbols;
+
+      // Update fundingDataService symbols
+      if (this.fundingDataService) {
+        this.fundingDataService.updateSymbols(finalSymbols);
+      }
+
+      // Update symbolRegimeManager
+      if (this.symbolRegimeManager) {
+        const nonBtcSymbols = finalSymbols.filter((s) => s !== 'BTCUSDT');
+        this.symbolRegimeManager.start(nonBtcSymbols);
+      }
+
+      // Update session symbols
+      if (this.currentSession) {
+        this.currentSession.symbols = finalSymbols;
+        await this.currentSession.save().catch((err) => {
+          log.error('_performCoinReselection — session save failed', { error: err.message });
+        });
+      }
+
+      // 7. Emit coins_reselected event (for Socket.io → FE toast)
+      const eventPayload = {
+        added,
+        removed: actualRemoved,
+        kept,
+        protected: protectedSymbols,
+        total: finalSymbols.length,
+        timestamp: new Date().toISOString(),
+      };
+      this.emit('coins_reselected', eventPayload);
+
+      log.info('_performCoinReselection — complete', {
+        added: added.length,
+        removed: actualRemoved.length,
+        protected: protectedSymbols.length,
+        kept: kept.length,
+        total: finalSymbols.length,
+      });
+    } finally {
+      this._reselectionInProgress = false;
     }
   }
 }

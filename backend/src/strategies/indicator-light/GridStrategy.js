@@ -62,6 +62,8 @@ class GridStrategy extends StrategyBase {
     maxConcurrentPositions: 3,
     cooldownMs: 30000,
     gracePeriodMs: 180000,
+    warmupCandles: 1,
+    volatilityPreference: 'low',
     description: 'ATR 기반 그리드 트레이딩 (양방향 헤지)',
     defaultConfig: {
       atrPeriod: 14,
