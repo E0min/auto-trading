@@ -59,6 +59,7 @@ export default function Dashboard() {
     regime,
     symbolRegimes: socketSymbolRegimes,
     riskEvents: socketRiskEvents,
+    strategyGraceStates,
   } = useSocket();
 
   const { events: riskEvents, acknowledge: acknowledgeRisk, dismiss: dismissRisk } = useRiskEvents(socketRiskEvents);
@@ -276,6 +277,7 @@ export default function Dashboard() {
             sessionId={botStatus.sessionId}
             realtimeSignals={signals}
             positions={positions}
+            strategyGraceStates={strategyGraceStates}
             onSelectionChange={handleSelectionChange}
           />
 

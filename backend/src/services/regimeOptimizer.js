@@ -48,7 +48,8 @@ const PARAM_RANGES = {
   volumeSmaPeriod:    [15, 30],
   volumeHighRatio:    [1.3, 2.0],
   volumeLowRatio:     [0.5, 0.8],
-  hysteresisMinCandles:[2, 5],
+  hysteresisMinCandles:[5, 20],
+  transitionCooldownMs:[120000, 600000],
 };
 
 // ---------------------------------------------------------------------------

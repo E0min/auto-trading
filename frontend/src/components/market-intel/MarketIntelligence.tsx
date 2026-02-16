@@ -39,6 +39,24 @@ export default function MarketIntelligence({ botState, currentRegime }: MarketIn
   const regime = regimeContext?.regime ?? currentRegime ?? 'unknown';
   const confidence = regimeContext?.confidence ?? 0;
 
+  // R7-FE2: Pending regime & cooldown
+  const pendingRegime = regimeContext?.pendingRegime ?? null;
+  const pendingCount = regimeContext?.pendingCount ?? 0;
+  const hysteresisMinCandles = regimeContext?.hysteresisMinCandles ?? 3;
+  const cooldownStatus = regimeContext?.cooldownStatus;
+  const cooldownRemainingSeconds = cooldownStatus?.active
+    ? Math.ceil((cooldownStatus.remainingMs ?? 0) / 1000)
+    : 0;
+
+  // R7-FE5: Transition frequency
+  const transitionsLastHour = regimeContext?.transitionsLastHour ?? 0;
+  const getTransitionBadge = (count: number) => {
+    if (count >= 6) return { label: '과다', colorClass: 'bg-red-500/20 text-red-400 border-red-500/30' };
+    if (count >= 3) return { label: '빈번', colorClass: 'bg-amber-500/20 text-amber-400 border-amber-500/30' };
+    return { label: '안정', colorClass: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' };
+  };
+  const transitionBadge = getTransitionBadge(transitionsLastHour);
+
   return (
     <Card className="col-span-full">
       {/* Header — clickable toggle */}
@@ -47,7 +65,7 @@ export default function MarketIntelligence({ botState, currentRegime }: MarketIn
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between -mt-1 -mb-1"
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--text-secondary)]">
             시장 분석
           </h3>
@@ -57,6 +75,30 @@ export default function MarketIntelligence({ botState, currentRegime }: MarketIn
           </span>
           <span className="text-[10px] font-mono text-[var(--text-muted)]">
             {Math.round(confidence * 100)}%
+          </span>
+
+          {/* R7-FE2: Pending regime confirmation indicator */}
+          {pendingRegime && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-500/15 text-blue-400 border border-blue-500/25">
+              <span className="w-1 h-1 rounded-full bg-blue-400 animate-pulse" />
+              확인 중: {translateRegime(pendingRegime)} ({pendingCount}/{hysteresisMinCandles})
+            </span>
+          )}
+
+          {/* R7-FE2: Cooldown badge */}
+          {cooldownStatus?.active && cooldownRemainingSeconds > 0 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-500/15 text-orange-400 border border-orange-500/25">
+              쿨다운: {cooldownRemainingSeconds}초
+            </span>
+          )}
+
+          {/* R7-FE5: Transition frequency badge */}
+          <span className={cn(
+            'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border',
+            transitionBadge.colorClass,
+          )}>
+            {transitionBadge.label}
+            <span className="text-[9px] opacity-70">({transitionsLastHour}/h)</span>
           </span>
         </div>
         <svg

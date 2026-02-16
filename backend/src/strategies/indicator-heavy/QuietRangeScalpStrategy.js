@@ -53,6 +53,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
     riskLevel: 'low',
     maxConcurrentPositions: 1,
     cooldownMs: 30000,
+    gracePeriodMs: 900000,
     description: 'QUIET 장세 Keltner Channel 스캘핑 (양방향)',
     defaultConfig: {
       emaPeriod: 20,

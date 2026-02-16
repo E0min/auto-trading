@@ -62,6 +62,7 @@ class TurtleBreakoutStrategy extends StrategyBase {
     riskLevel: 'medium',
     maxConcurrentPositions: 1,
     cooldownMs: 300000,
+    gracePeriodMs: 600000,
     description: '터틀 트레이딩 — Donchian 채널 돌파 + ATR 기반 2% 리스크 룰',
     defaultConfig: {
       entryChannel: 20,       // Donchian entry channel period (N-bar high/low)

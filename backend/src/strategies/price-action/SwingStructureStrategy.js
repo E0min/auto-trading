@@ -53,6 +53,7 @@ class SwingStructureStrategy extends StrategyBase {
     riskLevel: 'medium',
     maxConcurrentPositions: 1,
     cooldownMs: 300000,
+    gracePeriodMs: 600000,
     description: '스윙 구조 추세 — HH/HL/LH/LL 구조 분석 + BOS 돌파 진입',
     defaultConfig: {
       swingLookback: 3,              // Bars each side to confirm a swing point

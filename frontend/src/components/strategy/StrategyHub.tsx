@@ -12,7 +12,8 @@ import {
   getStrategyCategory,
   cn,
 } from '@/lib/utils';
-import type { StrategyListItem, MarketRegime, Signal, Position } from '@/types';
+import type { StrategyListItem, MarketRegime, Signal, Position, GraceState } from '@/types';
+import type { StrategyGraceInfo } from '@/hooks/useSocket';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -34,6 +35,7 @@ interface StrategyHubProps {
   sessionId: string | null;
   realtimeSignals: Signal[];
   positions: Position[];
+  strategyGraceStates?: Record<string, StrategyGraceInfo>;
   onSelectionChange?: (selected: string[]) => void;
 }
 
@@ -45,6 +47,7 @@ export default function StrategyHub({
   sessionId,
   realtimeSignals,
   positions,
+  strategyGraceStates = {},
   onSelectionChange,
 }: StrategyHubProps) {
   const [strategies, setStrategies] = useState<StrategyListItem[]>([]);
@@ -100,6 +103,23 @@ export default function StrategyHub({
       return true;
     });
   }, [strategies, categoryFilter, regimeFilter]);
+
+  // ── Resolve effective grace state (socket overrides API) ────────────────
+
+  const getEffectiveGraceState = useCallback(
+    (strategy: StrategyListItem): { graceState: GraceState; graceExpiresAt: string | null } => {
+      const socketInfo = strategyGraceStates[strategy.name];
+      if (socketInfo) {
+        return { graceState: socketInfo.graceState, graceExpiresAt: socketInfo.graceExpiresAt };
+      }
+      // Fallback to API-provided data
+      return {
+        graceState: strategy.graceState ?? (strategy.active ? 'active' : 'inactive'),
+        graceExpiresAt: strategy.graceExpiresAt ?? null,
+      };
+    },
+    [strategyGraceStates],
+  );
 
   // ── Strategy recommended check ──────────────────────────────────────────
 
@@ -182,6 +202,10 @@ export default function StrategyHub({
   }
 
   const activeCount = filteredStrategies.filter((s) => s.active).length;
+  const graceCount = filteredStrategies.filter((s) => {
+    const { graceState } = getEffectiveGraceState(s);
+    return graceState === 'grace_period';
+  }).length;
 
   return (
     <Card>
@@ -191,6 +215,9 @@ export default function StrategyHub({
           <h2 className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--text-secondary)]">전략 관리</h2>
           <span className="text-[11px] text-[var(--text-muted)] font-mono">
             {activeCount}/{filteredStrategies.length}
+            {graceCount > 0 && (
+              <span className="text-amber-400 ml-1">({graceCount} 유예)</span>
+            )}
           </span>
         </div>
         {/* Current regime */}
@@ -277,22 +304,27 @@ export default function StrategyHub({
             선택한 필터에 해당하는 전략이 없습니다.
           </p>
         ) : (
-          filteredStrategies.map((strategy) => (
-            <StrategyCard
-              key={strategy.name}
-              strategy={strategy}
-              active={strategy.active}
-              recommended={isRecommended(strategy)}
-              expanded={expandedName === strategy.name}
-              botRunning={botRunning}
-              toggling={togglingName === strategy.name}
-              sessionId={sessionId}
-              realtimeSignals={realtimeSignals}
-              positions={positions}
-              onToggle={() => handleToggle(strategy)}
-              onExpand={() => handleExpand(strategy.name)}
-            />
-          ))
+          filteredStrategies.map((strategy) => {
+            const { graceState, graceExpiresAt } = getEffectiveGraceState(strategy);
+            return (
+              <StrategyCard
+                key={strategy.name}
+                strategy={strategy}
+                active={strategy.active}
+                graceState={graceState}
+                graceExpiresAt={graceExpiresAt}
+                recommended={isRecommended(strategy)}
+                expanded={expandedName === strategy.name}
+                botRunning={botRunning}
+                toggling={togglingName === strategy.name}
+                sessionId={sessionId}
+                realtimeSignals={realtimeSignals}
+                positions={positions}
+                onToggle={() => handleToggle(strategy)}
+                onExpand={() => handleExpand(strategy.name)}
+              />
+            );
+          })
         )}
       </div>
 

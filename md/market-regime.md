@@ -24,53 +24,53 @@
 
 | # | 팩터 | 가중치 | 계산 방식 |
 |---|------|--------|-----------|
-| F1 | Multi-SMA Trend | 0.20 | 가격 vs EMA-9, SMA-20, SMA-50 정렬도 |
-| F2 | Adaptive ATR | 0.18 | ATR 백분위 (히스토리 대비 75th/25th) |
-| F3 | ROC Momentum | 0.17 | 10캔들 전 대비 변화율 (%) |
-| F4 | Market Breadth | 0.20 | 상승 코인 / (상승 + 하락) 비율 |
-| F5 | Volume Confirmation | 0.15 | 현재 볼륨 / SMA(20) 볼륨 비율 |
-| F6 | Hysteresis | 0.10 | 현재 레짐 유지 보너스 (지터 방지) |
+| F1 | Multi-SMA Trend | 0.19 | 가격 vs EMA-9, SMA-20, SMA-50 정렬도 |
+| F2 | Adaptive ATR | 0.17 | ATR 백분위 (히스토리 대비 75th/25th) |
+| F3 | ROC Momentum | 0.16 | 10캔들 전 대비 변화율 (%) |
+| F4 | Market Breadth | 0.19 | 상승 코인 / (상승 + 하락) 비율 |
+| F5 | Volume Confirmation | 0.14 | 현재 볼륨 / SMA(20) 볼륨 비율 |
+| F6 | Hysteresis | 0.15 | 현재 레짐 유지 보너스 (지터 방지) |
 
 ### 팩터 상세
 
-#### F1: Multi-SMA Trend (가중치 0.20)
+#### F1: Multi-SMA Trend (가중치 0.19)
 ```
 가격 > EMA-9 > SMA-20 > SMA-50  →  trending_up: 1.0
 가격 < EMA-9 < SMA-20 < SMA-50  →  trending_down: 1.0
 부분 정렬                         →  해당 방향: 0.3~0.7
 ```
 
-#### F2: Adaptive ATR (가중치 0.18)
+#### F2: Adaptive ATR (가중치 0.17)
 ```
 ATR 백분위 > 75th  →  volatile: 0.6~1.0 (극단일수록 높음)
 ATR 백분위 < 25th  →  quiet: 0.6~1.0
 그 사이              →  ranging: 0.4~0.6
 ```
 
-#### F3: ROC Momentum (가중치 0.17)
+#### F3: ROC Momentum (가중치 0.16)
 ```
 ROC > +2%   →  trending_up: 1.0
 ROC < -2%   →  trending_down: 1.0
 |ROC| < 0.5% →  ranging: 0.6
 ```
 
-#### F4: Market Breadth (가중치 0.20)
+#### F4: Market Breadth (가중치 0.19)
 ```
 상승 코인 > 65%  →  trending_up: 1.0
 상승 코인 < 35%  →  trending_down: 1.0
 45%~55% 사이     →  ranging: 0.6
 ```
 
-#### F5: Volume Confirmation (가중치 0.15)
+#### F5: Volume Confirmation (가중치 0.14)
 ```
 볼륨 비율 > 1.5  →  volatile: 0.4 (고볼륨 = 변동성 확인)
 볼륨 비율 < 0.7  →  quiet: 0.6 (저볼륨 = 저변동성 확인)
 ```
 
-#### F6: Hysteresis (가중치 0.10)
+#### F6: Hysteresis (가중치 0.15)
 ```
-현재 레짐에 +0.10 보너스 부여 → 불필요한 레짐 전환 방지
-최소 3캔들 연속 확인 필요 (configurable)
+현재 레짐에 +0.15 보너스 부여 → 불필요한 레짐 전환 방지
+최소 10캔들 연속 확인 필요 (configurable, Optimizer 범위 [5,20])
 ```
 
 ### 최종 스코어 계산
@@ -83,17 +83,71 @@ confidence = 최고 점수 / 총 점수
 
 ---
 
+## 삼중 보호 체계 (Sprint R7, AD-40)
+
+레짐 전환 노이즈를 방지하는 3개 레이어:
+
+```
+Layer 1: Hysteresis (10캔들)    — 최소 10분 연속 확인 후 전환
+Layer 2: Cooldown (5분)         — 전환 후 5분간 추가 전환 차단
+Layer 3: Grace Period (5~15분)  — 전략 비활성화 전 유예기간
+```
+
+### 전환 쿨다운 (AD-44)
+
+타이머 없이 timestamp 비교 방식:
+```javascript
+// _applyHysteresis() 내부
+if (Date.now() - this._lastTransitionTs < cooldownMs) {
+  return; // 전환 차단, pending 상태 유지
+}
+```
+- `transitionCooldownMs`: 기본 300000ms (5분), Optimizer 범위 [120K, 600K]
+- 쿨다운 중에도 pending 캔들은 계속 축적 → 쿨다운 종료 즉시 전환 가능
+
+### 전환 빈도 메트릭 (R7-C1)
+
+```javascript
+marketRegime.getTransitionsLastHour()  // 최근 1시간 전환 횟수
+marketRegime.getCooldownStatus()       // { active: boolean, remainingMs: number }
+marketRegime.getContext()              // transitionsLastHour, cooldownStatus, lastTransitionTs 포함
+```
+
+---
+
 ## 전략 라우터 (strategyRouter.js)
 
 레짐 변경 시 전략을 자동으로 활성화/비활성화합니다.
 
-### 라우팅 로직
+### 라우팅 로직 (Sprint R7 업데이트)
 
 ```
 레짐 변경 이벤트 수신 → 각 전략의 targetRegimes 확인
-  ├─ targetRegimes에 현재 레짐 포함 → activate()
-  └─ targetRegimes에 현재 레짐 미포함 → deactivate()
+  ├─ targetRegimes에 현재 레짐 포함
+  │   ├─ 유예 중이면 → 유예 취소 (cancelGracePeriod)
+  │   └─ 비활성이면 → activate()
+  └─ targetRegimes에 현재 레짐 미포함
+      └─ 활성이면 → 유예기간 시작 (OPEN 차단, CLOSE 허용)
+                     유예 만료 시 → deactivate()
 ```
+
+### 유예기간 시스템 (AD-41, AD-42, AD-43)
+
+**상태 머신**: `ACTIVE → GRACE_PERIOD → DEACTIVATED` (레짐 복귀 시 `GRACE_PERIOD → ACTIVE`)
+
+**중앙 관리**: `StrategyRouter._gracePeriods` Map + `setTimeout` + `unref()`
+
+**유예 기간 값** (전략 metadata `gracePeriodMs` 우선, fallback 5분):
+
+| 카테고리 | 전략 | 유예기간 |
+|----------|------|---------|
+| price-action (6개) | Turtle, Candle, S/R, Swing, Fibonacci, Trendline | 10분 |
+| indicator-light (7개) | MaTrend, Funding, RsiPivot, Supertrend, Bollinger, Vwap, MacdDivergence | 5분 |
+| indicator-light: Grid | Grid | 3분 |
+| indicator-heavy (2개) | QuietRangeScalp, Breakout | 15분 |
+| indicator-heavy: AdaptiveRegime | AdaptiveRegime | 0 (전 레짐 활성) |
+
+**시그널 필터링** (AD-43): BotService `_handleStrategySignal()`에서 유예 중 전략의 OPEN 차단, CLOSE(SL/TP) 허용.
 
 ### 라우팅 예시
 
@@ -101,7 +155,7 @@ confidence = 최고 점수 / 총 점수
 레짐: ranging → volatile 변경
 
 활성화:  Turtle, SwingStructure, Funding, Supertrend (volatile 포함)
-비활성화: Grid, VwapReversion (volatile 미포함)
+유예 시작: Grid (5분), VwapReversion (5분) — OPEN 차단, CLOSE 허용
 유지:    CandlePattern, SupportResistance, RsiPivot (둘 다 포함)
 ```
 
@@ -111,8 +165,14 @@ confidence = 최고 점수 / 총 점수
 // 전략 활성화
 { event: 'strategy:activated', name: 'TurtleBreakoutStrategy', regime: 'volatile' }
 
-// 전략 비활성화
-{ event: 'strategy:deactivated', name: 'GridStrategy', regime: 'volatile', reason: 'regime_mismatch' }
+// 유예기간 시작 (Sprint R7)
+{ event: 'strategy:grace_started', name: 'GridStrategy', regime: 'volatile', graceMs: 180000, expiresAt: 1700000180000 }
+
+// 유예기간 취소 (레짐 복귀)
+{ event: 'strategy:grace_cancelled', name: 'GridStrategy', reason: 'regime_returned' }
+
+// 유예 만료 → 비활성화
+{ event: 'strategy:deactivated', name: 'GridStrategy', regime: 'volatile', reason: 'grace_period_expired' }
 
 // 전체 라우팅 결과
 {
@@ -122,7 +182,7 @@ confidence = 최고 점수 / 총 점수
   activated: ['Turtle', 'SwingStructure'],
   deactivated: ['Grid', 'VwapReversion'],
   activeCount: 10,
-  totalCount: 16
+  totalCount: 18
 }
 ```
 
@@ -244,7 +304,8 @@ fitness = sharpe + 0.5 × profitFactor + 0.3 × (winRate / 100) - 0.2 × (maxDD 
 | rocPeriod | 5~20 |
 | rocStrongThreshold | 1.0~3.0 |
 | breadthStrongRatio | 0.60~0.75 |
-| hysteresisMinCandles | 2~5 |
+| hysteresisMinCandles | 5~20 |
+| transitionCooldownMs | 120,000~600,000 |
 | weights | 각 0.05~0.40 (정규화) |
 
 ### 파라미터 저장소 (regimeParamStore.js)

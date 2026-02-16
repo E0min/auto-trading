@@ -59,6 +59,7 @@ class BollingerReversionStrategy extends StrategyBase {
     riskLevel: 'medium',
     maxConcurrentPositions: 2,
     cooldownMs: 60000,
+    gracePeriodMs: 300000,
     description: '볼린저밴드 역추세 + RSI + 스토캐스틱 (분할매수)',
     defaultConfig: {
       bbPeriod: 20,

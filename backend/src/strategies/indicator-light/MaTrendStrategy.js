@@ -36,6 +36,7 @@ class MaTrendStrategy extends StrategyBase {
     riskLevel: 'medium',
     maxConcurrentPositions: 1,
     cooldownMs: 300000,
+    gracePeriodMs: 300000,
     description: '멀티타임프레임 EMA 추세추종 + 트레일링 스탑',
     defaultConfig: {
       h1FastEma: 9,

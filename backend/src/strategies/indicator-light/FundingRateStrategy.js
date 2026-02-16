@@ -45,6 +45,7 @@ class FundingRateStrategy extends StrategyBase {
     riskLevel: 'low',
     maxConcurrentPositions: 2,
     cooldownMs: 60000,
+    gracePeriodMs: 300000,
     description: '펀딩비 역발상 + OI 분석 + 켈리 공식',
     defaultConfig: {
       longFundingThreshold: '-0.01',

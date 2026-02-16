@@ -108,4 +108,8 @@ export const SOCKET_EVENTS = {
   COIN_SELECTED: 'market:coin_selected',
   // Strategy router
   REGIME_SWITCH: 'router:regime_switch',
+  // Strategy grace period
+  GRACE_STARTED: 'strategy:grace_started',
+  GRACE_CANCELLED: 'strategy:grace_cancelled',
+  STRATEGY_DEACTIVATED: 'strategy:deactivated',
 } as const;

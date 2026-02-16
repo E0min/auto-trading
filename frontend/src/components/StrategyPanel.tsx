@@ -276,8 +276,15 @@ export default function StrategyPanel({ botRunning, onSelectionChange }: Strateg
 
                 {/* Status badge */}
                 <div className="flex-shrink-0">
-                  <Badge variant={strategy.active ? 'success' : 'neutral'} dot>
-                    {strategy.active ? '활성' : '비활성'}
+                  <Badge
+                    variant={
+                      strategy.graceState === 'grace_period' ? 'warning'
+                        : strategy.active ? 'success' : 'neutral'
+                    }
+                    dot
+                  >
+                    {strategy.graceState === 'grace_period' ? '유예 중'
+                      : strategy.active ? '활성' : '비활성'}
                   </Badge>
                 </div>
               </button>

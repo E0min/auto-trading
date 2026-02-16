@@ -64,14 +64,15 @@ const FALLBACK_PARAMS = Object.freeze({
   volumeSmaPeriod: 20,
   volumeHighRatio: 1.5,
   volumeLowRatio: 0.7,
-  hysteresisMinCandles: 3,
+  hysteresisMinCandles: 10,
+  transitionCooldownMs: 300000, // 5 minutes
   weights: {
-    multiSmaTrend: 0.20,
-    adaptiveAtr: 0.18,
-    rocMomentum: 0.17,
-    marketBreadth: 0.20,
-    volumeConfirmation: 0.15,
-    hysteresis: 0.10,
+    multiSmaTrend: 0.19,
+    adaptiveAtr: 0.17,
+    rocMomentum: 0.16,
+    marketBreadth: 0.19,
+    volumeConfirmation: 0.14,
+    hysteresis: 0.15,
   },
 });
 
@@ -163,6 +164,12 @@ class MarketRegime extends EventEmitter {
 
     /** @type {number} consecutive candle count for pending regime */
     this._pendingCount = 0;
+
+    /** @type {number} Timestamp of last regime transition */
+    this._lastTransitionTs = 0;
+
+    /** @type {number[]} Timestamps of recent transitions (for frequency tracking) */
+    this._transitionTimestamps = [];
 
     /** @type {boolean} whether the initial regime has been emitted */
     this._initialEmitted = false;
@@ -718,11 +725,30 @@ class MarketRegime extends EventEmitter {
 
     // Check if threshold met
     if (this._pendingCount >= minCandles) {
+      // Transition cooldown check (AD-44)
+      const cooldownMs = params.transitionCooldownMs || 300000;
+      if (Date.now() - this._lastTransitionTs < cooldownMs) {
+        log.debug('Regime transition blocked by cooldown', {
+          candidate: candidateRegime,
+          cooldownMs,
+          elapsed: Date.now() - this._lastTransitionTs,
+        });
+        return; // Stay in current regime, but keep pending state
+      }
+
       const previous = this._currentRegime;
       this._currentRegime = candidateRegime;
       this._confidence = confidence;
       this._pendingRegime = null;
       this._pendingCount = 0;
+      this._lastTransitionTs = Date.now();
+
+      // Track transition timestamps for frequency metrics (R7-C1)
+      this._transitionTimestamps.push(Date.now());
+      // Keep only last hour
+      const oneHourAgo = Date.now() - 3600000;
+      this._transitionTimestamps = this._transitionTimestamps.filter(ts => ts > oneHourAgo);
+
       this._initialEmitted = true;
 
       const context = {
@@ -822,7 +848,34 @@ class MarketRegime extends EventEmitter {
         volume: this._volumeBuffer.length,
       },
       historyLength: this._regimeHistory.length,
+      transitionsLastHour: this.getTransitionsLastHour(),
+      cooldownStatus: this.getCooldownStatus(),
+      lastTransitionTs: this._lastTransitionTs,
       ts: Date.now(),
+    };
+  }
+
+  /**
+   * Get the number of regime transitions in the last hour.
+   * @returns {number}
+   */
+  getTransitionsLastHour() {
+    const oneHourAgo = Date.now() - 3600000;
+    return this._transitionTimestamps.filter(ts => ts > oneHourAgo).length;
+  }
+
+  /**
+   * Check if transition cooldown is currently active.
+   * @returns {{ active: boolean, remainingMs: number }}
+   */
+  getCooldownStatus() {
+    const params = this._getParams();
+    const cooldownMs = params.transitionCooldownMs || 300000;
+    const elapsed = Date.now() - this._lastTransitionTs;
+    const active = elapsed < cooldownMs && this._lastTransitionTs > 0;
+    return {
+      active,
+      remainingMs: active ? cooldownMs - elapsed : 0,
     };
   }
 }

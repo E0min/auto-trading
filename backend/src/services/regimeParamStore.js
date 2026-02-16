@@ -46,16 +46,17 @@ const DEFAULT_PARAMS = Object.freeze({
   volumeLowRatio: 0.7,
 
   // Hysteresis
-  hysteresisMinCandles: 3,
+  hysteresisMinCandles: 10,
+  transitionCooldownMs: 300000,
 
   // Factor weights (sum = 1.0)
   weights: {
-    multiSmaTrend: 0.20,
-    adaptiveAtr: 0.18,
-    rocMomentum: 0.17,
-    marketBreadth: 0.20,
-    volumeConfirmation: 0.15,
-    hysteresis: 0.10,
+    multiSmaTrend: 0.19,
+    adaptiveAtr: 0.17,
+    rocMomentum: 0.16,
+    marketBreadth: 0.19,
+    volumeConfirmation: 0.14,
+    hysteresis: 0.15,
   },
 });
 

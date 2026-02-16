@@ -91,10 +91,10 @@ exchangeClient (싱글턴) → riskEngine → orderManager/positionManager
 - `strategies/indicator-heavy/` (3): QuietRangeScalp, Breakout, AdaptiveRegime
 
 ### 전략 메타데이터
-각 전략 클래스의 static `metadata`에 `targetRegimes`, `riskLevel`, `maxConcurrentPositions`, `cooldownMs`, `defaultConfig` 정의. `strategyRouter.js`가 시장 레짐 변경 시 `targetRegimes` 기반으로 전략을 자동 활성화/비활성화.
+각 전략 클래스의 static `metadata`에 `targetRegimes`, `riskLevel`, `maxConcurrentPositions`, `cooldownMs`, `gracePeriodMs`, `defaultConfig` 정의. `strategyRouter.js`가 시장 레짐 변경 시 `targetRegimes` 기반으로 전략을 자동 활성화/비활성화. 비활성화 시 `gracePeriodMs` 동안 유예기간 적용 (OPEN 차단, CLOSE 허용).
 
 ### 시장 레짐
-`marketRegime.js`가 시장 상태를 분류: `TRENDING_UP`, `TRENDING_DOWN`, `RANGING`, `VOLATILE`, `QUIET`. 레짐별 코인 선정 가중치도 차별화 (`coinSelector.js`의 7-factor 스코어링).
+`marketRegime.js`가 시장 상태를 분류: `TRENDING_UP`, `TRENDING_DOWN`, `RANGING`, `VOLATILE`, `QUIET`. 삼중 보호 체계: hysteresis(10캔들) + 전환 쿨다운(5분) + 전략 유예기간(5~15분). 레짐별 코인 선정 가중치도 차별화 (`coinSelector.js`의 7-factor 스코어링).
 
 ## Bitget SDK 주의사항
 

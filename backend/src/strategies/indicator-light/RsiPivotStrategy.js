@@ -40,6 +40,7 @@ class RsiPivotStrategy extends StrategyBase {
     riskLevel: 'medium',
     maxConcurrentPositions: 2,
     cooldownMs: 60000,
+    gracePeriodMs: 300000,
     description: 'RSI + Pivot 역추세 (양방향)',
     defaultConfig: {
       rsiPeriod: 14,

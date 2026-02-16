@@ -26,8 +26,8 @@
 | T0-7 | P0 | Frontend | Emergency Stop ConfirmDialog 추가 | UI:C1 | R1 | done |
 | T0-8 | P0 | Frontend | Risk 이벤트(CB/DD) 실시간 UI 표시 + RiskAlertBanner | UI:C2 | R1 | done |
 | T0-9 | P0 | Frontend | 실거래/가상거래 모드 시각적 경고 강화 | UI:C4 | R1 | done |
-| T0-10 | P0 | Backend | riskEngine.getAccountState() 메서드 추가 (런타임 크래시) | E:R6-1 | R6 | agreed |
-| T0-11 | P0 | Backend | getAccountInfo() 크래시 수정 → equity 캐시 활용 | T:R6-5, E:R6-2 | R6 | agreed |
+| T0-10 | P0 | Backend | riskEngine.getAccountState() 메서드 추가 (런타임 크래시) | E:R6-1 | R6 | done |
+| T0-11 | P0 | Backend | getAccountInfo() 크래시 수정 → equity 캐시 활용 | T:R6-5, E:R6-2 | R6 | done |
 
 ## Tier 1 — 1주 내 수정 (Reliability)
 
@@ -44,11 +44,11 @@
 | T1-9 | P1 | Frontend | Socket.io ref-counted lifecycle 전환 | UI:C3 | R1 | done |
 | T1-10 | P1 | Frontend | Error Boundary (app/error.tsx) + api-client 에러 래핑 | UI:FE3 | R1 | done |
 | T1-11 | P1 | Backend | DrawdownMonitor 수동 리셋 API + UI 리셋 버튼 | T:H7 | R1 | done |
-| T1-12 | P1 | Backend | ExposureGuard 시장가 주문 price 주입 + reject 방어 | T:R6-1, E:R6-3 | R6 | agreed |
-| T1-13 | P1 | Backend | CLOSE 시그널 qty 퍼센트→실제수량 변환 | T:R6-7 | R6 | agreed |
-| T1-14 | P1 | Backend | setLeverage 메커니즘 구현 (per-signal + 캐시) | T:R6-2, E:R6-4 | R6 | agreed |
-| T1-15 | P1 | Backend | OrderManager/PositionManager destroy() 호출 추가 | E:R6-5 | R6 | agreed |
-| T1-16 | P1 | Frontend | BacktestStatsPanel disclaimer 추가 | T:S1-3, UI:S1-3 | R6 | agreed |
+| T1-12 | P1 | Backend | ExposureGuard 시장가 주문 price 주입 + reject 방어 | T:R6-1, E:R6-3 | R6 | done |
+| T1-13 | P1 | Backend | CLOSE 시그널 qty 퍼센트→실제수량 변환 | T:R6-7 | R6 | done |
+| T1-14 | P1 | Backend | setLeverage 메커니즘 구현 (per-signal + 캐시) | T:R6-2, E:R6-4 | R6 | done |
+| T1-15 | P1 | Backend | OrderManager/PositionManager destroy() 호출 추가 | E:R6-5 | R6 | done |
+| T1-16 | P1 | Frontend | BacktestStatsPanel disclaimer 추가 | T:S1-3, UI:S1-3 | R6 | done |
 
 ## Tier 2 — 2주 내 수정 (Quality)
 
@@ -66,23 +66,59 @@
 | T2-10 | P2 | Frontend | Drawdown 시각화 차트 (신규 컴포넌트) | UI:V1 | R1 | done |
 | T2-11 | P2 | Frontend | Risk Gauge 대시보드 (시각적 게이지) | UI:V3 | R1 | done |
 | T2-12 | P2 | Frontend | 적응형 폴링 (봇 상태별 간격 조절) | UI:H8 | R1 | done |
-| T2-13 | P2 | Backend | submitOrder await 추가 (fire-and-forget 제거) | T:R6-6 | R6 | agreed |
-| T2-14 | P2 | Backend | SignalFilter _activeSignals stale 정리 (타임스탬프) | E:R6-6 | R6 | agreed |
-| T2-15 | P2 | Backend | PaperEngine reset() 메서드 추가 | E:R6-9 | R6 | agreed |
-| T2-16 | P2 | Backend | SignalFilter _strategyMeta.clear() 추가 | E:R6-11 | R6 | agreed |
-| T2-17 | P2 | Backend | Socket.io ticker throttle (심볼당 1초) | E:R6-8 | R6 | agreed |
-| T2-18 | P2 | Backend | positionSide 조기 설정 제거 — 파일럿 2전략 | T:R6-4 | R6 | agreed |
-| T2-19 | P2 | Frontend | StrategyDetail 디자인 토큰 마이그레이션 | UI:R6-1 | R6 | agreed |
-| T2-20 | P2 | Frontend | error.tsx 디자인 토큰 마이그레이션 | UI:R6-3 | R6 | agreed |
-| T2-21 | P2 | Frontend | 백테스트 삭제 ConfirmDialog 추가 | UI:R6-4 | R6 | agreed |
-| T2-22 | P2 | Frontend | AccountOverview 반응형 (grid-cols-2 md:grid-cols-4) | UI:R6-5 | R6 | agreed |
-| T2-23 | P2 | Frontend | BacktestTradeList 마진 수정 (-mx-4→-mx-6) | UI:R6-6 | R6 | agreed |
-| T2-24 | P2 | Frontend | Chart Tooltip 스타일 상수 통합 | UI:R6-7 | R6 | agreed |
-| T2-25 | P2 | Frontend | 네비게이션 접근성 (aria-disabled, aria-label) | UI:R6-8 | R6 | agreed |
-| T2-26 | P2 | Frontend | BotControlPanel Live 확인 → ConfirmDialog 재사용 | UI:R6-9 | R6 | agreed |
-| T2-27 | P2 | Frontend | SignalFeed/TradesTable 높이 동기화 | UI:R6-11 | R6 | agreed |
-| T2-28 | P2 | Frontend | StrategySymbolMap 테이블 스타일 정규화 | UI:R6-12 | R6 | agreed |
-| T2-29 | P2 | Frontend | alert() → 인라인 에러 메시지 전환 | UI:R6-2 | R6 | agreed |
+| T2-13 | P2 | Backend | submitOrder await 추가 (fire-and-forget 제거) | T:R6-6 | R6 | done |
+| T2-14 | P2 | Backend | SignalFilter _activeSignals stale 정리 (타임스탬프) | E:R6-6 | R6 | done |
+| T2-15 | P2 | Backend | PaperEngine reset() 메서드 추가 | E:R6-9 | R6 | done |
+| T2-16 | P2 | Backend | SignalFilter _strategyMeta.clear() 추가 | E:R6-11 | R6 | done |
+| T2-17 | P2 | Backend | Socket.io ticker throttle (심볼당 1초) | E:R6-8 | R6 | done |
+| T2-18 | P2 | Backend | positionSide 조기 설정 제거 — 파일럿 2전략 | T:R6-4 | R6 | done |
+| T2-19 | P2 | Frontend | StrategyDetail 디자인 토큰 마이그레이션 | UI:R6-1 | R6 | done |
+| T2-20 | P2 | Frontend | error.tsx 디자인 토큰 마이그레이션 | UI:R6-3 | R6 | done |
+| T2-21 | P2 | Frontend | 백테스트 삭제 ConfirmDialog 추가 | UI:R6-4 | R6 | done |
+| T2-22 | P2 | Frontend | AccountOverview 반응형 (grid-cols-2 md:grid-cols-4) | UI:R6-5 | R6 | done |
+| T2-23 | P2 | Frontend | BacktestTradeList 마진 수정 (-mx-4→-mx-6) | UI:R6-6 | R6 | done |
+| T2-24 | P2 | Frontend | Chart Tooltip 스타일 상수 통합 | UI:R6-7 | R6 | done |
+| T2-25 | P2 | Frontend | 네비게이션 접근성 (aria-disabled, aria-label) | UI:R6-8 | R6 | done |
+| T2-26 | P2 | Frontend | BotControlPanel Live 확인 → ConfirmDialog 재사용 | UI:R6-9 | R6 | done |
+| T2-27 | P2 | Frontend | SignalFeed/TradesTable 높이 동기화 | UI:R6-11 | R6 | done |
+| T2-28 | P2 | Frontend | StrategySymbolMap 테이블 스타일 정규화 | UI:R6-12 | R6 | done |
+| T2-29 | P2 | Frontend | alert() → 인라인 에러 메시지 전환 | UI:R6-2 | R6 | done |
+
+## Tier R7 — 레짐 안정화 + 유예기간 (Round 7)
+
+### Backend (T0)
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R7-A1 | T0 | Backend | hysteresisMinCandles 3→10 + Optimizer [5,20] | 3/3 동의 | R7 | done |
+| R7-A2 | T0 | Backend | 레짐 전환 쿨다운 5분 (timestamp 비교) | 3/3 동의 | R7 | done |
+| R7-A3 | T0 | Backend | 히스테리시스 가중치 0.10→0.15 | 3/3 동의 | R7 | done |
+| R7-A4 | T0 | Backend | RegimeOptimizer 범위 확장 [5,20] + 쿨다운 [120K,600K] | 3/3 동의 | R7 | done |
+| R7-B1 | T0 | Backend | StrategyRouter 유예기간 핵심 구조 (Map + setTimeout + unref) | 3/3 동의 | R7 | done |
+| R7-B2 | T0 | Backend | 유예 중 OPEN 차단 / CLOSE 허용 | 3/3 동의 | R7 | done |
+| R7-B4 | T0 | Backend | 유예 타이머 동시성 보호 (6개 레이스컨디션 방어) | 3/3 동의 | R7 | done |
+
+### Backend (T1)
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R7-B3 | T1 | Backend | 전략 metadata gracePeriodMs + 카테고리별 기본값 (17개 전략) | 2/3+조건부 | R7 | done |
+| R7-B5 | T1 | Backend | disableStrategy ↔ grace period 통합 | 3/3 동의 | R7 | done |
+| R7-C1 | T1 | Backend | 레짐 전환 빈도 메트릭 (transitionsLastHour, cooldownActive) | 3/3 동의 | R7 | done |
+| R7-C2 | T1 | Backend | StrategyRouter getStatus() 확장 (gracePeriods) | 3/3 동의 | R7 | done |
+| R7-C3 | T1 | Backend | Socket.io grace 이벤트 3종 | 2/3+조건부 | R7 | done |
+
+### Frontend (T1~T2)
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R7-FE1 | T1 | Frontend | 전략 3-way 배지 (active/grace/inactive) + amber 유예 표시 | 3/3 동의 | R7 | done |
+| R7-FE2 | T1 | Frontend | 레짐 pending/cooldown 상태 표시 | 3/3 동의 | R7 | done |
+| R7-FE3 | T1 | Frontend | Socket 이벤트 연동 (grace_started/cancelled/expired) | 3/3 동의 | R7 | done |
+| R7-FE4 | T2 | Frontend | 유예기간 카운트다운 타이머 | 3/3 동의 | R7 | done |
+| R7-FE5 | T2 | Frontend | 레짐 전환 빈도 경고 인디케이터 | 3/3 동의 | R7 | done |
+
+---
 
 ## Tier 3 — 장기 (Enhancement)
 
@@ -96,7 +132,7 @@
 | T3-6 | P3 | Frontend | 성과 귀인 대시보드 (PerformanceTabs 4탭 + BE 확장) | T:Review | R5 | done |
 | T3-7 | P3 | Backend | Correlation ID (AsyncLocalStorage traceId 전파) | E:9.1 | R5 | done |
 | BUG-1 | P0 | Backend | Map 직렬화 버그 수정 (performanceTracker) | R5 | R5 | done |
-| T3-8 | P3 | Backend | EventEmitter maxListeners(20) 설정 | E:R6-12 | R6 | agreed |
+| T3-8 | P3 | Backend | EventEmitter maxListeners(20) 설정 | E:R6-12 | R6 | done |
 | T3-9 | P3 | Backend | Socket.io CORS + 인증 (FE 동시 배포 필요) | E:R6-7 | R6 | deferred |
 | T3-10 | P3 | Backend | InstrumentCache 심볼별 lot step | E:R6-14 | R6 | deferred |
 | T3-11 | P3 | Frontend | Toast 알림 시스템 (full 구현) | UI:R6-2 | R6 | deferred |
@@ -114,3 +150,4 @@
 → `decisions/round_4.md` — AD-18~AD-24 참조 (T2-1~T2-12 구현 세부사항)
 → `decisions/round_5.md` — AD-25~AD-31 참조 (T3-1~T3-7 + BUG-1 구현 세부사항)
 → `decisions/round_6.md` — AD-32~AD-39 참조 (R6 실거래 준비도 강화)
+→ `decisions/round_7.md` — AD-40~AD-45 참조 (R7 레짐 안정화 + 유예기간)

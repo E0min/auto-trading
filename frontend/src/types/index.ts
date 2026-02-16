@@ -16,9 +16,13 @@ export interface BotStatus {
   symbolRegimes?: Record<string, SymbolRegimeEntry>;
 }
 
+export type GraceState = 'active' | 'grace_period' | 'inactive';
+
 export interface StrategyInfo {
   name: string;
   active: boolean;
+  graceState?: GraceState;
+  graceExpiresAt?: string | null;
   symbol: string;
   symbols: string[];     // T0-3: all active symbols
   targetRegimes: string[];
@@ -162,6 +166,12 @@ export interface MarketRegimeData {
   regime: MarketRegime;
   confidence: number;
   timestamp: string;
+  transitionsLastHour?: number;
+  cooldownStatus?: {
+    active: boolean;
+    remainingMs: number;
+  };
+  lastTransitionTs?: string;
 }
 
 export interface SymbolRegimeEntry {
@@ -178,6 +188,8 @@ export interface StrategyListItem {
   targetRegimes: string[];
   riskLevel?: 'low' | 'medium' | 'high';
   active: boolean;
+  graceState?: GraceState;
+  graceExpiresAt?: string | null;
 }
 
 // Tournament types
@@ -351,6 +363,8 @@ export interface CoinScoringData {
 export interface StrategyRoutingEntry {
   name: string;
   active: boolean;
+  graceState?: GraceState;
+  graceExpiresAt?: string | null;
   targetRegimes: string[];
   matchesCurrentRegime: boolean;
 }
@@ -361,6 +375,8 @@ export interface StrategyRoutingData {
   strategies: StrategyRoutingEntry[];
   activeCount: number;
   totalCount: number;
+  gracePeriodCount?: number;
+  gracePeriods?: Record<string, { expiresAt: string; remainingMs: number }>;
   regimeBreakdown: Record<string, { active: string[]; inactive: string[] }>;
 }
 
@@ -379,7 +395,34 @@ export interface RegimeContext {
     tickerCount: number;
   };
   pendingRegime?: string | null;
+  pendingCount?: number;
+  hysteresisMinCandles?: number;
   historyLength?: number;
+  transitionsLastHour?: number;
+  cooldownStatus?: {
+    active: boolean;
+    remainingMs: number;
+  };
+  lastTransitionTs?: string;
+}
+
+// Grace period socket event payloads
+export interface GraceStartedEvent {
+  strategy: string;
+  graceExpiresAt: string;
+  reason: string;
+  previousRegime: string;
+  newRegime: string;
+}
+
+export interface GraceCancelledEvent {
+  strategy: string;
+  reason: string;
+}
+
+export interface StrategyDeactivatedEvent {
+  strategy: string;
+  reason: string;
 }
 
 // Legacy RiskEvent compat (for useSocket inline events that lack full schema)

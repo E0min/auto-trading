@@ -367,26 +367,27 @@ registry.register(TurtleBreakoutStrategy);
 
 ## 전략 메타데이터 요약표
 
-| # | 전략 | 카테고리 | 레짐 | 리스크 | 동시포지션 | 쿨다운 |
-|---|------|----------|------|--------|-----------|--------|
-| 1 | TurtleBreakout | price-action | UP/DOWN/VOL | medium | 1 | 5분 |
-| 2 | CandlePattern | price-action | UP/DOWN/VOL/RANGE | medium | 2 | 1분 |
-| 3 | SupportResistance | price-action | UP/DOWN/VOL/RANGE | medium | 2 | 2분 |
-| 4 | SwingStructure | price-action | UP/DOWN/VOL | medium | 1 | 5분 |
-| 5 | FibonacciRetracement | price-action | UP/DOWN/RANGE | low | 2 | 3분 |
-| 6 | Grid | indicator-light | RANGE | low | 3 | 30초 |
-| 7 | MaTrend | indicator-light | UP/DOWN | medium | 1 | 5분 |
-| 8 | FundingRate | indicator-light | UP/DOWN/VOL | low | 2 | 1분 |
-| 9 | RsiPivot | indicator-light | UP/DOWN/VOL/RANGE | medium | 2 | 1분 |
-| 10 | Supertrend | indicator-light | UP/DOWN/VOL | medium | 1 | 3분 |
-| 11 | BollingerReversion | indicator-light | RANGE/VOL | medium | 2 | 1분 |
-| 12 | VwapReversion | indicator-light | RANGE/QUIET | low | 2 | 1분 |
-| 13 | MacdDivergence | indicator-light | UP/DOWN/VOL/RANGE | medium | 1 | 2분 |
-| 14 | QuietRangeScalp | indicator-heavy | QUIET | low | 1 | 30초 |
-| 15 | Breakout | indicator-heavy | QUIET/RANGE | high | 1 | 5분 |
-| 16 | AdaptiveRegime | indicator-heavy | ALL | medium | 1 | 2분 |
+| # | 전략 | 카테고리 | 레짐 | 리스크 | 동시포지션 | 쿨다운 | 유예기간 |
+|---|------|----------|------|--------|-----------|--------|----------|
+| 1 | TurtleBreakout | price-action | UP/DOWN/VOL | medium | 1 | 5분 | 10분 |
+| 2 | CandlePattern | price-action | UP/DOWN/VOL/RANGE | medium | 2 | 1분 | 10분 |
+| 3 | SupportResistance | price-action | UP/DOWN/VOL/RANGE | medium | 2 | 2분 | 10분 |
+| 4 | SwingStructure | price-action | UP/DOWN/VOL | medium | 1 | 5분 | 10분 |
+| 5 | FibonacciRetracement | price-action | UP/DOWN/RANGE | low | 2 | 3분 | 10분 |
+| 6 | Grid | indicator-light | RANGE | low | 3 | 30초 | 3분 |
+| 7 | MaTrend | indicator-light | UP/DOWN | medium | 1 | 5분 | 5분 |
+| 8 | FundingRate | indicator-light | UP/DOWN/VOL | low | 2 | 1분 | 5분 |
+| 9 | RsiPivot | indicator-light | UP/DOWN/VOL/RANGE | medium | 2 | 1분 | 5분 |
+| 10 | Supertrend | indicator-light | UP/DOWN/VOL | medium | 1 | 3분 | 5분 |
+| 11 | BollingerReversion | indicator-light | RANGE/VOL | medium | 2 | 1분 | 5분 |
+| 12 | VwapReversion | indicator-light | RANGE/QUIET | low | 2 | 1분 | 5분 |
+| 13 | MacdDivergence | indicator-light | UP/DOWN/VOL/RANGE | medium | 1 | 2분 | 5분 |
+| 14 | QuietRangeScalp | indicator-heavy | QUIET | low | 1 | 30초 | 15분 |
+| 15 | Breakout | indicator-heavy | QUIET/RANGE | high | 1 | 5분 | 15분 |
+| 16 | AdaptiveRegime | indicator-heavy | ALL | medium | 1 | 2분 | 0 (없음) |
 
 > **범례**: UP=trending_up, DOWN=trending_down, VOL=volatile, RANGE=ranging, QUIET=quiet
+> **유예기간** (Sprint R7): 레짐 변경 시 전략 비활성화 전 OPEN 차단 / CLOSE 허용 기간. `gracePeriodMs` 메타데이터.
 
 ---
 

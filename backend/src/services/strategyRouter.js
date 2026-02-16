@@ -53,6 +53,12 @@ class StrategyRouter extends EventEmitter {
     /** @type {boolean} Whether the router is active */
     this._running = false;
 
+    /** @type {Map<string, { timer: NodeJS.Timeout, expiresAt: number }>} Grace period timers per strategy */
+    this._gracePeriods = new Map();
+
+    /** @type {number} Default grace period in ms (5 minutes) */
+    this._graceMs = 300000;
+
     // Bound handler
     this._boundOnRegimeChange = this._onRegimeChange.bind(this);
   }
@@ -94,6 +100,13 @@ class StrategyRouter extends EventEmitter {
    */
   stop() {
     this._running = false;
+
+    // Clear all grace period timers (R7-B4 — cleanup on stop)
+    for (const [name, entry] of this._gracePeriods) {
+      clearTimeout(entry.timer);
+    }
+    this._gracePeriods.clear();
+
     this._marketRegime.removeListener(MARKET_EVENTS.REGIME_CHANGE, this._boundOnRegimeChange);
     log.info('StrategyRouter stopped');
   }
@@ -136,42 +149,39 @@ class StrategyRouter extends EventEmitter {
       const targetRegimes = strategy.getTargetRegimes();
       const shouldBeActive = targetRegimes.includes(regime);
 
-      if (shouldBeActive && !strategy.isActive()) {
-        // Activate — strategy fits current regime
-        // T0-3 Phase 1: 1 symbol per strategy to prevent internal state contamination
-        const symbol = this._symbols[0];
-        if (symbol) {
-          strategy.activate(symbol, this._category);
+      if (shouldBeActive) {
+        // Cancel any pending grace period if regime came back (R7-B1)
+        if (this._gracePeriods.has(strategy.name)) {
+          this._cancelGracePeriod(strategy.name, 'regime_returned');
         }
-        strategy.setMarketRegime(regime);
-        activated.push(strategy.name);
 
-        this.emit('strategy:activated', { name: strategy.name, regime });
+        if (!strategy.isActive()) {
+          // Activate — strategy fits current regime
+          // T0-3 Phase 1: 1 symbol per strategy to prevent internal state contamination
+          const symbol = this._symbols[0];
+          if (symbol) {
+            strategy.activate(symbol, this._category);
+          }
+          strategy.setMarketRegime(regime);
+          activated.push(strategy.name);
 
-        log.info('Strategy activated', {
-          name: strategy.name,
-          regime,
-          targetRegimes,
-        });
+          this.emit('strategy:activated', { name: strategy.name, regime });
+
+          log.info('Strategy activated', {
+            name: strategy.name,
+            regime,
+            targetRegimes,
+          });
+        } else {
+          // Already active — just update regime
+          strategy.setMarketRegime(regime);
+        }
       } else if (!shouldBeActive && strategy.isActive()) {
-        // Deactivate — strategy doesn't fit current regime
-        strategy.deactivate();
+        // Start grace period instead of immediate deactivation (R7-B1, AD-41)
+        if (!this._gracePeriods.has(strategy.name)) {
+          this._startGracePeriod(strategy, regime);
+        }
         deactivated.push(strategy.name);
-
-        this.emit('strategy:deactivated', {
-          name: strategy.name,
-          regime,
-          reason: 'regime_mismatch',
-        });
-
-        log.info('Strategy deactivated', {
-          name: strategy.name,
-          regime,
-          targetRegimes,
-        });
-      } else if (shouldBeActive && strategy.isActive()) {
-        // Already active — just update regime
-        strategy.setMarketRegime(regime);
       }
     }
 
@@ -190,6 +200,111 @@ class StrategyRouter extends EventEmitter {
       deactivated: deactivated.length,
       active: this.getActiveStrategies().map((s) => s.name),
     });
+  }
+
+  // =========================================================================
+  // Grace Period Management (R7-B1, AD-41)
+  // =========================================================================
+
+  /**
+   * Start a grace period for a strategy.
+   * During grace: strategy stays active but OPEN signals are blocked.
+   * After grace expires: strategy is deactivated.
+   *
+   * @param {import('./strategyBase')} strategy
+   * @param {string} regime — current regime that triggered the grace
+   * @private
+   */
+  _startGracePeriod(strategy, regime) {
+    const name = strategy.name;
+
+    // Get grace period duration from strategy metadata or fallback (AD-42)
+    const meta = strategy.getMetadata();
+    const graceMs = meta.gracePeriodMs != null ? meta.gracePeriodMs : this._graceMs;
+
+    // AdaptiveRegime has 0ms grace — deactivate immediately
+    if (graceMs <= 0) {
+      strategy.deactivate();
+      this.emit('strategy:deactivated', { name, regime, reason: 'regime_mismatch' });
+      log.info('Strategy deactivated (no grace period)', { name, regime });
+      return;
+    }
+
+    const expiresAt = Date.now() + graceMs;
+
+    const timer = setTimeout(() => {
+      // Race condition guard: Map.delete FIRST, then check _running (R7-B4)
+      this._gracePeriods.delete(name);
+
+      if (!this._running) return;
+
+      // Find strategy — it may have been removed
+      const strat = this._strategies.find(s => s.name === name);
+      if (!strat) return;
+
+      // Deactivate the strategy
+      strat.deactivate();
+
+      this.emit('strategy:deactivated', {
+        name,
+        regime: this._currentRegime,
+        reason: 'grace_period_expired',
+      });
+
+      log.info('Grace period expired — strategy deactivated', {
+        name,
+        graceMs,
+        regime: this._currentRegime,
+      });
+    }, graceMs);
+
+    // Prevent timer from keeping the process alive (R7-B1)
+    if (timer.unref) timer.unref();
+
+    this._gracePeriods.set(name, { timer, expiresAt });
+
+    this.emit('strategy:grace_started', {
+      name,
+      regime,
+      graceMs,
+      expiresAt,
+    });
+
+    log.info('Grace period started', { name, graceMs, expiresAt: new Date(expiresAt).toISOString() });
+  }
+
+  /**
+   * Cancel a grace period for a strategy (e.g., regime returned).
+   * @param {string} name — strategy name
+   * @param {string} reason — cancellation reason
+   */
+  cancelGracePeriod(name, reason = 'manual') {
+    this._cancelGracePeriod(name, reason);
+  }
+
+  /**
+   * @param {string} name
+   * @param {string} reason
+   * @private
+   */
+  _cancelGracePeriod(name, reason) {
+    const entry = this._gracePeriods.get(name);
+    if (!entry) return;
+
+    clearTimeout(entry.timer);
+    this._gracePeriods.delete(name);
+
+    this.emit('strategy:grace_cancelled', { name, reason });
+
+    log.info('Grace period cancelled', { name, reason });
+  }
+
+  /**
+   * Get names of strategies currently in grace period.
+   * @returns {string[]}
+   */
+  getGracePeriodStrategies() {
+    return Array.from(this._gracePeriods.keys());
   }
 
   // =========================================================================
@@ -220,14 +335,26 @@ class StrategyRouter extends EventEmitter {
     return {
       running: this._running,
       currentRegime: this._currentRegime,
-      strategies: this._strategies.map((s) => ({
-        name: s.name,
-        active: s.isActive(),
-        targetRegimes: s.getTargetRegimes(),
-        matchesCurrentRegime: s.getTargetRegimes().includes(this._currentRegime),
-      })),
+      strategies: this._strategies.map((s) => {
+        const graceEntry = this._gracePeriods.get(s.name);
+        return {
+          name: s.name,
+          active: s.isActive(),
+          targetRegimes: s.getTargetRegimes(),
+          matchesCurrentRegime: s.getTargetRegimes().includes(this._currentRegime),
+          graceState: graceEntry ? 'grace_period' : (s.isActive() ? 'active' : 'inactive'),
+          graceExpiresAt: graceEntry ? graceEntry.expiresAt : null,
+        };
+      }),
       activeCount: this.getActiveStrategies().length,
       totalCount: this._strategies.length,
+      gracePeriodCount: this._gracePeriods.size,
+      gracePeriods: Object.fromEntries(
+        Array.from(this._gracePeriods.entries()).map(([name, entry]) => [
+          name,
+          { expiresAt: entry.expiresAt, remainingMs: Math.max(0, entry.expiresAt - Date.now()) },
+        ])
+      ),
     };
   }
 

@@ -234,6 +234,20 @@ class BotService extends EventEmitter {
         this._eventCleanups.push(() => {
           this.strategyRouter.stop();
         });
+
+        // Grace period events → socket.io (R7-C3, AD-45)
+        const onGraceStarted = (data) => { this.emit('strategy:grace_started', data); };
+        const onGraceCancelled = (data) => { this.emit('strategy:grace_cancelled', data); };
+        const onStratDeactivated = (data) => { this.emit('strategy:deactivated', data); };
+
+        this.strategyRouter.on('strategy:grace_started', onGraceStarted);
+        this.strategyRouter.on('strategy:grace_cancelled', onGraceCancelled);
+        this.strategyRouter.on('strategy:deactivated', onStratDeactivated);
+        this._eventCleanups.push(() => {
+          this.strategyRouter.removeListener('strategy:grace_started', onGraceStarted);
+          this.strategyRouter.removeListener('strategy:grace_cancelled', onGraceCancelled);
+          this.strategyRouter.removeListener('strategy:deactivated', onStratDeactivated);
+        });
       } else {
         // Legacy: activate all strategies on all symbols
         for (const strategy of this.strategies) {
@@ -948,6 +962,12 @@ class BotService extends EventEmitter {
 
     try {
       const strategy = this.strategies[idx];
+
+      // Cancel any active grace period before disabling (R7-B5)
+      if (this.strategyRouter) {
+        this.strategyRouter.cancelGracePeriod(name, 'strategy_disabled');
+      }
+
       strategy.deactivate();
       strategy.removeAllListeners(TRADE_EVENTS.SIGNAL_GENERATED);
       this.strategies.splice(idx, 1);
@@ -1181,6 +1201,22 @@ class BotService extends EventEmitter {
         return;
       }
       // Allow close signals (SL/TP exits) to pass through
+    }
+
+    // Block OPEN signals during grace period (R7-B2, AD-43)
+    if (this.strategyRouter) {
+      const graceStrategies = this.strategyRouter.getGracePeriodStrategies();
+      if (graceStrategies.includes(signal.strategy)) {
+        const isEntry = signal.action === SIGNAL_ACTIONS.OPEN_LONG
+          || signal.action === SIGNAL_ACTIONS.OPEN_SHORT;
+        if (isEntry) {
+          log.info('_handleStrategySignal — blocked OPEN from grace-period strategy', {
+            strategy: signal.strategy, symbol: signal.symbol, action: signal.action,
+          });
+          return;
+        }
+        // CLOSE signals (SL/TP) pass through during grace
+      }
     }
 
     // Pass through SignalFilter first

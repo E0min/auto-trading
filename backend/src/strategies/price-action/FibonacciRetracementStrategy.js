@@ -51,6 +51,7 @@ class FibonacciRetracementStrategy extends StrategyBase {
     riskLevel: 'low',
     maxConcurrentPositions: 2,
     cooldownMs: 180000,
+    gracePeriodMs: 600000,
     description: '피보나치 되돌림 — 골든 존(0.382-0.618) 바운스 + ATR 기반 리스크 관리',
     defaultConfig: {
       swingPeriod: 50,              // Lookback bars for swing detection

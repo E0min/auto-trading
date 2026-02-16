@@ -4,6 +4,7 @@ import { useCallback } from 'react';
 import Badge from '@/components/ui/Badge';
 import Spinner from '@/components/ui/Spinner';
 import StrategyDetail from '@/components/strategy/StrategyDetail';
+import { useCountdown } from '@/hooks/useCountdown';
 import {
   translateStrategyName,
   translateRegime,
@@ -12,11 +13,13 @@ import {
   getRegimeDotColor,
   cn,
 } from '@/lib/utils';
-import type { StrategyListItem, Signal, Position } from '@/types';
+import type { StrategyListItem, Signal, Position, GraceState } from '@/types';
 
 interface StrategyCardProps {
   strategy: StrategyListItem;
   active: boolean;
+  graceState?: GraceState;
+  graceExpiresAt?: string | null;
   recommended: boolean;
   expanded: boolean;
   botRunning: boolean;
@@ -43,6 +46,8 @@ const CATEGORY_LABEL: Record<string, string> = {
 export default function StrategyCard({
   strategy,
   active,
+  graceState,
+  graceExpiresAt,
   recommended,
   expanded,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -58,6 +63,15 @@ export default function StrategyCard({
   const category = getStrategyCategory(strategy.name);
   const regimes = strategy.targetRegimes || [];
 
+  // Resolve effective grace state
+  const effectiveGraceState: GraceState = graceState ?? (active ? 'active' : 'inactive');
+  const isGracePeriod = effectiveGraceState === 'grace_period';
+
+  // Countdown timer for grace period
+  const { formatted: countdownFormatted, expired: countdownExpired } = useCountdown(
+    isGracePeriod ? graceExpiresAt : null,
+  );
+
   const handleToggleClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -70,10 +84,12 @@ export default function StrategyCard({
     <div
       className={cn(
         'rounded-lg border transition-all',
-        active
-          ? 'border-l-2 border-l-[var(--profit)]/50 border-[var(--border-muted)] bg-[var(--bg-surface)]'
-          : 'border-[var(--border-subtle)] bg-transparent',
-        !recommended && !active && 'opacity-50',
+        isGracePeriod
+          ? 'border-l-2 border-l-amber-500/50 border-amber-500/20 bg-amber-500/5'
+          : active
+            ? 'border-l-2 border-l-[var(--profit)]/50 border-[var(--border-muted)] bg-[var(--bg-surface)]'
+            : 'border-[var(--border-subtle)] bg-transparent',
+        !recommended && !active && !isGracePeriod && 'opacity-50',
       )}
     >
       {/* Card header — clickable to expand */}
@@ -95,10 +111,15 @@ export default function StrategyCard({
             <div
               className={cn(
                 'w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-colors',
-                active ? 'border-[var(--profit)]' : 'border-[var(--text-muted)]',
+                isGracePeriod
+                  ? 'border-amber-400'
+                  : active
+                    ? 'border-[var(--profit)]'
+                    : 'border-[var(--text-muted)]',
               )}
             >
-              {active && <div className="w-1.5 h-1.5 rounded-full bg-[var(--profit)]" />}
+              {isGracePeriod && <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />}
+              {active && !isGracePeriod && <div className="w-1.5 h-1.5 rounded-full bg-[var(--profit)]" />}
             </div>
           )}
         </div>
@@ -140,14 +161,25 @@ export default function StrategyCard({
           )}
         </div>
 
-        {/* Right side: risk + status */}
+        {/* Right side: risk + status + countdown */}
         <div className="flex-shrink-0 flex items-center gap-3">
           <span className={cn('text-[10px] font-medium', risk.color)}>
             {risk.label}
           </span>
-          <Badge variant={active ? 'success' : 'neutral'} dot>
-            {active ? '활성' : '비활성'}
-          </Badge>
+          {isGracePeriod ? (
+            <div className="flex items-center gap-2">
+              <Badge variant="warning" dot>
+                유예 중
+              </Badge>
+              <span className="text-[10px] font-mono text-amber-400">
+                {countdownExpired ? '만료 중...' : `${countdownFormatted}`}
+              </span>
+            </div>
+          ) : (
+            <Badge variant={active ? 'success' : 'neutral'} dot>
+              {active ? '활성' : '비활성'}
+            </Badge>
+          )}
           {/* Chevron */}
           <svg
             className={cn(

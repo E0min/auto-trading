@@ -3,7 +3,15 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { acquireSocket, releaseSocket, SOCKET_EVENTS } from '@/lib/socket';
 import type { Socket } from 'socket.io-client';
-import type { Signal, Position, MarketRegimeData, SymbolRegimeEntry, RiskEvent } from '@/types';
+import type {
+  Signal, Position, MarketRegimeData, SymbolRegimeEntry, RiskEvent,
+  GraceStartedEvent, GraceCancelledEvent, StrategyDeactivatedEvent, GraceState,
+} from '@/types';
+
+export interface StrategyGraceInfo {
+  graceState: GraceState;
+  graceExpiresAt: string | null;
+}
 
 interface SocketState {
   connected: boolean;
@@ -13,6 +21,7 @@ interface SocketState {
   symbolRegimes: Record<string, SymbolRegimeEntry>;
   riskEvents: RiskEvent[];
   lastTicker: Record<string, { lastPrice: string; volume24h: string }>;
+  strategyGraceStates: Record<string, StrategyGraceInfo>;
 }
 
 export function useSocket() {
@@ -26,6 +35,7 @@ export function useSocket() {
     symbolRegimes: {},
     riskEvents: [],
     lastTicker: {},
+    strategyGraceStates: {},
   });
 
   useEffect(() => {
@@ -127,6 +137,46 @@ export function useSocket() {
       }));
     };
 
+    // Grace period handlers
+    const handleGraceStarted = (data: GraceStartedEvent) => {
+      setState(prev => ({
+        ...prev,
+        strategyGraceStates: {
+          ...prev.strategyGraceStates,
+          [data.strategy]: {
+            graceState: 'grace_period' as GraceState,
+            graceExpiresAt: data.graceExpiresAt,
+          },
+        },
+      }));
+    };
+
+    const handleGraceCancelled = (data: GraceCancelledEvent) => {
+      setState(prev => ({
+        ...prev,
+        strategyGraceStates: {
+          ...prev.strategyGraceStates,
+          [data.strategy]: {
+            graceState: 'active' as GraceState,
+            graceExpiresAt: null,
+          },
+        },
+      }));
+    };
+
+    const handleStrategyDeactivated = (data: StrategyDeactivatedEvent) => {
+      setState(prev => ({
+        ...prev,
+        strategyGraceStates: {
+          ...prev.strategyGraceStates,
+          [data.strategy]: {
+            graceState: 'inactive' as GraceState,
+            graceExpiresAt: null,
+          },
+        },
+      }));
+    };
+
     // Register all handlers
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
@@ -140,6 +190,9 @@ export function useSocket() {
     socket.on(SOCKET_EVENTS.CIRCUIT_RESET, handleCircuitReset);
     socket.on(SOCKET_EVENTS.EXPOSURE_ADJUSTED, handleExposureAdjusted);
     socket.on(SOCKET_EVENTS.UNHANDLED_ERROR, handleUnhandledError);
+    socket.on(SOCKET_EVENTS.GRACE_STARTED, handleGraceStarted);
+    socket.on(SOCKET_EVENTS.GRACE_CANCELLED, handleGraceCancelled);
+    socket.on(SOCKET_EVENTS.STRATEGY_DEACTIVATED, handleStrategyDeactivated);
 
     return () => {
       // Remove all named handlers BEFORE releasing socket
@@ -155,6 +208,9 @@ export function useSocket() {
       socket.off(SOCKET_EVENTS.CIRCUIT_RESET, handleCircuitReset);
       socket.off(SOCKET_EVENTS.EXPOSURE_ADJUSTED, handleExposureAdjusted);
       socket.off(SOCKET_EVENTS.UNHANDLED_ERROR, handleUnhandledError);
+      socket.off(SOCKET_EVENTS.GRACE_STARTED, handleGraceStarted);
+      socket.off(SOCKET_EVENTS.GRACE_CANCELLED, handleGraceCancelled);
+      socket.off(SOCKET_EVENTS.STRATEGY_DEACTIVATED, handleStrategyDeactivated);
       releaseSocket();
     };
   }, []);

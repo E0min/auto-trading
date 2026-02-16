@@ -44,6 +44,7 @@ class TrendlineBreakoutStrategy extends StrategyBase {
     riskLevel: 'medium',
     maxConcurrentPositions: 1,
     cooldownMs: 120000,
+    gracePeriodMs: 600000,
     description: '추세선 돌파 -- 피봇 2개 연결 추세선 돌파 시 추격 진입, 짧은 손절 = 높은 손익비',
     defaultConfig: {
       aggregationMinutes: 60,           // Aggregation bar size (minutes)

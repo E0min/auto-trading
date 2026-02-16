@@ -35,6 +35,7 @@ class SupertrendStrategy extends StrategyBase {
     riskLevel: 'medium',
     maxConcurrentPositions: 1,
     cooldownMs: 180000,
+    gracePeriodMs: 300000,
     description: '슈퍼트렌드 + MACD 추세추종',
     defaultConfig: {
       atrPeriod: 10,

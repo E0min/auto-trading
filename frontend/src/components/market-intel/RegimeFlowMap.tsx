@@ -15,13 +15,19 @@ export default function RegimeFlowMap({ data }: RegimeFlowMapProps) {
   }
 
   const { currentRegime, strategies, regimeBreakdown } = data;
-  const active = strategies.filter((s) => s.active);
-  const inactive = strategies.filter((s) => !s.active);
+  const active = strategies.filter((s) => s.active && s.graceState !== 'grace_period');
+  const grace = strategies.filter((s) => s.graceState === 'grace_period');
+  const inactive = strategies.filter((s) => !s.active && s.graceState !== 'grace_period');
 
   return (
     <div className="space-y-4">
-      {/* 3-column grid: regime → active → inactive */}
-      <div className="grid grid-cols-[140px_1fr_1fr] gap-3">
+      {/* Multi-column grid: regime → active → grace (if any) → inactive */}
+      <div className={cn(
+        'grid gap-3',
+        grace.length > 0
+          ? 'grid-cols-[140px_1fr_1fr_1fr]'
+          : 'grid-cols-[140px_1fr_1fr]',
+      )}>
         {/* Left: current regime */}
         <div className="flex items-start">
           <div className={cn(
@@ -42,7 +48,7 @@ export default function RegimeFlowMap({ data }: RegimeFlowMapProps) {
           </div>
         </div>
 
-        {/* Center: active strategies */}
+        {/* Active strategies */}
         <div>
           <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-2">
             활성 ({active.length})
@@ -66,7 +72,29 @@ export default function RegimeFlowMap({ data }: RegimeFlowMapProps) {
           </div>
         </div>
 
-        {/* Right: inactive strategies */}
+        {/* Grace period strategies (only shown when present) */}
+        {grace.length > 0 && (
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-amber-400 mb-2">
+              유예 중 ({grace.length})
+            </div>
+            <div className="space-y-1">
+              {grace.map((s) => (
+                <div
+                  key={s.name}
+                  className="flex items-center gap-2 px-2 py-1 rounded bg-amber-500/5 border border-amber-500/20"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  <span className="text-[11px] text-amber-300 truncate">
+                    {translateStrategyName(s.name)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Inactive strategies */}
         <div>
           <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-2">
             비활성 ({inactive.length})
