@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Card from '@/components/ui/Card';
 import Spinner from '@/components/ui/Spinner';
 import StrategyCard from '@/components/strategy/StrategyCard';
@@ -328,52 +328,132 @@ export default function StrategyHub({
         )}
       </div>
 
-      {/* Disable mode dialog */}
+      {/* Disable mode dialog — accessible */}
       {disableTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-[var(--bg-card)] border border-[var(--border-muted)] rounded-xl p-5 w-80 shadow-xl">
-            <h3 className="text-sm font-medium text-[var(--text-primary)] mb-1">
-              전략 비활성화
-            </h3>
-            <p className="text-xs text-[var(--text-muted)] mb-4">
-              <span className="text-[var(--text-secondary)] font-medium">{disableTarget}</span> 전략을 어떻게 종료할까요?
-            </p>
-            <div className="space-y-2">
-              <button
-                type="button"
-                onClick={() => handleDisableConfirm('immediate')}
-                className="w-full text-left px-3 py-2.5 rounded-lg border border-[var(--border-subtle)] hover:border-[var(--loss)]/50 hover:bg-[var(--loss)]/5 transition-colors group"
-              >
-                <span className="text-xs font-medium text-[var(--text-primary)] group-hover:text-[var(--loss)]">
-                  즉시 청산
-                </span>
-                <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
-                  열린 포지션을 시장가로 즉시 청산합니다
-                </p>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDisableConfirm('graceful')}
-                className="w-full text-left px-3 py-2.5 rounded-lg border border-[var(--border-subtle)] hover:border-amber-500/50 hover:bg-amber-500/5 transition-colors group"
-              >
-                <span className="text-xs font-medium text-[var(--text-primary)] group-hover:text-amber-400">
-                  자연 종료
-                </span>
-                <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
-                  신규 진입을 차단하고, 기존 포지션은 SL/TP로 자연 청산
-                </p>
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => setDisableTarget(null)}
-              className="w-full mt-3 py-1.5 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
-            >
-              취소
-            </button>
-          </div>
-        </div>
+        <DisableModeDialog
+          strategyName={disableTarget}
+          onConfirm={handleDisableConfirm}
+          onClose={() => setDisableTarget(null)}
+        />
       )}
     </Card>
+  );
+}
+
+// ── DisableModeDialog (accessible) ──────────────────────────────────────
+
+interface DisableModeDialogProps {
+  strategyName: string;
+  onConfirm: (mode: 'immediate' | 'graceful') => void;
+  onClose: () => void;
+}
+
+function DisableModeDialog({ strategyName, onConfirm, onClose }: DisableModeDialogProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const firstBtnRef = useRef<HTMLButtonElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    // Save previously focused element
+    previousFocusRef.current = document.activeElement as HTMLElement;
+
+    // Focus first action button
+    requestAnimationFrame(() => {
+      firstBtnRef.current?.focus();
+    });
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+
+      // Focus trap: Tab cycles within dialog
+      if (e.key === 'Tab' && dialogRef.current) {
+        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+          'button, [tabindex]:not([tabindex="-1"])',
+        );
+        if (focusable.length === 0) return;
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      previousFocusRef.current?.focus();
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="disable-dialog-title"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="bg-[var(--bg-card)] border border-[var(--border-muted)] rounded-xl p-5 w-80 shadow-xl outline-none"
+      >
+        <h3 id="disable-dialog-title" className="text-sm font-medium text-[var(--text-primary)] mb-1">
+          전략 비활성화
+        </h3>
+        <p className="text-xs text-[var(--text-muted)] mb-4">
+          <span className="text-[var(--text-secondary)] font-medium">{strategyName}</span> 전략을 어떻게 종료할까요?
+        </p>
+        <div className="space-y-2">
+          <button
+            ref={firstBtnRef}
+            type="button"
+            onClick={() => onConfirm('immediate')}
+            className="w-full text-left px-3 py-2.5 rounded-lg border border-[var(--border-subtle)] hover:border-[var(--loss)]/50 hover:bg-[var(--loss)]/5 transition-colors group"
+          >
+            <span className="text-xs font-medium text-[var(--text-primary)] group-hover:text-[var(--loss)]">
+              즉시 청산
+            </span>
+            <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
+              열린 포지션을 시장가로 즉시 청산합니다
+            </p>
+          </button>
+          <button
+            type="button"
+            onClick={() => onConfirm('graceful')}
+            className="w-full text-left px-3 py-2.5 rounded-lg border border-[var(--border-subtle)] hover:border-amber-500/50 hover:bg-amber-500/5 transition-colors group"
+          >
+            <span className="text-xs font-medium text-[var(--text-primary)] group-hover:text-amber-400">
+              자연 종료
+            </span>
+            <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
+              신규 진입을 차단하고, 기존 포지션은 SL/TP로 자연 청산
+            </p>
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-full mt-3 py-1.5 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+        >
+          취소
+        </button>
+      </div>
+    </div>
   );
 }

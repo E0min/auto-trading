@@ -14,7 +14,7 @@ import {
 import Card from '@/components/ui/Card';
 import Spinner from '@/components/ui/Spinner';
 import { formatCurrency } from '@/lib/utils';
-import { CHART_TOOLTIP_STYLE } from '@/lib/chart-config';
+import { CHART_TOOLTIP_STYLE, createCurrencyFormatter } from '@/lib/chart-config';
 import type { DailyPerformanceEntry } from '@/types';
 
 interface DailyPerformanceProps {
@@ -94,10 +94,7 @@ export default function DailyPerformance({ data, loading }: DailyPerformanceProp
               <Tooltip
                 contentStyle={CHART_TOOLTIP_STYLE}
                 labelStyle={{ color: 'var(--text-secondary)' }}
-                formatter={((value: number) => [
-                  `$${formatCurrency(String(value))}`,
-                  'PnL',
-                ]) as never}
+                formatter={createCurrencyFormatter(() => 'PnL')}
               />
               <ReferenceLine y={0} stroke="var(--border-muted)" />
               <Bar dataKey="pnl" radius={[3, 3, 0, 0]} barSize={16}>

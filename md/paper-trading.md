@@ -51,6 +51,21 @@ PaperEngine에 거래소 사이드 SL 시뮬레이션이 추가되었습니다:
 - SL 체결 시 `paper:fill` (reduceOnly, reason: 'stop_loss_triggered') + `paper:sl_triggered` 이벤트 발생
 - `getPendingSLOrders()`: 대기 중 SL 주문 조회
 
+#### Take Profit 시뮬레이션 (Sprint R11)
+
+PaperEngine에 거래소 사이드 TP 시뮬레이션이 추가되었습니다:
+- `registerTakeProfit({ symbol, posSide, triggerPrice, qty, strategy })`: TP 주문 등록
+- `cancelTakeProfit(symbol, posSide)`: TP 주문 취소
+- `_checkTakeProfitTriggers(symbol, lastPrice)`: 매 틱마다 TP 트리거 확인
+- LONG TP: `lastPrice >= triggerPrice`, SHORT TP: `lastPrice <= triggerPrice`
+- TP 체결 시 `paper:fill` (reduceOnly, reason: 'take_profit_triggered') + `paper:tp_triggered` 이벤트 발생
+
+#### 대기 주문 관리 (Sprint R11)
+
+대기 중인 지정가 주문에 TTL과 용량 제한이 적용됩니다:
+- **30분 TTL**: 30분 이상 경과한 미체결 대기 주문은 자동 삭제
+- **50건 상한**: 대기 주문이 50건을 초과하면 FIFO 방식으로 가장 오래된 주문부터 삭제
+
 #### reset() (Sprint R6)
 
 `paperEngine.reset()`으로 대기 주문(`_pendingOrders`, `_pendingSLOrders`)과 가격 캐시(`_lastPrices`)를 초기화합니다. `botService.stop()` 시 자동 호출됩니다.

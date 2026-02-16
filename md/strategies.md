@@ -9,9 +9,11 @@
 ```javascript
 class StrategyBase extends EventEmitter {
   // 필수 오버라이드
-  onTick(ticker)     // 틱 데이터 수신 시 호출
   onKline(kline)     // 캔들 데이터 수신 시 호출
   getSignal()        // 현재 시그널 반환
+
+  // Concrete 메서드 (오버라이드 선택)
+  onTick(ticker)     // R11: trailing stop 자동 체크 포함 (super.onTick 호출 권장)
 
   // 제공 메서드
   emitSignal(signal) // 시그널 방출 (이벤트)
@@ -395,9 +397,11 @@ registry.register(TurtleBreakoutStrategy);
 > **범례**: UP=trending_up, DOWN=trending_down, VOL=volatile, RANGE=ranging, QUIET=quiet
 > **유예기간** (Sprint R7): 레짐 변경 시 전략 비활성화 전 OPEN 차단 / CLOSE 허용 기간. `gracePeriodMs` 메타데이터.
 
-### Trailing Stop (Sprint R10, AD-59)
+### Trailing Stop (Sprint R10, AD-59; R11 강화)
 
 StrategyBase에 opt-in 방식의 trailing stop이 내장되어 있습니다. 전략 메타데이터에 `trailingStop` 설정이 있으면 자동 활성화됩니다.
+
+**R11 변경**: `onTick()`이 concrete 메서드로 전환되어, trailing stop이 활성화된 전략에서 매 틱마다 `_checkTrailingStop(price)`를 자동 호출합니다. 서브클래스가 별도로 trailing 로직을 호출할 필요 없이, `super.onTick(ticker)`만 호출하면 됩니다. 또한 BollingerReversion, Breakout, AdaptiveRegime 전략에 `super.onFill(fill)` 호출이 추가되어 trailing state 관리가 일관되게 통합되었습니다.
 
 **대상 전략** (6개 추세/모멘텀):
 | 전략 | activationPercent | callbackPercent |
@@ -409,6 +413,10 @@ StrategyBase에 opt-in 방식의 trailing stop이 내장되어 있습니다. 전
 | RsiPivot | 1.0% | 0.8% |
 | MacdDivergence | 1.0% | 0.8% |
 
+**`super.onFill(fill)` 호출 전략** (R10~R11): TurtleBreakout, SwingStructure, MaTrend, Supertrend, RsiPivot, MacdDivergence, BollingerReversion, Breakout, AdaptiveRegime
+
+**entryPrice 지연 설정 (R11)**: MaTrend, Turtle 전략은 진입가(`_entryPrice`)를 시그널 생성 시점이 아닌 `onFill()` 콜백에서 실제 체결가로 설정합니다. 이를 통해 시장가 주문의 슬리피지가 반영된 정확한 진입가를 기준으로 TP/SL을 계산합니다.
+
 **안전 규칙**:
 1. activation 전에는 기존 고정 SL 유지
 2. trailing SL과 고정 SL 중 더 타이트한 것 적용
@@ -416,7 +424,7 @@ StrategyBase에 opt-in 방식의 trailing stop이 내장되어 있습니다. 전
 4. `_checkTrailingStop()`을 try-catch로 감싸 fail-safe
 5. AdaptiveRegimeStrategy는 `trailingStop.enabled: false`로 충돌 방지
 
-**비활성 전략** (12개): Grid, Bollinger, Vwap, QuietRangeScalp, Breakout, FibonacciRetracement, CandlePattern, SupportResistance, AdaptiveRegime, Funding, CandlePattern, SupportResistance
+**비활성 전략** (12개): Grid, Vwap, QuietRangeScalp, FibonacciRetracement, CandlePattern, SupportResistance, Funding 등
 
 ---
 

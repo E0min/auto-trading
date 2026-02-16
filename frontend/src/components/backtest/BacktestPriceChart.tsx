@@ -12,7 +12,7 @@ import {
 } from 'recharts';
 import Card from '@/components/ui/Card';
 import { formatCurrency } from '@/lib/utils';
-import { CHART_TOOLTIP_STYLE } from '@/lib/chart-config';
+import { CHART_TOOLTIP_STYLE, createCurrencyFormatter } from '@/lib/chart-config';
 import type { BacktestTrade } from '@/types/backtest';
 
 interface BacktestPriceChartProps {
@@ -136,10 +136,7 @@ export default function BacktestPriceChart({ trades, loading }: BacktestPriceCha
                 cursor={false}
                 contentStyle={CHART_TOOLTIP_STYLE}
                 labelStyle={{ color: 'var(--text-secondary)' }}
-                formatter={((value?: number, name?: string) => {
-                  if (name === 'price') return [`$${formatCurrency(String(value ?? 0))}`, '가격'];
-                  return [value, name];
-                }) as never}
+                formatter={createCurrencyFormatter((name) => name === 'price' ? '가격' : name)}
                 labelFormatter={(ts) => formatTickDate(Number(ts))}
               />
 

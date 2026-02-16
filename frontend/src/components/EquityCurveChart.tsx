@@ -25,7 +25,7 @@ export default function EquityCurveChart({ data, loading }: EquityCurveChartProp
   return (
     <Card title="에쿼티 커브" className="col-span-full">
       <EquityCurveBase
-        data={chartData as unknown as Record<string, unknown>[]}
+        data={chartData}
         loading={loading}
         config={DASHBOARD_EQUITY_CONFIG}
       />

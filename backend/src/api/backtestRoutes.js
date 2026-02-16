@@ -137,6 +137,7 @@ function createBacktestRoutes({ dataFetcher, backtestStore }) {
             equityCurve: result.equityCurve,
             initialCapital: String(initialCapital),
             interval: result.config.interval,
+            totalFundingCost: result.totalFundingCost, // R11-T7
           });
 
           // 4. Save completed result

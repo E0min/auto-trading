@@ -63,6 +63,11 @@ const signalSchema = new mongoose.Schema(
   }
 );
 
+// E11-5: Compound indexes for common query patterns
+signalSchema.index({ sessionId: 1, createdAt: -1 });
+signalSchema.index({ strategy: 1, createdAt: -1 });
+signalSchema.index({ symbol: 1, createdAt: -1 });
+
 const Signal = mongoose.model('Signal', signalSchema);
 
 module.exports = Signal;

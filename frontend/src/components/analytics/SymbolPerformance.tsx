@@ -13,7 +13,7 @@ import {
 import Card from '@/components/ui/Card';
 import Spinner from '@/components/ui/Spinner';
 import { formatCurrency, formatSymbol } from '@/lib/utils';
-import { CHART_TOOLTIP_STYLE } from '@/lib/chart-config';
+import { CHART_TOOLTIP_STYLE, createCurrencyFormatter } from '@/lib/chart-config';
 import type { SymbolPerformanceEntry } from '@/types';
 
 interface SymbolPerformanceProps {
@@ -98,10 +98,7 @@ export default function SymbolPerformance({ data, loading }: SymbolPerformancePr
               <Tooltip
                 contentStyle={CHART_TOOLTIP_STYLE}
                 labelStyle={{ color: 'var(--text-secondary)' }}
-                formatter={((value: number) => [
-                  `$${formatCurrency(String(value))}`,
-                  'PnL',
-                ]) as never}
+                formatter={createCurrencyFormatter(() => 'PnL')}
               />
               <Bar dataKey="pnl" radius={[0, 3, 3, 0]} barSize={12}>
                 {entries.map((entry, index) => (

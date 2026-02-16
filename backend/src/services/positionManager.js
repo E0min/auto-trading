@@ -364,7 +364,7 @@ class PositionManager extends EventEmitter {
     const utcHour = now.getUTCHours();
     const todayDate = now.toISOString().slice(0, 10); // YYYY-MM-DD
 
-    if (utcHour === 0 && this._lastResetDate !== todayDate) {
+    if (this._lastResetDate !== todayDate) {
       log.info('_checkDailyReset — midnight UTC detected, resetting daily risk counters', {
         todayDate,
         lastResetDate: this._lastResetDate,

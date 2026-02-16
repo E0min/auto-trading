@@ -79,7 +79,24 @@ const TOURNAMENT_MODE = process.env.TOURNAMENT_MODE === 'true';
 // Bootstrap
 // ---------------------------------------------------------------------------
 
+/**
+ * Validate required environment variables before bootstrap.
+ * In paper trading mode, exchange API keys are not required.
+ * @throws {Error} if any required env vars are missing
+ */
+function validateEnv() {
+  const isPaper = process.env.PAPER_TRADING === 'true';
+  const required = isPaper ? [] : ['BITGET_API_KEY', 'BITGET_SECRET_KEY', 'BITGET_PASSPHRASE'];
+  const missing = required.filter(k => !process.env[k]);
+  if (missing.length > 0) {
+    throw new Error(`Missing required env vars: ${missing.join(', ')}. Set PAPER_TRADING=true for paper mode.`);
+  }
+}
+
 async function bootstrap() {
+  // 0. Validate environment variables (E11-11)
+  validateEnv();
+
   // 1. Connect to MongoDB
   log.info('Connecting to MongoDB...');
   await connectDB();

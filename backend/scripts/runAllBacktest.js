@@ -87,6 +87,7 @@ function runSingle(name, regime) {
     equityCurve: result.equityCurve,
     initialCapital: INITIAL_CAPITAL,
     interval: '1H',
+    totalFundingCost: result.totalFundingCost,
   });
 
   return { name, regime, metrics, trades: result.trades };

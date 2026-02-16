@@ -87,6 +87,21 @@ CORS → traceContext → apiKeyAuth → httpMetrics → rateLimiter → API rou
 
 **제외**: `/api/bot/emergency-stop`은 항상 통과 (안전을 위해), `/api/health/*`도 제외.
 
+### 환경 변수 검증 (Sprint R11)
+
+`app.js`의 `validateEnv()` 함수가 `bootstrap()` 호출 전에 실행되어 필수 환경 변수를 사전 검증합니다. 페이퍼 모드(`PAPER_TRADING=true`)에서는 거래소 API 키가 불필요하므로 검증에서 제외됩니다. 누락된 변수가 있으면 서비스 시작 전 명확한 에러를 던집니다.
+
+```javascript
+function validateEnv() {
+  const isPaper = process.env.PAPER_TRADING === 'true';
+  const required = isPaper ? [] : ['BITGET_API_KEY', 'BITGET_SECRET_KEY', 'BITGET_PASSPHRASE'];
+  const missing = required.filter(k => !process.env[k]);
+  if (missing.length > 0) {
+    throw new Error(`Missing required env vars: ${missing.join(', ')}`);
+  }
+}
+```
+
 ### 프로세스 안정성 (Sprint R3)
 
 `app.js`는 `unhandledRejection`과 `uncaughtException` 핸들러를 등록하여 예기치 않은 에러에도 안전하게 종료합니다. `safeShutdown()` 함수가 다음 순서를 보장합니다:

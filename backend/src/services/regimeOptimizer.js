@@ -358,6 +358,7 @@ class RegimeOptimizer extends EventEmitter {
         trades: result.trades,
         equityCurve: result.equityCurve,
         initialCapital: '10000',
+        totalFundingCost: result.totalFundingCost, // R11-T7
       });
 
       // Fitness function

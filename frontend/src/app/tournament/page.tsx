@@ -8,31 +8,20 @@ import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import PaperModeGate from '@/components/ui/PaperModeGate';
 import Spinner from '@/components/ui/Spinner';
 import {
   formatCurrency,
   formatTime,
+  formatPnlValue,
   getPnlColor,
   getPnlSign,
   translateStrategyName,
   getStrategyCategory,
+  translateStrategyCategory,
   cn,
 } from '@/lib/utils';
 import type { LeaderboardEntry, StrategyDetail } from '@/types';
-
-/* ── Helpers ──────────────────────────────────────────────────────────── */
-
-function formatPnl(pnl: string): string {
-  const num = parseFloat(pnl);
-  if (isNaN(num)) return '0.00';
-  return num >= 0 ? `+${num.toFixed(2)}` : num.toFixed(2);
-}
-
-const CATEGORY_LABEL: Record<string, string> = {
-  'price-action': '가격행동',
-  'indicator-light': '경량지표',
-  'indicator-heavy': '중량지표',
-};
 
 /* ── Page ─────────────────────────────────────────────────────────────── */
 
@@ -102,38 +91,10 @@ export default function TournamentPage() {
     finally { setActionLoading(false); }
   }, [resetTournament]);
 
-  /* ── Gate: Paper mode only ──────────────────────────────────────────── */
-
-  if (!botStatusLoading && !isPaper) {
-    return (
-      <div className="min-h-screen flex items-center justify-center relative z-10">
-        <div className="text-center space-y-5 max-w-sm">
-          <div className="w-12 h-12 mx-auto rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)] flex items-center justify-center">
-            <svg className="w-5 h-5 text-[var(--text-muted)]" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
-            </svg>
-          </div>
-          <div>
-            <h2 className="text-sm font-medium text-[var(--text-primary)] mb-2">가상거래 모드 전용</h2>
-            <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-              토너먼트는 가상거래(Paper) 모드에서만 사용할 수 있습니다.<br />
-              대시보드에서 가상거래 모드로 전환해주세요.
-            </p>
-          </div>
-          <Link
-            href="/"
-            className="inline-block text-[11px] font-medium text-[var(--accent)] border border-[var(--accent)]/30 rounded-md px-4 py-2 hover:bg-[var(--accent-subtle)] transition-colors"
-          >
-            대시보드로 돌아가기
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
   /* ── Main ────────────────────────────────────────────────────────────── */
 
   return (
+  <PaperModeGate feature="토너먼트" isPaper={!!isPaper} loading={botStatusLoading}>
     <div className="min-h-screen relative z-10">
       <div className="px-6 py-8 max-w-[1440px] mx-auto w-full">
         {/* Header */}
@@ -258,6 +219,7 @@ export default function TournamentPage() {
         onCancel={() => setResetDialogOpen(false)}
       />
     </div>
+  </PaperModeGate>
   );
 }
 
@@ -322,20 +284,20 @@ function LeaderboardRow({
       </td>
       <td className="px-4 py-3">
         <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">
-          {CATEGORY_LABEL[category] ?? category}
+          {translateStrategyCategory(category)}
         </span>
       </td>
       <td className="px-4 py-3 text-right font-mono text-sm text-[var(--text-primary)]">
         {formatCurrency(entry.equity)}
       </td>
       <td className={cn('px-4 py-3 text-right font-mono text-sm', getPnlColor(entry.pnl))}>
-        {getPnlSign(entry.pnl)}{formatPnl(entry.pnl)}
+        {getPnlSign(entry.pnl)}{formatPnlValue(entry.pnl)}
       </td>
       <td className={cn('px-4 py-3 text-right font-mono text-sm', getPnlColor(entry.pnlPercent))}>
-        {formatPnl(entry.pnlPercent)}%
+        {formatPnlValue(entry.pnlPercent)}%
       </td>
       <td className={cn('px-4 py-3 text-right font-mono text-sm', getPnlColor(entry.unrealizedPnl))}>
-        {formatPnl(entry.unrealizedPnl)}
+        {formatPnlValue(entry.unrealizedPnl)}
       </td>
       <td className="px-6 py-3 text-right text-sm text-[var(--text-muted)]">
         {entry.positionCount}
@@ -413,7 +375,7 @@ function StrategyDetailPanel({
                         <td className="px-6 py-2.5 text-right text-sm font-mono text-[var(--text-secondary)]">{formatCurrency(pos.entryPrice)}</td>
                         <td className="px-6 py-2.5 text-right text-sm font-mono text-[var(--text-secondary)]">{formatCurrency(pos.markPrice)}</td>
                         <td className={cn('px-6 py-2.5 text-right text-sm font-mono', getPnlColor(pos.unrealizedPnl))}>
-                          {getPnlSign(pos.unrealizedPnl)}{formatPnl(pos.unrealizedPnl)}
+                          {getPnlSign(pos.unrealizedPnl)}{formatPnlValue(pos.unrealizedPnl)}
                         </td>
                       </tr>
                     ))}
@@ -462,7 +424,7 @@ function StrategyDetailPanel({
                           {trade.avgFilledPrice ? formatCurrency(trade.avgFilledPrice) : '-'}
                         </td>
                         <td className={cn('px-6 py-2.5 text-right text-sm font-mono', trade.pnl ? getPnlColor(trade.pnl) : 'text-[var(--text-muted)]')}>
-                          {trade.pnl ? `${getPnlSign(trade.pnl)}${formatPnl(trade.pnl)}` : '-'}
+                          {trade.pnl ? `${getPnlSign(trade.pnl)}${formatPnlValue(trade.pnl)}` : '-'}
                         </td>
                       </tr>
                     ))}

@@ -1,11 +1,12 @@
+import type { RiskStatusExtended } from '@/types';
+
 export interface RiskScore {
   score: number;    // 0-100
   label: string;    // '안전' | '주의' | '위험'
   color: string;    // tailwind color class
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function computeRiskScore(riskStatus: any): RiskScore {
+export function computeRiskScore(riskStatus: RiskStatusExtended | null | undefined): RiskScore {
   if (!riskStatus) return { score: 0, label: '안전', color: 'text-emerald-400' };
 
   const { circuitBreaker, drawdownMonitor, exposureGuard } = riskStatus;

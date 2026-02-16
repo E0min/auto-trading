@@ -252,6 +252,28 @@ export function translateRejectReason(reason: string): string {
 }
 
 /**
+ * Translate strategy category to Korean
+ */
+export function translateStrategyCategory(category: string): string {
+  const map: Record<string, string> = {
+    'price-action': '가격행동',
+    'indicator-light': '경량지표',
+    'indicator-heavy': '고급지표',
+  };
+  return map[category] || category;
+}
+
+/**
+ * Format PnL value with sign prefix
+ */
+export function formatPnlValue(value: string | undefined | null): string {
+  if (!value) return '0.00';
+  const num = parseFloat(value);
+  if (isNaN(num)) return '0.00';
+  return num >= 0 ? `+${num.toFixed(2)}` : num.toFixed(2);
+}
+
+/**
  * cn - simple class name merger (no clsx dependency needed)
  */
 export function cn(...classes: (string | undefined | null | false)[]): string {

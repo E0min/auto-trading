@@ -30,6 +30,7 @@ export interface BacktestEquityPoint {
   ts: number;
   equity: string;
   cash: string;
+  unrealizedPnl?: string;
 }
 
 // Performance metrics
@@ -54,6 +55,7 @@ export interface BacktestMetrics {
   consecutiveWins: number;
   consecutiveLosses: number;
   totalFees: string;
+  totalFundingCost?: string;
   finalEquity: string;
 }
 

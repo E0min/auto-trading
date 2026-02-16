@@ -129,7 +129,7 @@ drawdownMonitor.getState()  // { peakEquity, dailyStartEquity, currentDrawdown, 
 
 **복원 흐름** (`botService.start()`):
 ```
-1. 마지막 stopped BotSession 조회
+1. 마지막 idle/stopped BotSession 조회 (R11: { status: { $in: ['idle', 'stopped'] } })
 2. session.stats.peakEquity → loadState()
 3. updateEquity(currentEquity) 호출
 4. drawdown 한도 초과 시 자동 halt 트리거 (isHalted 별도 영속화 불필요)

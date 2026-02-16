@@ -92,12 +92,43 @@ class StrategyBase extends EventEmitter {
 
   /**
    * Called on every incoming ticker update.
+   * R11: Auto-invokes trailing stop check for strategies with trailingStop.enabled.
+   * Sub-classes should call super.onTick(ticker) if they want automatic trailing stop,
+   * or override completely if they manage their own trailing logic.
+   *
    * @param {object} ticker
    */
   onTick(ticker) {
-    throw new Error(
-      `${this.name}: onTick() is abstract and must be implemented by the sub-class`,
-    );
+    // R11 E11-3: Auto trailing stop check for opt-in strategies
+    if (this._trailingStopEnabled && ticker) {
+      const price = String(ticker.lastPrice || ticker.last || ticker.price || '');
+      if (price && price !== 'undefined' && price !== 'null' && price !== '') {
+        const result = this._checkTrailingStop(price);
+        if (result) {
+          // Guard: if trailing state already cleared (position already closed), skip
+          if (!this._trailingState.positionSide) return;
+
+          const signal = {
+            action: result.action,
+            symbol: this._currentProcessingSymbol || this._symbol,
+            category: this._category,
+            suggestedPrice: price,
+            confidence: '0.90',
+            reason: result.reason,
+            reduceOnly: true,
+            marketContext: {
+              entryPrice: this._trailingState.entryPrice,
+              exitPrice: price,
+              extremePrice: this._trailingState.extremePrice,
+              trailingStopType: 'base_auto',
+            },
+          };
+
+          this.emitSignal(signal);
+          this._resetTrailingState();
+        }
+      }
+    }
   }
 
   /**

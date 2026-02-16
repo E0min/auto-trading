@@ -53,7 +53,7 @@ npx jest --coverage                        # 커버리지 포함 실행
 ## 핵심 아키텍처 패턴
 
 ### 의존성 주입 (DI)
-`backend/src/app.js`의 `bootstrap()`에서 모든 서비스를 순서대로 생성하고 주입:
+`backend/src/app.js`의 `validateEnv()` → `bootstrap()`에서 환경 변수 검증 후 모든 서비스를 순서대로 생성하고 주입:
 ```
 exchangeClient (싱글턴) → riskEngine → orderManager/positionManager
 → marketData → tickerAggregator → coinSelector/marketRegime
@@ -83,7 +83,7 @@ exchangeClient (싱글턴) → riskEngine → orderManager/positionManager
 ## 전략 시스템
 
 ### 구조
-- **기본 클래스**: `services/strategyBase.js` — `onTick()`, `onKline()`, `getSignal()` 오버라이드 필수
+- **기본 클래스**: `services/strategyBase.js` — `onKline()`, `getSignal()` 오버라이드 필수. `onTick()`은 concrete (trailing stop 자동 체크 포함, 오버라이드 선택)
 - **레지스트리**: `services/strategyRegistry.js` — 싱글턴. 각 전략 파일이 모듈 로드 시 자동 등록
 - **인덱스**: `strategies/index.js` — `safeRequire()`로 모든 전략 임포트 (하나 실패해도 나머지 영향 없음)
 

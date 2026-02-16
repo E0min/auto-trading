@@ -66,6 +66,15 @@ class PaperEngine extends EventEmitter {
      */
     this._pendingSLOrders = new Map();
 
+    /**
+     * Pending take-profit orders keyed by `${symbol}:${posSide}`.
+     * Each entry: { symbol, posSide, triggerPrice, qty, strategy, createdAt }
+     * LONG TP triggers when lastPrice >= triggerPrice.
+     * SHORT TP triggers when lastPrice <= triggerPrice.
+     * @type {Map<string, object>}
+     */
+    this._pendingTPOrders = new Map();
+
     log.info('PaperEngine initialised', {
       feeRate: this.feeRate,
       slippageBps: this.slippageBps,
@@ -192,6 +201,9 @@ class PaperEngine extends EventEmitter {
     // Update cached price
     this._lastPrices.set(symbol, String(lastPrice));
 
+    // E11-7: Clean up stale pending orders (>30min) and enforce size limit
+    this._cleanupStaleOrders();
+
     // Check pending limit orders for this symbol
     for (const [clientOid, order] of this._pendingOrders) {
       if (order.symbol !== symbol) continue;
@@ -232,8 +244,11 @@ class PaperEngine extends EventEmitter {
       }
     }
 
-    // Check pending stop-loss triggers for this symbol
+    // Check pending stop-loss triggers for this symbol (SL has priority over TP)
     this._checkStopLossTriggers(symbol, String(lastPrice));
+
+    // R11-T11: Check pending take-profit triggers for this symbol
+    this._checkTakeProfitTriggers(symbol, String(lastPrice));
   }
 
   /**
@@ -299,6 +314,109 @@ class PaperEngine extends EventEmitter {
           triggerPrice: sl.triggerPrice,
           fillPrice,
         });
+      }
+    }
+  }
+
+  /**
+   * Check all pending TP orders for the given symbol and trigger
+   * those whose conditions are met (R11-T11 AD-68).
+   *
+   * LONG TP triggers when lastPrice >= triggerPrice (sell to close).
+   * SHORT TP triggers when lastPrice <= triggerPrice (buy to close).
+   *
+   * @param {string} symbol
+   * @param {string} lastPrice
+   * @private
+   */
+  _checkTakeProfitTriggers(symbol, lastPrice) {
+    for (const [key, tp] of this._pendingTPOrders) {
+      if (tp.symbol !== symbol) continue;
+
+      let triggered = false;
+
+      // LONG position TP: triggers when price rises to or above triggerPrice
+      if (tp.posSide === 'long' && !math.isLessThan(lastPrice, tp.triggerPrice)) {
+        triggered = true;
+      }
+      // SHORT position TP: triggers when price falls to or below triggerPrice
+      else if (tp.posSide === 'short' && !math.isGreaterThan(lastPrice, tp.triggerPrice)) {
+        triggered = true;
+      }
+
+      if (triggered) {
+        this._pendingTPOrders.delete(key);
+        // Also remove the associated SL order since position is being closed
+        this._pendingSLOrders.delete(key);
+
+        // TP fills as a market order at trigger price with slippage
+        const closeSide = tp.posSide === 'long' ? 'sell' : 'buy';
+        const fillPrice = this._applySlippage(tp.triggerPrice, closeSide);
+
+        const fill = this._createFill({
+          clientOid: `tp_${tp.symbol}_${tp.posSide}_${Date.now()}`,
+          symbol: tp.symbol,
+          side: closeSide,
+          posSide: tp.posSide,
+          qty: tp.qty,
+          fillPrice,
+          reduceOnly: true,
+          strategy: tp.strategy,
+        });
+
+        // Mark fill as TP-triggered for downstream handling
+        fill.reason = 'take_profit_triggered';
+        fill.triggerPrice = tp.triggerPrice;
+
+        log.trade('_checkTakeProfitTriggers — TP triggered', {
+          symbol: tp.symbol,
+          posSide: tp.posSide,
+          triggerPrice: tp.triggerPrice,
+          fillPrice,
+          qty: tp.qty,
+        });
+
+        this.emit('paper:fill', fill);
+        this.emit('paper:tp_triggered', {
+          symbol: tp.symbol,
+          posSide: tp.posSide,
+          triggerPrice: tp.triggerPrice,
+          fillPrice,
+        });
+      }
+    }
+  }
+
+  /**
+   * Clean up stale pending limit orders older than 30 minutes.
+   * Also enforces a max size of 50 orders (FIFO eviction).
+   * @private
+   */
+  _cleanupStaleOrders() {
+    const now = Date.now();
+    const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+
+    // Remove stale orders (>30min)
+    for (const [clientOid, order] of this._pendingOrders) {
+      const createdAt = order.createdAt instanceof Date ? order.createdAt.getTime() : now;
+      if (now - createdAt > STALE_THRESHOLD_MS) {
+        this._pendingOrders.delete(clientOid);
+        log.info('_cleanupStaleOrders — stale order removed', { clientOid, symbol: order.symbol, ageMs: now - createdAt });
+        this.emit('paper:orderCancelled', { clientOid, symbol: order.symbol, reason: 'stale_timeout' });
+      }
+    }
+
+    // Enforce max size of 50 (FIFO)
+    const MAX_PENDING = 50;
+    if (this._pendingOrders.size > MAX_PENDING) {
+      const excess = this._pendingOrders.size - MAX_PENDING;
+      let removed = 0;
+      for (const [clientOid, order] of this._pendingOrders) {
+        if (removed >= excess) break;
+        this._pendingOrders.delete(clientOid);
+        log.info('_cleanupStaleOrders — excess order evicted (FIFO)', { clientOid, symbol: order.symbol });
+        this.emit('paper:orderCancelled', { clientOid, symbol: order.symbol, reason: 'max_pending_exceeded' });
+        removed++;
       }
     }
   }
@@ -394,6 +512,73 @@ class PaperEngine extends EventEmitter {
   }
 
   // =========================================================================
+  // Exchange-side Take Profit simulation (R11-T11 AD-68)
+  // =========================================================================
+
+  /**
+   * Register a take-profit trigger for a filled entry order.
+   * Called after a market/limit order fill when the original signal
+   * carried a `takeProfitPrice`.
+   *
+   * @param {object} params
+   * @param {string} params.symbol
+   * @param {string} params.posSide    — 'long' | 'short'
+   * @param {string} params.triggerPrice — price at which TP triggers
+   * @param {string} params.qty        — quantity to close
+   * @param {string} [params.strategy]
+   */
+  registerTakeProfit({ symbol, posSide, triggerPrice, qty, strategy }) {
+    if (!symbol || !posSide || !triggerPrice || !qty) {
+      log.warn('registerTakeProfit — missing required params', { symbol, posSide, triggerPrice, qty });
+      return;
+    }
+
+    const key = `${symbol}:${posSide}`;
+    this._pendingTPOrders.set(key, {
+      symbol,
+      posSide,
+      triggerPrice: String(triggerPrice),
+      qty: String(qty),
+      strategy: strategy || 'unknown',
+      createdAt: new Date(),
+    });
+
+    log.info('registerTakeProfit — TP trigger registered', {
+      symbol,
+      posSide,
+      triggerPrice,
+      qty,
+    });
+  }
+
+  /**
+   * Cancel a pending take-profit trigger (e.g. when position is closed normally).
+   *
+   * @param {string} symbol
+   * @param {string} posSide — 'long' | 'short'
+   * @returns {boolean} true if a pending TP was found and removed
+   */
+  cancelTakeProfit(symbol, posSide) {
+    const key = `${symbol}:${posSide}`;
+    const existed = this._pendingTPOrders.has(key);
+    this._pendingTPOrders.delete(key);
+
+    if (existed) {
+      log.info('cancelTakeProfit — TP trigger cancelled', { symbol, posSide });
+    }
+
+    return existed;
+  }
+
+  /**
+   * Get all pending take-profit orders.
+   * @returns {Array<object>}
+   */
+  getPendingTPOrders() {
+    return Array.from(this._pendingTPOrders.values());
+  }
+
+  // =========================================================================
   // Reset
   // =========================================================================
 
@@ -404,10 +589,12 @@ class PaperEngine extends EventEmitter {
   reset() {
     const pendingCount = this._pendingOrders.size;
     const slCount = this._pendingSLOrders.size;
+    const tpCount = this._pendingTPOrders.size;
     this._pendingOrders.clear();
     this._pendingSLOrders.clear();
+    this._pendingTPOrders.clear();
     this._lastPrices.clear();
-    log.info('PaperEngine reset', { clearedOrders: pendingCount, clearedSL: slCount });
+    log.info('PaperEngine reset', { clearedOrders: pendingCount, clearedSL: slCount, clearedTP: tpCount });
   }
 
   // =========================================================================

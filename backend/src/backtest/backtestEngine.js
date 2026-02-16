@@ -274,6 +274,7 @@ class BacktestEngine {
     this._pendingSignals = [];
     this._lastFundingTs = null;
     this._accumulatedFundings = new Map();
+    this._totalFundingCost = '0'; // R11-T7: Track total funding cost for metrics
 
     // 2. Create and configure strategy instance
     this._strategy = this._createStrategy();
@@ -385,6 +386,7 @@ class BacktestEngine {
       equityCurve: this._equityCurve,
       finalEquity,
       totalTrades: this._trades.length,
+      totalFundingCost: this._totalFundingCost, // R11-T7
     };
   }
 
@@ -420,9 +422,15 @@ class BacktestEngine {
     this._backtestCache = new BacktestIndicatorCache();
     strategy.setIndicatorCache(this._backtestCache);
 
-    // Inject account context so strategies can access backtest equity (T2-5)
+    // Inject account context so strategies can access backtest equity (T2-5, R11-T6)
+    // R11-T6: Include unrealized PnL in equity calculation
     strategy.setAccountContext({
-      getEquity: () => this._cash,
+      getEquity: () => {
+        if (this._currentKline) {
+          return this._calculateEquity(this._currentKline);
+        }
+        return this._cash;
+      },
     });
 
     // Activate for the backtest symbol
@@ -982,8 +990,7 @@ class BacktestEngine {
    * Formula: fundingPnl = positionSize * fundingRate * -1
    *   (long payer = negative, short receiver = positive in positive funding)
    *
-   * Phase 1: data collection only — accumulated in _accumulatedFunding
-   * and recorded in trade close, but does NOT affect cash or equity.
+   * R11-T7: Now deducts/adds funding to cash and tracks total funding cost.
    *
    * @param {Object} kline — current kline with ts field
    * @private
@@ -1028,6 +1035,19 @@ class BacktestEngine {
         const accumulated = this._accumulatedFundings.get(posId) || '0';
         this._accumulatedFundings.set(posId, math.add(accumulated, fundingPnl));
 
+        // R11-T7: Apply funding to cash (positive = receive, negative = pay)
+        this._cash = math.add(this._cash, fundingPnl);
+        // Prevent negative cash (defensive)
+        if (math.isLessThan(this._cash, '0')) {
+          this._cash = '0';
+        }
+
+        // R11-T7: Track total funding cost (absolute cost regardless of direction)
+        // Negative fundingPnl = cost to the account
+        if (math.isLessThan(fundingPnl, '0')) {
+          this._totalFundingCost = math.add(this._totalFundingCost, math.abs(fundingPnl));
+        }
+
         log.debug('Funding settlement applied', {
           posId,
           side: position.side,
@@ -1035,6 +1055,7 @@ class BacktestEngine {
           posSize,
           fundingPnl,
           accumulatedFunding: this._accumulatedFundings.get(posId),
+          cash: this._cash,
           ts: this._lastFundingTs,
         });
       }

@@ -55,6 +55,7 @@ class BreakoutStrategy extends StrategyBase {
     gracePeriodMs: 900000,
     warmupCandles: 30,
     volatilityPreference: 'high',
+    trailingStop: { enabled: true, activationPercent: '2.0', callbackPercent: '1.5' },
     description: 'BB 스퀴즈 돌파 전략 — 볼린저밴드가 켈트너채널 안으로 수축 후 돌파 진입',
     defaultConfig: {
       bbPeriod: 20,
@@ -634,6 +635,7 @@ class BreakoutStrategy extends StrategyBase {
    * @param {object} fill
    */
   onFill(fill) {
+    super.onFill(fill); // R11: update StrategyBase trailing stop state
     if (!this._active) return;
     if (!fill) return;
     const action = fill.action || (fill.signal && fill.signal.action);

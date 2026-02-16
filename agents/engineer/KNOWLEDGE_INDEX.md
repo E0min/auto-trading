@@ -37,6 +37,9 @@
 | `proposals/round_10.md` | Tier 3 Enhancement 분석: DrawdownMonitor loadState/getState, trailing stop StrategyBase 인프라, 멀티포지션 Map | Round 10 | active |
 | `proposals/round_10_review.md` | Round 10 교차 리뷰 (Trader+UI 제안 검토) — incrementalId 키 동의, FIFO 전용, percent 모드 선행 | Round 10 | active |
 | `../shared/decisions/round_10.md` | Round 10 합의 결정문서 (8건, AD-58~AD-62) — peakEquity 영속성, trailing stop, 멀티포지션, Sortino/Calmar, EquityCurveBase — **구현 완료** | Round 10 | active |
+| `proposals/round_11.md` | 코드베이스 재분석 15건: BotSession 쿼리, env validation, Signal 인덱스, PaperEngine TTL+cap, 일일 리셋 타이밍, WS 재구독 | Round 11 | active |
+| `proposals/round_11_review.md` | Round 11 교차 리뷰 (Trader+UI 제안 검토) | Round 11 | active |
+| `../shared/decisions/round_11.md` | Round 11 합의 결정문서 (26건, AD-63~AD-68) — SignalFilter bypass, peakEquity 쿼리, trailing opt-in, 백테스트 equity+funding, PaperEngine TP — **구현 완료** | Round 11 | active |
 
 ## Round 1 Key Findings Summary
 - **C-1**: unhandledRejection/uncaughtException 핸들러 누락 — 프로세스 즉시 종료 위험
@@ -83,14 +86,27 @@
 - **멀티포지션 백테스트 Map (AD-60)**: _positions Map + incrementalId 키, ABSOLUTE_MAX_POSITIONS=10, FIFO 청산, per-position 펀딩비, _calculateEquity 전 포지션 합산
 - **Sortino + Calmar (AD-61)**: meanReturn 스코프 수정(if 블록 밖으로), downside deviation 분모=전체 period 수, Calmar=totalReturn/maxDrawdownPercent
 
+## Round 11 Key Findings Summary
+- **BotSession peakEquity 쿼리 수정 (AD-64)**: `findOne({ status: 'stopped' })`가 실제 저장값 `'idle'`과 불일치 → `{ status: { $in: ['idle', 'stopped'] } }`로 수정. DrawdownMonitor peakEquity 세션 간 복원 정상화
+- **환경변수 시작 시 검증**: `validateEnv()` 함수 추가 — bootstrap() 전에 필수 환경변수 누락 시 fast-fail. 런타임 크래시 방지
+- **Signal 모델 인덱스 3개 추가**: 복합 인덱스 추가로 Signal 쿼리 성능 개선 (sessionId+timestamp, strategy+action, riskApproved 등)
+- **PositionManager 일일 리셋 타이밍 수정**: `utcHour === 0` 제약 제거 → 날짜 변경 감지 방식으로 전환. UTC 0시 정각에만 리셋되던 제한 해소
+- **PaperEngine 미결 주문 관리**: 30분 TTL(미체결 주문 자동 만료) + 50건 제한(FIFO). 장기 운영 시 주문 누적 방지
+- **StrategyBase onTick() concrete 전환 (AD-65)**: abstract throw → 구현 있는 concrete 메서드. `metadata.trailingStop.enabled === true`인 전략만 `_checkTrailingStop(price)` 자동 호출. 청산 시그널에 `reduceOnly: true` 설정
+- **SignalFilter close bypass 수정 (AD-63)**: `action === 'CLOSE'`가 실제 값(`close_long`, `close_short`)과 불일치 → `(action && action.startsWith('close')) || signal.reduceOnly`로 수정. null 방어 포함
+- **PaperEngine TP 트리거 시뮬레이션 (AD-68)**: SL만 있던 트리거에 TP 추가. `_checkTakeProfitTriggers()` 메서드 — Long: price >= tpPrice, Short: price <= tpPrice. SL+TP 동시 트리거 시 SL 우선
+- **백테스트 equity 미실현 PnL 포함 (AD-66)**: `getEquity: () => this._cash` → `this._calculateEquity(currentPrice)`. Map 순회 O(n<=3) 성능 무시 가능
+- **백테스트 펀딩 비용 cash 반영 (AD-67)**: `_applyFundingIfDue()` 펀딩 비용을 `this._cash`에 실제 차감. totalFundingCost를 backtestMetrics로 전달
+
 ## Accumulated Insights
-- **에러 핸들링 진화**: R1 unhandledRejection 핸들러 누락 → R2 crashHandler 추가 → R3 graceful shutdown 순서 정비 → R6 getAccountInfo 크래시 수정 → R8 getStatus()/getSignal() try-catch 추가. 현재 상태: 프로세스 안정성 확보, 미처리 예외 없음
-- **리소스 관리 패턴**: R1 CircuitBreaker rapidLosses 무한 성장 → R4 window 기반 정리 → R7 setTimeout+unref() 패턴 도입 → R8 전 타이머 unref() 적용 + _lastTickerEmit 5분 주기 정리 + BacktestStore FIFO 50제한. 현재 상태: 타이머/Map/배열 누수 방지 패턴 확립, 무제한 성장 경로 제거
+- **에러 핸들링 진화**: R1 unhandledRejection 핸들러 누락 → R2 crashHandler 추가 → R3 graceful shutdown 순서 정비 → R6 getAccountInfo 크래시 수정 → R8 getStatus()/getSignal() try-catch 추가 → R11 validateEnv() fast-fail 추가. 현재 상태: 프로세스 안정성 확보, 환경 미설정 시 조기 실패
+- **리소스 관리 패턴**: R1 CircuitBreaker rapidLosses 무한 성장 → R4 window 기반 정리 → R7 setTimeout+unref() 패턴 도입 → R8 전 타이머 unref() 적용 + _lastTickerEmit 5분 주기 정리 + BacktestStore FIFO 50제한 → R11 PaperEngine 미결 주문 30분 TTL + 50건 cap. 현재 상태: 타이머/Map/배열/주문 누적 방지 패턴 완비
 - **DI 패턴 안정화**: R1 DI 체계 구축 → R2 orderManager/positionManager 분리 → R4 equity DI 개선 → R6 서비스 간 참조 정리 → R8 Router singleton 팩토리 내부 이동. 현재 상태: app.js bootstrap 순서 안정, 라우트 팩토리 일관성 확보
 - **동시성 제어**: R1 orderManager 동시성 미제어 → R2 mutex 도입 → R7 grace Map 원자적 조작. 현재 상태: 핵심 경로에 동시성 보호 적용 완료
-- **캡슐화 준수**: R8 TournamentRoutes 캡슐화 수정 → R9 InstrumentCache 서비스 분리 + StateRecovery 활성화. 현재 상태: 서비스 경계 깨끗, 인프라 서비스 분리 완료
-- **상태 영속성 패턴**: R8 BotSession 실시간 통계 → R10 DrawdownMonitor loadState()/getState(). 패턴: MongoDB에 주기적 저장 → 재시작 시 복원 → updateEquity()로 자동 halt 감지. isHalted 별도 영속화 불필요
-- **백테스트 진화**: R1 단일 포지션 → R3 IndicatorCache 주입 → R9 펀딩비 PnL → R10 Map 기반 멀티포지션(FIFO, incrementalId). 현재 상태: 멀티포지션 + 펀딩비 반영 백테스트
+- **캡슐화 준수**: R8 TournamentRoutes 캡슐화 수정 → R9 InstrumentCache 서비스 분리 + StateRecovery 활성화 → R11 StrategyBase onTick() concrete 전환(trailing stop 자동 호출). 현재 상태: 서비스 경계 깨끗, base 클래스 인프라 확장
+- **상태 영속성 패턴**: R8 BotSession 실시간 통계 → R10 DrawdownMonitor loadState()/getState() → R11 peakEquity 복원 쿼리 수정(idle/stopped 양쪽 매칭). 패턴: MongoDB에 주기적 저장 → 재시작 시 복원 → updateEquity()로 자동 halt 감지. 현재 상태: 쿼리 정확성 검증 완료
+- **백테스트 진화**: R1 단일 포지션 → R3 IndicatorCache 주입 → R9 펀딩비 PnL → R10 Map 기반 멀티포지션(FIFO, incrementalId) → R11 getEquity에 미실현 PnL 포함 + 펀딩 비용 cash 실제 차감 + totalFundingCost 메트릭 전달. 현재 상태: 라이브와 일관된 equity 산출, 펀딩비 완전 반영
+- **데이터 모델 최적화**: R11 Signal 모델 복합 인덱스 3개 추가 — 쿼리 성능 개선. PositionManager 일일 리셋 날짜 변경 감지 방식 전환. 현재 상태: MongoDB 쿼리 최적화 착수
 
 ## Knowledge Management Rules
 1. 새 정보를 받으면 이 인덱스의 기존 항목과 비교

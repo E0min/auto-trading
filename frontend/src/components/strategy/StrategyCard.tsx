@@ -9,6 +9,7 @@ import {
   translateStrategyName,
   translateRegime,
   getStrategyCategory,
+  translateStrategyCategory,
   getRegimeColor,
   getRegimeDotColor,
   cn,
@@ -37,11 +38,6 @@ const RISK_BADGE: Record<string, { label: string; color: string }> = {
   high: { label: 'High', color: 'text-[var(--loss)]/60' },
 };
 
-const CATEGORY_LABEL: Record<string, string> = {
-  'price-action': '가격행동',
-  'indicator-light': '지표 경량',
-  'indicator-heavy': '지표 고급',
-};
 
 export default function StrategyCard({
   strategy,
@@ -147,7 +143,7 @@ export default function StrategyCard({
               </span>
               <span className="text-[10px] text-[var(--border-muted)]">|</span>
               <span className="text-[10px] text-[var(--text-muted)]">
-                {CATEGORY_LABEL[category] || category}
+                {translateStrategyCategory(category)}
               </span>
             </div>
             {/* Regime tags — dot + text only */}

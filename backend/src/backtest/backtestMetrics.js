@@ -88,7 +88,7 @@ function _getPeriodsPerYear(interval) {
  * @param {string}        [params.interval]     — kline interval for Sharpe annualisation (e.g. '1H')
  * @returns {Object} metrics with all monetary values as strings
  */
-function computeMetrics({ trades, equityCurve, initialCapital, interval }) {
+function computeMetrics({ trades, equityCurve, initialCapital, interval, totalFundingCost }) {
   const totalTrades = trades.length;
 
   // -- Edge case: no trades ------------------------------------------------
@@ -114,6 +114,7 @@ function computeMetrics({ trades, equityCurve, initialCapital, interval }) {
       consecutiveWins: 0,
       consecutiveLosses: 0,
       totalFees: '0.00',
+      totalFundingCost: '0.00',
       finalEquity: initialCapital,
     };
   }
@@ -337,6 +338,7 @@ function computeMetrics({ trades, equityCurve, initialCapital, interval }) {
     consecutiveWins,
     consecutiveLosses,
     totalFees: toFixed(totalFees, 2),
+    totalFundingCost: toFixed(totalFundingCost || '0', 2), // R11-T7
     finalEquity: toFixed(finalEquity, 2),
   };
 }

@@ -11,7 +11,7 @@ import {
   Legend,
 } from 'recharts';
 import { formatCurrency, shortenNumber, cn } from '@/lib/utils';
-import { CHART_TOOLTIP_STYLE } from '@/lib/chart-config';
+import { CHART_TOOLTIP_STYLE, createScoreFormatter } from '@/lib/chart-config';
 import type { CoinScoringData } from '@/types';
 
 interface CoinScoreboardProps {
@@ -69,7 +69,7 @@ export default function CoinScoreboard({ data }: CoinScoreboardProps) {
             가중치({weightProfile.regime})
           </span>
           {FACTOR_KEYS.map((k) => {
-            const w = (weightProfile.weights as unknown as Record<string, number>)[k] ?? 0;
+            const w = weightProfile.weights[k] ?? 0;
             if (w === 0) return null;
             return (
               <span
@@ -100,10 +100,7 @@ export default function CoinScoreboard({ data }: CoinScoreboardProps) {
             <Tooltip
               contentStyle={CHART_TOOLTIP_STYLE}
               labelStyle={{ color: 'var(--text-primary)', fontWeight: 600 }}
-              formatter={((value: number | undefined, name: string | undefined) => [
-                Math.round(Number(value ?? 0)),
-                FACTOR_LABELS[String(name ?? '')] ?? name ?? '',
-              ]) as never}
+              formatter={createScoreFormatter((name) => FACTOR_LABELS[name] ?? name)}
             />
             <Legend
               iconSize={8}

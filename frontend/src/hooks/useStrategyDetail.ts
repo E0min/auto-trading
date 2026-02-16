@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { tradeApi } from '@/lib/api-client';
+import { useAdaptivePolling } from '@/hooks/useAdaptivePolling';
 import type { StrategyStats } from '@/types';
 
 interface UseStrategyDetailReturn {
@@ -17,7 +18,6 @@ export function useStrategyDetail(
   const [stats, setStats] = useState<StrategyStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchStats = useCallback(async () => {
     if (!strategyName) return;
@@ -35,31 +35,14 @@ export function useStrategyDetail(
     }
   }, [strategyName, sessionId]);
 
-  useEffect(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-
-    if (!strategyName) {
-      setStats(null);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-
-    setLoading(true);
-    fetchStats();
-
-    intervalRef.current = setInterval(fetchStats, 5000);
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
-  }, [strategyName, fetchStats]);
+  // Use adaptive polling instead of manual setInterval.
+  // When strategyName is null, fetchStats does an early return (no fetch).
+  // The 'trades' config gives 10s active / 30s idle intervals with visibility awareness.
+  useAdaptivePolling(
+    fetchStats,
+    'trades',
+    strategyName ? 'running' : 'idle',
+  );
 
   return { stats, loading, error };
 }

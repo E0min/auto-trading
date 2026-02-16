@@ -1,13 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import EquityCurveChart from '@/components/EquityCurveChart';
 import DrawdownChart from '@/components/DrawdownChart';
 import StrategyPerformance from '@/components/analytics/StrategyPerformance';
 import SymbolPerformance from '@/components/analytics/SymbolPerformance';
 import DailyPerformance from '@/components/analytics/DailyPerformance';
-import { usePerformanceAnalytics } from '@/hooks/usePerformanceAnalytics';
-import type { EquityPoint } from '@/types';
+import Spinner from '@/components/ui/Spinner';
+import { analyticsApi } from '@/lib/api-client';
+import type {
+  EquityPoint,
+  StrategyPerformanceEntry,
+  SymbolPerformanceEntry,
+  DailyPerformanceEntry,
+} from '@/types';
 
 interface PerformanceTabsProps {
   sessionId: string | null;
@@ -33,21 +39,84 @@ export default function PerformanceTabs({
 }: PerformanceTabsProps) {
   const [activeTab, setActiveTab] = useState<TabKey>('equity');
 
-  const {
-    byStrategy,
-    bySymbol,
-    daily,
-    loading: perfLoading,
-  } = usePerformanceAnalytics(sessionId);
+  // Lazy loading: track which tabs have been loaded
+  const [loadedTabs] = useState<Set<TabKey>>(() => new Set<TabKey>(['equity']));
+  const [tabLoading, setTabLoading] = useState(false);
+
+  // Per-tab cached data
+  const [byStrategy, setByStrategy] = useState<Record<string, StrategyPerformanceEntry> | null>(null);
+  const [bySymbol, setBySymbol] = useState<Record<string, SymbolPerformanceEntry> | null>(null);
+  const [daily, setDaily] = useState<DailyPerformanceEntry[] | null>(null);
+
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
+
+  // Reset data when sessionId changes
+  useEffect(() => {
+    if (!sessionId) {
+      setByStrategy(null);
+      setBySymbol(null);
+      setDaily(null);
+      loadedTabs.clear();
+      loadedTabs.add('equity');
+    }
+  }, [sessionId, loadedTabs]);
+
+  // Fetch data for a specific tab
+  const fetchTabData = useCallback(async (tab: TabKey) => {
+    if (!sessionIdRef.current) return;
+    setTabLoading(true);
+    try {
+      switch (tab) {
+        case 'strategy': {
+          const data = await analyticsApi.getByStrategy(sessionIdRef.current);
+          setByStrategy(data);
+          break;
+        }
+        case 'symbol': {
+          const data = await analyticsApi.getBySymbol(sessionIdRef.current);
+          setBySymbol(data);
+          break;
+        }
+        case 'daily': {
+          const data = await analyticsApi.getDaily(sessionIdRef.current);
+          setDaily(data);
+          break;
+        }
+        default:
+          break;
+      }
+    } catch (err) {
+      console.error(`탭 데이터 조회 실패 (${tab}):`, err);
+    } finally {
+      setTabLoading(false);
+    }
+  }, []);
+
+  // Handle tab selection — fetch on first select only
+  const handleTabClick = useCallback((tab: TabKey) => {
+    setActiveTab(tab);
+
+    if (tab !== 'equity' && !loadedTabs.has(tab) && sessionIdRef.current) {
+      loadedTabs.add(tab);
+      fetchTabData(tab);
+    }
+  }, [loadedTabs, fetchTabData]);
+
+  // Determine loading state for analytics tabs
+  const isTabLoading = (tab: TabKey): boolean => {
+    if (tab === 'equity') return analyticsLoading;
+    return tabLoading && activeTab === tab;
+  };
 
   return (
     <div className="space-y-4">
-      {/* Tab Navigation — minimal underline style */}
+      {/* Tab Navigation */}
       <div className="flex gap-0 border-b border-[var(--border-subtle)]">
         {TABS.map((tab) => (
           <button
             key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
+            onClick={() => handleTabClick(tab.key)}
             className={`
               px-4 py-2.5 text-[11px] font-medium transition-all duration-200 relative
               ${activeTab === tab.key
@@ -77,15 +146,33 @@ export default function PerformanceTabs({
         )}
 
         {activeTab === 'strategy' && (
-          <StrategyPerformance data={byStrategy} loading={perfLoading} />
+          isTabLoading('strategy') ? (
+            <div className="flex items-center justify-center py-12">
+              <Spinner size="md" />
+            </div>
+          ) : (
+            <StrategyPerformance data={byStrategy} loading={false} />
+          )
         )}
 
         {activeTab === 'symbol' && (
-          <SymbolPerformance data={bySymbol} loading={perfLoading} />
+          isTabLoading('symbol') ? (
+            <div className="flex items-center justify-center py-12">
+              <Spinner size="md" />
+            </div>
+          ) : (
+            <SymbolPerformance data={bySymbol} loading={false} />
+          )
         )}
 
         {activeTab === 'daily' && (
-          <DailyPerformance data={daily} loading={perfLoading} />
+          isTabLoading('daily') ? (
+            <div className="flex items-center justify-center py-12">
+              <Spinner size="md" />
+            </div>
+          ) : (
+            <DailyPerformance data={daily} loading={false} />
+          )
         )}
       </div>
     </div>

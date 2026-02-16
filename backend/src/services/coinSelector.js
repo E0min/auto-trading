@@ -175,6 +175,8 @@ class CoinSelector extends EventEmitter {
     this._lastScoringDetails = null;
     /** @private — last active weight profile */
     this._lastWeightProfile = null;
+    /** @private — previous vol24h per symbol for volume momentum (R11-T8) */
+    this._prevVol24h = new Map();
   }
 
   // =========================================================================
@@ -337,8 +339,15 @@ class CoinSelector extends EventEmitter {
       } catch (_) { /* keep 0 */ }
       factorArrays.volatility.push(volatility);
 
-      // F7: Volume Momentum (same as volume — percentile rank will differentiate)
-      factorArrays.volMomentum.push(c.vol24h);
+      // F7: Volume Momentum — ratio of current vol24h to previous vol24h (R11-T8)
+      const prevVol = this._prevVol24h.get(c.symbol);
+      let volMomentum = '1'; // default: no change
+      if (prevVol && isGreaterThan(prevVol, '0')) {
+        try {
+          volMomentum = divide(c.vol24h, prevVol, 8);
+        } catch (_) { /* keep default */ }
+      }
+      factorArrays.volMomentum.push(volMomentum);
     }
 
     // ---- Step 4: Normalize — percentile ranks ----
@@ -387,6 +396,11 @@ class CoinSelector extends EventEmitter {
 
     const selected = scored.slice(0, maxSymbols);
     const selectedSymbols = selected.map((s) => s.symbol);
+
+    // R11-T8: Update _prevVol24h for next polling cycle's volume momentum
+    for (const c of candidates) {
+      this._prevVol24h.set(c.symbol, c.vol24h);
+    }
 
     // Store diagnostics
     this._lastScoringDetails = scored;

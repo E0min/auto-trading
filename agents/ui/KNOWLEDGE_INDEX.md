@@ -37,6 +37,9 @@
 | `proposals/round_10.md` | Tier 3 Enhancement FE 분석: 데드코드(StrategyPanel/ClientGate) 삭제, TOOLTIP_STYLE 통일, th scope, EquityCurveBase 추출 | Round 10 | active |
 | `proposals/round_10_review.md` | Round 10 교차 리뷰 (Trader+Engineer 제안 검토) — Config 객체 방식 주장, Card 래핑 wrapper에서, border-muted 통일 | Round 10 | active |
 | `../shared/decisions/round_10.md` | Round 10 합의 결정문서 (8건, AD-58~AD-62) — FE 4건: 데드코드 삭제, TOOLTIP_STYLE, th scope, EquityCurveBase + Sortino/Calmar 표시 — **구현 완료** | Round 10 | active |
+| `proposals/round_11.md` | 코드베이스 재분석 13건: MarketRegimeIndicator 삭제, PaperModeGate, 타입 안전성(RiskStatusExtended, as never), CATEGORY_LABEL 통일, 접근성, lazy loading | Round 11 | active |
+| `proposals/round_11_review.md` | Round 11 교차 리뷰 (Trader+Engineer 제안 검토) | Round 11 | active |
+| `../shared/decisions/round_11.md` | Round 11 합의 결정문서 (26건, AD-63~AD-68) — FE 14건: 데드코드, PaperModeGate, 타입 안전성, formatter 통일, 폼 검증, lazy loading, 접근성 — **구현 완료** | Round 11 | active |
 
 ## Round 1 Key Findings Summary
 - **C1**: Emergency Stop에 확인 다이얼로그 없음 — 실수로 전포지션 청산 위험
@@ -81,13 +84,33 @@
 - **EquityCurveBase 공통 추출 (AD-62)**: EquityCurveConfig 인터페이스 + EquityCurveBase 공통 컴포넌트. 기존 2개 차트를 얇은 래퍼로 전환. Card 래핑은 wrapper 담당
 - **Sortino+Calmar FE 표시**: BacktestStatsPanel에 소르티노(Sharpe 옆) + 칼마(최대낙폭 옆) 배치
 
+## Round 11 Key Findings Summary
+- **MarketRegimeIndicator.tsx 삭제**: R9에서 데드코드로 식별된 컴포넌트 최종 삭제. RegimeFlowMap으로 대체 완료 확인
+- **PaperModeGate 공통 컴포넌트**: tournament/page.tsx와 backtest/page.tsx에서 중복된 페이퍼 모드 가드 UI를 공통 컴포넌트(`PaperModeGate.tsx`)로 추출. 재사용성 향상
+- **타입 안전성 강화 3건**:
+  - `risk.ts`: `any` → `RiskStatusExtended` 인터페이스 (types/index.ts에 신규 정의)
+  - `EquityCurveBase.tsx`: `Record<string, unknown>` 제약 → 제네릭 `<T extends object>`로 완화. CoinScoreboard 등 캐스트 제거
+  - 7개 차트 파일: `as never` 캐스트 제거 → `createCurrencyFormatter()`, `createPercentFormatter()`, `createScoreFormatter()` 공통 함수로 대체 (chart-config.ts)
+- **CATEGORY_LABEL / formatPnl 통일**:
+  - `CATEGORY_LABEL` 로컬 상수 → `translateStrategyCategory()` 유틸 함수로 승격 (utils.ts). StrategySymbolMap, StrategyCard, tournament/page.tsx에서 사용
+  - `formatPnl` 로컬 함수 → `formatPnlValue()` 유틸 함수로 승격 (utils.ts). tournament/page.tsx에서 사용
+- **BacktestForm 유효성 검증 강화**: 날짜 범위, 초기 자본, 수수료율, 슬리피지, 심볼 필드에 클라이언트 사이드 검증 추가
+- **백테스트 타입 확장**:
+  - `BacktestEquityPoint`에 `unrealizedPnl?: string` 필드 추가
+  - `BacktestMetrics`에 `totalFundingCost: string` 필드 추가 + BacktestStatsPanel에 표시
+- **useStrategyDetail 적응형 폴링**: `setInterval` → `useAdaptivePolling` 훅으로 전환. 봇 상태에 따른 폴링 간격 자동 조절
+- **PerformanceTabs lazy loading**: 탭 전환 시 컨텐츠 지연 로딩 — 초기 번들 크기 절감
+- **DisableModeDialog 접근성**: focus trap(Tab 순환), Escape 키 닫기, aria 속성 추가. EmergencyStopDialog(R8)과 동일 패턴 적용
+
 ## Accumulated Insights
 - **레이아웃 진화**: R1 정보 우선순위 역전 발견 → R3 대시보드 재배치 → R4 리스크 패널/드로다운 차트 추가 → R5 7-Row 구조 확정 → R7 grace 배지 추가. 현재 상태: 안정된 레이아웃, 정보 밀도 적정
-- **실시간 상태 표현**: R1 Socket.io 싱글턴 문제 → R3 ref-count 해결 → R4 적응형 폴링(봇 상태별) → R7 3-way 상태 + 카운트다운 + pending/cooldown 표시 → R8 useSocket state 분리 + 3개 훅 적응형 폴링 전환. 현재 상태: 리렌더 최적화 + 전 훅 적응형 폴링 적용 완료
-- **모드 인식 UX**: R2 TradingModeBanner(paper/live) → R4 RiskStatusPanel 게이지 → R7 레짐 pending/cooldown/grace 시각화 → R8 봇 정지 확인 다이얼로그 + severity toast. 현재 상태: 사용자가 시스템의 "왜"를 이해하고 실수를 방지할 수 있는 UI
-- **컴포넌트 패턴**: R1 레짐 색상 4곳 중복 → R6 디자인 토큰 도입 → R7 상태별 색상 체계(green/amber/gray/blue) 표준화 → R8 ErrorToast 신규 컴포넌트 + aria-expanded 일괄 적용. 현재 상태: 색상/상태 매핑 일관성 확보, 접근성 기반 정비
-- **접근성 진화**: R6 aria-disabled/aria-label → R8 포커스 트랩 + aria-expanded → R9 StrategyCard toggle button 분리 → R10 th scope="col" 88개 추가. 현재 상태: 테이블+모달+토글 접근성 완비
-- **코드 정리 패턴**: R9 MarketRegimeIndicator 데드코드 삭제 → R10 StrategyPanel+ClientGate 삭제 + TOOLTIP_STYLE 4파일 통일 + EquityCurveBase 공통 추출. 현재 상태: 중복 코드 제거, 공통 컴포넌트 확립
+- **실시간 상태 표현**: R1 Socket.io 싱글턴 문제 → R3 ref-count 해결 → R4 적응형 폴링(봇 상태별) → R7 3-way 상태 + 카운트다운 + pending/cooldown 표시 → R8 useSocket state 분리 + 3개 훅 적응형 폴링 전환 → R11 useStrategyDetail 적응형 폴링 전환. 현재 상태: 전 폴링 훅 적응형 전환 완료
+- **모드 인식 UX**: R2 TradingModeBanner(paper/live) → R4 RiskStatusPanel 게이지 → R7 레짐 pending/cooldown/grace 시각화 → R8 봇 정지 확인 다이얼로그 + severity toast → R11 PaperModeGate 공통 컴포넌트 추출. 현재 상태: 모드 가드 UI 재사용 가능, 시스템 상태 인식 완비
+- **컴포넌트 패턴**: R1 레짐 색상 4곳 중복 → R6 디자인 토큰 도입 → R7 상태별 색상 체계(green/amber/gray/blue) 표준화 → R8 ErrorToast 신규 컴포넌트 + aria-expanded 일괄 적용 → R11 CATEGORY_LABEL→translateStrategyCategory + formatPnl→formatPnlValue 유틸 승격. 현재 상태: 로컬 상수/함수 → 공통 유틸 통합 패턴 확립
+- **접근성 진화**: R6 aria-disabled/aria-label → R8 포커스 트랩 + aria-expanded → R9 StrategyCard toggle button 분리 → R10 th scope="col" 88개 추가 → R11 DisableModeDialog focus trap + Escape + aria. 현재 상태: 전 다이얼로그 접근성 패턴 통일 (EmergencyStop/DisableMode)
+- **코드 정리 패턴**: R9 MarketRegimeIndicator 데드코드 삭제 → R10 StrategyPanel+ClientGate 삭제 + TOOLTIP_STYLE 4파일 통일 + EquityCurveBase 공통 추출 → R11 MarketRegimeIndicator 최종 삭제 + as never 7건 제거 + EquityCurveBase 제네릭 완화. 현재 상태: 타입 캐스트 최소화, 공통 formatter 확립
+- **타입 안전성 진화**: R1 Recharts `as never` 3곳 발견 → R10 EquityCurveBase 추출 → R11 `as never` 7건 제거(chart-config formatter) + `any` → RiskStatusExtended + EquityCurveBase 제네릭 `<T extends object>`. 현재 상태: 타입 캐스트 제거 완료, 제네릭 기반 타입 안전성
+- **성능 최적화**: R4 적응형 폴링 도입 → R8 useSocket state 분리 → R11 PerformanceTabs lazy loading + BacktestForm 클라이언트 검증. 현재 상태: 번들 최적화 + 불필요 서버 요청 방지
 
 ## Knowledge Management Rules
 1. 새 정보를 받으면 이 인덱스의 기존 항목과 비교

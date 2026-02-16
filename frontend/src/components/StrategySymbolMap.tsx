@@ -8,6 +8,7 @@ import {
   getRegimeColor,
   getRegimeDotColor,
   getStrategyCategory,
+  translateStrategyCategory,
   formatSymbol,
   cn,
 } from '@/lib/utils';
@@ -32,11 +33,6 @@ function regimeIcon(regime: string): string {
   return REGIME_ICON[regime] ?? '?';
 }
 
-const CATEGORY_LABEL: Record<string, string> = {
-  'price-action': 'Price-Action',
-  'indicator-light': 'Indicator-Light',
-  'indicator-heavy': 'Indicator-Heavy',
-};
 
 export default function StrategySymbolMap({
   strategies,
@@ -130,7 +126,7 @@ export default function StrategySymbolMap({
                         </div>
                       </td>
                       <td className="text-[var(--text-muted)] text-[11px]">
-                        {CATEGORY_LABEL[getStrategyCategory(s.name)] ?? 'Indicator-Light'}
+                        {translateStrategyCategory(getStrategyCategory(s.name))}
                       </td>
                       <td className="text-right font-mono text-[var(--text-secondary)] text-xs">
                         {formatSymbol(s.symbol || s.symbols?.[0] || '-')}
@@ -187,7 +183,7 @@ export default function StrategySymbolMap({
                         </div>
                       </td>
                       <td className="text-[var(--text-muted)] text-[11px]">
-                        {CATEGORY_LABEL[getStrategyCategory(s.name)] ?? 'Indicator-Light'}
+                        {translateStrategyCategory(getStrategyCategory(s.name))}
                       </td>
                       <td className="text-right font-mono text-[var(--text-muted)] text-xs">-</td>
                       <td>

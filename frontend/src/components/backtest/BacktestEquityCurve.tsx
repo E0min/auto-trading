@@ -14,7 +14,7 @@ export default function BacktestEquityCurve({ data, loading }: BacktestEquityCur
   return (
     <Card title="에쿼티 커브" className="col-span-full">
       <EquityCurveBase
-        data={data as unknown as Record<string, unknown>[]}
+        data={data}
         loading={loading}
         config={BACKTEST_EQUITY_CONFIG}
       />

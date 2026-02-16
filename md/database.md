@@ -107,6 +107,11 @@ IDLE → RUNNING → PAUSED → RUNNING (resume)
 | `resultOrderId` | String | - | 결과 주문 ID |
 | `sessionId` | ObjectId | - | 봇 세션 ID (ref: BotSession) |
 
+### 인덱스 (Sprint R11)
+- `{ sessionId: 1, createdAt: -1 }` — 세션 내 시간순 시그널 조회
+- `{ strategy: 1, createdAt: -1 }` — 전략별 시간순 시그널 조회
+- `{ symbol: 1, createdAt: -1 }` — 심볼별 시간순 시그널 조회
+
 ### 액션 enum
 ```
 OPEN_LONG    — 롱 포지션 진입

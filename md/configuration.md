@@ -12,6 +12,8 @@
 | `BITGET_SECRET_KEY` | Bitget 시크릿 키 | `xxxxxxxxxxxxxxxx` |
 | `BITGET_PASSPHRASE` | Bitget 패스프레이즈 | `your_passphrase` |
 
+> **환경 변수 사전 검증 (Sprint R11)**: `app.js`의 `validateEnv()`가 `bootstrap()` 전에 실행됩니다. 페이퍼 모드(`PAPER_TRADING=true`)에서는 위 3개 변수가 필수가 아닙니다. 라이브 모드에서 누락 시 서버 시작 전 명확한 에러 메시지를 출력합니다.
+
 #### 선택 설정
 
 | 변수 | 기본값 | 설명 |

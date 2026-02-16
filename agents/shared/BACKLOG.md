@@ -134,7 +134,7 @@
 | BUG-1 | P0 | Backend | Map 직렬화 버그 수정 (performanceTracker) | R5 | R5 | done |
 | T3-8 | P3 | Backend | EventEmitter maxListeners(20) 설정 | E:R6-12 | R6 | done |
 | T3-9 | P3 | Backend | Socket.io CORS + 인증 (FE 동시 배포 필요) | E:R6-7 | R6 | deferred |
-| T3-10 | P3 | Backend | InstrumentCache 심볼별 lot step | E:R6-14 | R6 | agreed (→R8-T1-1) |
+| T3-10 | P3 | Backend | InstrumentCache 심볼별 lot step | E:R6-14 | R6→R9 | done |
 | T3-11 | P3 | Frontend | Toast 알림 시스템 (full 구현) | UI:R6-2 | R6 | deferred |
 | T3-12 | P3 | Frontend | 전략-레짐 호환성 매트릭스 | UI:S1-1 | R6 | deferred |
 | T3-13 | P3 | Frontend | 백테스트 심볼 입력 프리셋 | UI:R6-10 | R6 | deferred |
@@ -211,6 +211,73 @@
 
 ---
 
+## Tier R11 — 코드베이스 재분석 Round 2 (Round 11)
+
+### Backend T0 (즉시 수정)
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R11-BE-1 | T0 | Backend | BotSession 상태 불일치 — peakEquity 복원 쿼리 수정 (AD-64) | E:E11-1 | R11 | done |
+| R11-BE-2 | T0 | Backend | SignalFilter close 바이패스 오류 수정 (AD-63) | T:R11-T5, E:E11-2 | R11 | done |
+| R11-BE-3 | T0 | Backend | BollingerReversion super.onFill() 호출 추가 | T:R11-T3 | R11 | done |
+| R11-BE-4 | T0 | Backend | Trailing Stop opt-in 활성화 — 6전략 metadata (AD-65) | T:R11-T2, E:E11-3 | R11 | done |
+| R11-BE-5 | T0 | Backend | MaTrend/Turtle entryPrice → onFill() 이동 (AD-37 준수) | T:R11-T4 | R11 | done |
+
+### Backend T1 (1주 내)
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R11-BE-6 | T1 | Backend | 일일 리셋 날짜 변경 감지 전환 (utcHour===0 제거) | E:E11-9 | R11 | done |
+| R11-BE-7 | T1 | Backend | 환경변수 시작 시 검증 (fast-fail) | E:E11-11 | R11 | done |
+| R11-BE-8 | T1 | Backend | Signal 모델 인덱스 3개 추가 | E:E11-5 | R11 | done |
+| R11-BE-9 | T1 | Backend | CoinSelector F7 volMomentum → 거래량 변화율 수정 | T:R11-T8 | R11 | done |
+| R11-BE-10 | T1 | Backend | PaperEngine TP 트리거 시뮬레이션 (AD-68) | T:R11-T11 | R11 | done |
+| R11-BE-11 | T1 | Backend | PaperEngine 미결 주문 30분 TTL + 50건 제한 | E:E11-7 | R11 | done |
+
+### Backtest T1
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R11-BT-1 | T1 | Backtest | getEquity 미실현 PnL 포함 (AD-66) | T:R11-T6 | R11 | done |
+| R11-BT-2 | T1 | Backtest | 펀딩 비용 cash 실제 반영 (AD-67) | T:R11-T7 | R11 | done |
+
+### Frontend T1
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R11-FE-01 | T1 | Frontend | MarketRegimeIndicator.tsx 삭제 (데드 코드) | UI:R11-FE-01 | R11 | done |
+| R11-FE-02 | T1 | Frontend | risk.ts any → RiskStatusExtended 타입 | UI:R11-FE-02 | R11 | done |
+| R11-FE-03 | T1 | Frontend | EquityCurveBase 제네릭 + as unknown as 제거 | UI:R11-FE-03 | R11 | done |
+| R11-FE-04 | T1 | Frontend | as never 7건 → createCurrencyFormatter 공통화 | UI:R11-FE-04 | R11 | done |
+| R11-FE-05 | T1 | Frontend | PaperModeGate 공통 컴포넌트 | UI:R11-FE-05 | R11 | done |
+| R11-FE-06 | T1 | Frontend | CATEGORY_LABEL 통일 (translateStrategyCategory) | UI:R11-FE-06 | R11 | done |
+| R11-FE-07 | T1 | Frontend | formatPnl 유틸 승격 | UI:R11-FE-07 | R11 | done |
+| R11-FE-10 | T1 | Frontend | 백테스트 폼 유효성 검증 강화 | UI:R11-FE-10 | R11 | done |
+| R11-FE-11 | T1 | Frontend | useStrategyDetail 적응형 폴링 전환 | UI:R11-FE-11 | R11 | done |
+| R11-FE-12 | T1 | Frontend | PerformanceTabs lazy loading | UI:R11-FE-12 | R11 | done |
+| R11-FE-13 | T1 | Frontend | 비활성화 다이얼로그 접근성 (focus trap) | UI:R11-FE-13 | R11 | done |
+| R11-FE-BT1 | T1 | Frontend | BacktestEquityPoint unrealizedPnl 필드 추가 | UI 보완 | R11 | done |
+| R11-FE-BT2 | T1 | Frontend | BacktestMetrics totalFundingCost + StatsPanel 반영 | UI 보완 | R11 | done |
+
+### 보류 (R12)
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R11-D1 | T2 | Backend | 트레일링 스탑 통합 (MaTrend/Turtle 자체 구현 → StrategyBase 매핑) | T:R11-T1 | R11 | deferred |
+| R11-D2 | T2 | Backend | ATR 기반 포지션 사이징 (opt-in riskPerUnit) | T:R11-T9 | R11 | deferred |
+| R11-D3 | T2 | Backend | maxHoldTime 강제 청산 (2단계 경고→강제) | T:R11-T10 | R11 | deferred |
+| R11-D4 | T2 | Backend | 테스트 커버리지 확대 (riskEngine, signalFilter 등 5개) | E:E11-4 | R11 | deferred |
+| R11-D5 | T2 | Backend | Trade 모델 TTL/아카이브 전략 | E:E11-6 | R11 | deferred |
+| R11-D6 | T2 | Backend | WS 재연결 후 재구독 | E:E11-8 | R11 | deferred |
+| R11-D7 | T2 | Backend | API 라우트 입력 검증 (Zod) | E:E11-10 | R11 | deferred |
+| R11-D8 | T2 | Backend | Bootstrap 중간 실패 복구 | E:E11-12 | R11 | deferred |
+| R11-D9 | T3 | Backend | MongoDB 커넥션 풀 모니터링 | E:E11-14 | R11 | deferred |
+| R11-D10 | T3 | Backend | 리스크 이벤트 Prometheus 메트릭 확장 | E:E11-15 | R11 | deferred |
+| R11-D11 | T2 | Frontend | tournament/page.tsx 분할 (478줄) | UI:R11-FE-08 | R11 | deferred |
+| R11-D12 | T2 | Frontend | 백테스트 결과 비교 기능 | UI:R11-FE-09 | R11 | deferred |
+
+---
+
 ## 아키텍처 결정 참조
 → `decisions/round_1.md` — AD-1~AD-6 참조
 → `decisions/round_2.md` — AD-7~AD-12 참조 (T0-1~T0-9 구현 세부사항)
@@ -222,3 +289,4 @@
 → `decisions/round_8.md` — AD-46~AD-52 참조 (R8 코드베이스 재분석)
 → `decisions/round_9.md` — AD-53~AD-57 참조 (R9 Tier 2 Quality)
 → `decisions/round_10.md` — AD-58~AD-62 참조 (R10 Tier 3 Enhancement)
+→ `decisions/round_11.md` — AD-63~AD-68 참조 (R11 코드베이스 재분석 Round 2)

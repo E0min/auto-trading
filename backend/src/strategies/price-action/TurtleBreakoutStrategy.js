@@ -65,7 +65,7 @@ class TurtleBreakoutStrategy extends StrategyBase {
     gracePeriodMs: 600000,
     warmupCandles: 51,
     volatilityPreference: 'high',
-    trailingStop: { enabled: true, activationPercent: '1.5', callbackPercent: '1.0' },
+    trailingStop: { enabled: true, activationPercent: '2.0', callbackPercent: '1.5' },
     description: '터틀 트레이딩 — Donchian 채널 돌파 + ATR 기반 2% 리스크 룰',
     defaultConfig: {
       entryChannel: 20,       // Donchian entry channel period (N-bar high/low)
@@ -378,15 +378,11 @@ class TurtleBreakoutStrategy extends StrategyBase {
         },
       };
 
-      this._entryPrice = price;
-      this._positionSide = 'long';
-      this._stopPrice = slPrice;
-      this._highestSinceEntry = high;
-      this._lowestSinceEntry = null;
-      this._trailingActive = false;
-      this._trailingStopPrice = null;
-
       this._lastSignal = signal;
+      // Store pending stop price and kline data for onFill to pick up
+      this._pendingStopPrice = slPrice;
+      this._pendingEntryHigh = high;
+      this._pendingEntryLow = low;
       this.emitSignal(signal);
       return;
     }
@@ -422,15 +418,11 @@ class TurtleBreakoutStrategy extends StrategyBase {
         },
       };
 
-      this._entryPrice = price;
-      this._positionSide = 'short';
-      this._stopPrice = slPrice;
-      this._highestSinceEntry = null;
-      this._lowestSinceEntry = low;
-      this._trailingActive = false;
-      this._trailingStopPrice = null;
-
       this._lastSignal = signal;
+      // Store pending stop price and kline data for onFill to pick up
+      this._pendingStopPrice = slPrice;
+      this._pendingEntryHigh = high;
+      this._pendingEntryLow = low;
       this.emitSignal(signal);
       return;
     }
@@ -448,10 +440,26 @@ class TurtleBreakoutStrategy extends StrategyBase {
     if (action === SIGNAL_ACTIONS.OPEN_LONG) {
       this._positionSide = 'long';
       if (fill.price !== undefined) this._entryPrice = String(fill.price);
+      this._stopPrice = this._pendingStopPrice || null;
+      this._highestSinceEntry = this._pendingEntryHigh || this._entryPrice;
+      this._lowestSinceEntry = null;
+      this._trailingActive = false;
+      this._trailingStopPrice = null;
+      this._pendingStopPrice = null;
+      this._pendingEntryHigh = null;
+      this._pendingEntryLow = null;
       log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
     } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
       this._positionSide = 'short';
       if (fill.price !== undefined) this._entryPrice = String(fill.price);
+      this._stopPrice = this._pendingStopPrice || null;
+      this._highestSinceEntry = null;
+      this._lowestSinceEntry = this._pendingEntryLow || this._entryPrice;
+      this._trailingActive = false;
+      this._trailingStopPrice = null;
+      this._pendingStopPrice = null;
+      this._pendingEntryHigh = null;
+      this._pendingEntryLow = null;
       log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
     } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
       log.trade('Position closed via fill', { side: this._positionSide, symbol: this._symbol });

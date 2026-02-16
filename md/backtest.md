@@ -179,6 +179,8 @@ fillPrice = close × (1 + slippage)
 멀티포지션: equity = cash + Σ(각 포지션의 MTM)
 ```
 
+**R11 변경**: `_calculateEquity()`가 열린 포지션의 미실현 손익(unrealized PnL)을 equity에 포함합니다. 또한 펀딩비가 cash에서 직접 차감되어 equity 곡선에 펀딩 비용이 반영됩니다.
+
 ---
 
 ## BacktestMetrics — 성과 지표
@@ -217,6 +219,7 @@ fillPrice = close × (1 + slippage)
 | `sortinoRatio` | 소르티노 비율 (Sprint R10) | (평균 수익률 × √intervalsPerYear) / 하방 편차. 하방만 고려 (MAR=0) |
 | `calmarRatio` | 칼마 비율 (Sprint R10) | totalReturn / maxDrawdownPercent. 수익 대비 최대 낙폭 |
 | `totalFees` | 총 수수료 | 모든 거래 수수료 합산 |
+| `totalFundingCost` | 총 펀딩 비용 (Sprint R11) | 시뮬레이션 동안 발생한 펀딩비 절대값 합산 |
 | `finalEquity` | 최종 자산 | 시뮬레이션 종료 시 equity |
 
 #### 샤프 비율 연간화 (Sprint R3)
@@ -273,7 +276,7 @@ fillPrice = close × (1 + slippage)
     { entryTime, exitTime, entryPrice, exitPrice, side, qty, pnl, fee }
   ],
   equityCurve: [
-    { ts, equity, cash }
+    { ts, equity, cash, unrealizedPnl? }  // R11: unrealizedPnl 필드 추가 (선택)
   ],
   error: null
 }
@@ -337,7 +340,8 @@ node backend/scripts/runAllBacktest.js
       "profitFactor": "2.15",
       "maxDrawdownPercent": "3.20",
       "sharpeRatio": "1.42",
-      "totalFees": "42.50"
+      "totalFees": "42.50",
+      "totalFundingCost": "12.30"
     }
   ]
 }

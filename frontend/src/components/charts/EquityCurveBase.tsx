@@ -10,26 +10,33 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { formatCurrency } from '@/lib/utils';
-import { CHART_TOOLTIP_STYLE } from '@/lib/chart-config';
+import { CHART_TOOLTIP_STYLE, createCurrencyFormatter } from '@/lib/chart-config';
 import type { EquityCurveConfig } from '@/lib/chart-config';
 
-interface EquityCurveBaseProps {
-  data: Record<string, unknown>[];
+interface EquityCurveBaseProps<T> {
+  data: T[];
   loading: boolean;
   config: EquityCurveConfig;
 }
 
-export default function EquityCurveBase({ data, loading, config }: EquityCurveBaseProps) {
+export default function EquityCurveBase<T extends object>({
+  data,
+  loading,
+  config,
+}: EquityCurveBaseProps<T>) {
   const chartData = useMemo(
     () =>
-      data.map((point) => ({
-        time: new Date(point[config.timeField] as number | string).toLocaleString(
-          'ko-KR',
-          config.timeFormat,
-        ),
-        [config.primaryKey]: parseFloat(String(point[config.primaryKey] ?? 0)) || 0,
-        [config.secondaryKey]: parseFloat(String(point[config.secondaryKey] ?? 0)) || 0,
-      })),
+      data.map((point) => {
+        const p = point as Record<string, unknown>;
+        return {
+          time: new Date(p[config.timeField] as number | string).toLocaleString(
+            'ko-KR',
+            config.timeFormat,
+          ),
+          [config.primaryKey]: parseFloat(String(p[config.primaryKey] ?? 0)) || 0,
+          [config.secondaryKey]: parseFloat(String(p[config.secondaryKey] ?? 0)) || 0,
+        };
+      }),
     [data, config],
   );
 
@@ -43,6 +50,10 @@ export default function EquityCurveBase({ data, loading, config }: EquityCurveBa
       </div>
     );
   }
+
+  const tooltipFormatter = createCurrencyFormatter(
+    (name) => name === config.primaryKey ? config.primaryLabel : config.secondaryLabel,
+  );
 
   return (
     <div className="h-[300px] -mx-2">
@@ -63,10 +74,7 @@ export default function EquityCurveBase({ data, loading, config }: EquityCurveBa
           <Tooltip
             contentStyle={CHART_TOOLTIP_STYLE}
             labelStyle={{ color: 'var(--text-secondary)' }}
-            formatter={((value?: number, name?: string) => [
-              `$${formatCurrency(String(value ?? 0))}`,
-              name === config.primaryKey ? config.primaryLabel : config.secondaryLabel,
-            ]) as never}
+            formatter={tooltipFormatter}
           />
           <Line
             type="monotone"

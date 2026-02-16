@@ -545,7 +545,7 @@ class BotService extends EventEmitter {
       // 14c. R10 AD-58: Restore peakEquity from last stopped session
       try {
         const lastSession = await BotSession.findOne(
-          { status: 'stopped' },
+          { status: { $in: ['idle', 'stopped'] } },
           { stats: 1 },
           { sort: { stoppedAt: -1 } },
         );

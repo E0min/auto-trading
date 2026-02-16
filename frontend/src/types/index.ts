@@ -425,6 +425,19 @@ export interface StrategyDeactivatedEvent {
   reason: string;
 }
 
+// Extended RiskStatus with optional sub-engine detail fields
+export interface RiskStatusExtended extends RiskStatus {
+  drawdownMonitor: RiskStatus['drawdownMonitor'] & {
+    params?: { maxDrawdownPercent?: string };
+    drawdownPercent?: string;
+  };
+  circuitBreaker: RiskStatus['circuitBreaker'] & {
+    consecutiveLosses?: number;
+    consecutiveLossLimit?: number;
+    params?: { consecutiveLossLimit?: number };
+  };
+}
+
 // Legacy RiskEvent compat (for useSocket inline events that lack full schema)
 export interface RiskEventLegacy {
   reason: string;

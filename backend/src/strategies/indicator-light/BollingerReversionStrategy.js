@@ -389,6 +389,7 @@ class BollingerReversionStrategy extends StrategyBase {
    * @param {object} fill
    */
   onFill(fill) {
+    super.onFill(fill); // R11: update StrategyBase trailing stop state
     if (!this._active) return;
     if (!fill) return;
     const action = fill.action || (fill.signal && fill.signal.action);

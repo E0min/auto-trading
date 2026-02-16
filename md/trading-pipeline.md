@@ -72,8 +72,10 @@ Bitget WS → exchangeClient → marketData → 정규화 → 캐싱 + 이벤트
 
 ```
 marketData 이벤트 → 전략.onKline(kline) → 지표 계산 → 조건 평가 → emitSignal()
-                 → 전략.onTick(ticker) → 가격 업데이트
+                 → 전략.onTick(ticker) → trailing stop 자동 체크 (R11) + 가격 업데이트
 ```
+
+**onTick() 자동 trailing stop (Sprint R11)**: `strategyBase.onTick()`이 추상 메서드에서 concrete 메서드로 변경되었습니다. `metadata.trailingStop.enabled`가 `true`인 전략에서 매 틱마다 `_checkTrailingStop(price)`를 자동 호출하여, trailing stop 조건 충족 시 CLOSE 시그널을 방출합니다. 서브클래스는 `super.onTick(ticker)`를 호출하여 이 기능을 활용하거나, 완전히 오버라이드하여 자체 로직을 사용할 수 있습니다.
 
 **시그널 구조**:
 ```javascript
@@ -116,7 +118,7 @@ marketData 이벤트 → 전략.onKline(kline) → 지표 계산 → 조건 평�
 
 | 체크 | 로직 | 기본값 |
 |------|------|--------|
-| **쿨다운** | 전략별 마지막 시그널 후 최소 대기 시간. **CLOSE/SL/TP는 bypass** (Sprint R8) | 60초 |
+| **쿨다운** | 전략별 마지막 시그널 후 최소 대기 시간. **CLOSE/reduceOnly는 bypass** — `action.startsWith('close')` 또는 `signal.reduceOnly`로 판정 (Sprint R8, R11 수정) | 60초 |
 | **중복 방지** | 같은 (전략+심볼+액션) 윈도우 내 중복 차단 | 5초 |
 | **동시 포지션 제한** | 전략별 최대 동시 포지션 수 (OPEN 시그널만 적용) | 2개 |
 | **심볼 충돌 방지** | 같은 심볼에 대해 반대 방향 OPEN 시그널 차단 | - |

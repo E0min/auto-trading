@@ -120,6 +120,7 @@
 | `useTournament` | `hooks/useTournament.ts` | 적응형 (Sprint R8) | 토너먼트 정보 + 순위표 |
 | `useRiskEvents` | `hooks/useRiskEvents.ts` | 이벤트 기반 | 리스크 이벤트 조회/확인 처리 |
 | `usePerformanceAnalytics` | `hooks/usePerformanceAnalytics.ts` | 적응형 (Sprint R8) | 전략별/심볼별/일별 성과 데이터 |
+| `useStrategyDetail` | `hooks/useStrategyDetail.ts` | 적응형 (Sprint R11) | 전략 상세 정보 + 적응형 폴링 |
 
 ### 훅 사용 패턴
 
@@ -159,6 +160,7 @@ getSocket()      // 현재 소켓 인스턴스 조회 (없으면 null)
 | `Spinner` | 로딩 표시기 (sm, md, lg) |
 | `ConfirmDialog` | 확인 모달 (Sprint R3: PositionsTable 청산 확인에도 사용) |
 | `ErrorToast` | Severity 기반 에러 토스트 (Sprint R8, AD-47): critical=persistent, warning=10초, info=5초. `useToasts()` 훅 제공 |
+| `PaperModeGate` | 페이퍼 모드 전용 기능 접근 제어 (Sprint R11). 라이브 모드 시 잠금 화면 표시, 페이퍼 모드 시 children 렌더링 |
 
 ### Error Boundary (Sprint R3)
 
@@ -180,7 +182,7 @@ getSocket()      // 현재 소켓 인스턴스 조회 (없으면 null)
 | ~~`StrategyPanel`~~ | 삭제됨 (Sprint R10, 데드 코드) |
 | `AccountOverview` | 자산, 잔고, 미실현 PnL |
 | `RiskStatusPanel` | 서킷 브레이커, 노출, 낙폭 지표 + 복합 리스크 점수 (Sprint R4: DD 40% + Exp 30% + CB 30%, 색상 코딩) |
-| `MarketRegimeIndicator` | 현재 시장 레짐 배지 + 신뢰도 |
+| ~~`MarketRegimeIndicator`~~ | 삭제됨 (Sprint R11) |
 | `SymbolRegimeTable` | 심볼별 레짐 분류 테이블 |
 | `RegimeStrategyRecommendation` | 현재 레짐에 맞는 전략 추천 |
 | `EquityCurveChart` | 대시보드 자산 곡선 (EquityCurveBase 래퍼, Sprint R10) |
@@ -198,13 +200,13 @@ getSocket()      // 현재 소켓 인스턴스 조회 (없으면 null)
 
 | 컴포넌트 | 설명 |
 |----------|------|
-| `EquityCurveBase` | Config 기반 범용 자산 곡선 (Card 래핑 없음). `EquityCurveConfig`로 데이터 키, 라벨, 색상 등 설정. 대시보드/백테스트 래퍼가 사용 |
+| `EquityCurveBase` | Config 기반 범용 자산 곡선 (Card 래핑 없음). `EquityCurveConfig`로 데이터 키, 라벨, 색상 등 설정. 대시보드/백테스트 래퍼가 사용. Sprint R11: Generic `<T extends object>` 타입 파라미터 적용 |
 
 ### 분석 컴포넌트 (`components/analytics/`) (Sprint R5)
 
 | 컴포넌트 | 설명 |
 |----------|------|
-| `PerformanceTabs` | 4탭 통합 분석 뷰 (에쿼티 커브, 전략별, 심볼별, 일별) |
+| `PerformanceTabs` | 4탭 통합 분석 뷰 (에쿼티 커브, 전략별, 심볼별, 일별). Sprint R11: 탭별 lazy loading 적용 |
 | `StrategyPerformance` | 전략별 PnL 가로 막대 차트 + 테이블 (승률, PnL, 거래 수) |
 | `SymbolPerformance` | 심볼별 PnL 가로 막대 차트 + 테이블 |
 | `DailyPerformance` | 일별 PnL 세로 막대 차트 + 요약 카드 (수익일, 손실일, 평균) |
@@ -285,6 +287,8 @@ translateRegime('trending_up')     // → '상승장'
 translateStrategyName('TurtleBreakoutStrategy') // → '터틀 돌파'
 getStrategyCategory('GridStrategy') // → 'indicator-light'
 translateRejectReason('confidence_too_low')     // → '신뢰도 부족' (Sprint R4)
+translateStrategyCategory('price-action')         // → '프라이스 액션' (Sprint R11)
+formatPnlValue('523.45')                          // → '+523.45' (양수 시 + 접두사) (Sprint R11)
 ```
 
 ### 전략 카테고리 매핑
@@ -310,6 +314,7 @@ translateRejectReason('confidence_too_low')     // → '신뢰도 부족' (Sprin
 |------|------|------|
 | `BotStatus` | `types/index.ts` | 봇 전체 상태 |
 | `RiskStatus` | `types/index.ts` | 리스크 엔진 상태 |
+| `RiskStatusExtended` | `types/index.ts` | 확장 리스크 상태 (Sprint R11: `any` 타입 제거, 명시적 필드 정의) |
 | `Trade` | `types/index.ts` | 거래 기록 |
 | `Position` | `types/index.ts` | 포지션 정보 |
 | `Signal` | `types/index.ts` | 시그널 정보 |
@@ -326,8 +331,11 @@ translateRejectReason('confidence_too_low')     // → '신뢰도 부족' (Sprin
 | `DailyPerformanceEntry` | `types/index.ts` | 일별 성과 (Sprint R5) |
 | `BacktestConfig` | `types/backtest.ts` | 백테스트 설정 |
 | `BacktestResult` | `types/backtest.ts` | 백테스트 결과 |
-| `BacktestMetrics` | `types/backtest.ts` | 백테스트 성과 지표 (Sprint R10: sortinoRatio, calmarRatio 추가) |
+| `BacktestMetrics` | `types/backtest.ts` | 백테스트 성과 지표 (Sprint R10: sortinoRatio, calmarRatio. Sprint R11: totalFundingCost 추가) |
 | `EquityCurveConfig` | `lib/chart-config.ts` | EquityCurveBase 설정 인터페이스 (Sprint R10) |
+| `createCurrencyFormatter` | `lib/chart-config.ts` | 통화 포맷터 팩토리 (Sprint R11) |
+| `createPercentFormatter` | `lib/chart-config.ts` | 퍼센트 포맷터 팩토리 (Sprint R11) |
+| `createScoreFormatter` | `lib/chart-config.ts` | 점수 포맷터 팩토리 (Sprint R11) |
 
 ---
 

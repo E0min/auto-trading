@@ -325,10 +325,6 @@ class MaTrendStrategy extends StrategyBase {
         h1Ema21: this._h1Ema21,
       });
 
-      this._entryPrice = close;
-      this._highestSinceEntry = close;
-      this._lowestSinceEntry = null;
-
       const signal = {
         action: SIGNAL_ACTIONS.OPEN_LONG,
         symbol: this._symbol,
@@ -374,10 +370,6 @@ class MaTrendStrategy extends StrategyBase {
         h1Ema9: this._h1Ema9,
         h1Ema21: this._h1Ema21,
       });
-
-      this._entryPrice = close;
-      this._lowestSinceEntry = close;
-      this._highestSinceEntry = null;
 
       const signal = {
         action: SIGNAL_ACTIONS.OPEN_SHORT,
@@ -440,9 +432,13 @@ class MaTrendStrategy extends StrategyBase {
 
     if (action === SIGNAL_ACTIONS.OPEN_LONG) {
       if (fill.price !== undefined) this._entryPrice = String(fill.price);
+      this._highestSinceEntry = this._entryPrice;
+      this._lowestSinceEntry = null;
       log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
     } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
       if (fill.price !== undefined) this._entryPrice = String(fill.price);
+      this._lowestSinceEntry = this._entryPrice;
+      this._highestSinceEntry = null;
       log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
     } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
       log.trade('Position closed via fill', { symbol: this._symbol });
