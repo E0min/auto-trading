@@ -266,6 +266,7 @@ class OrderManager extends EventEmitter {
         qty,
         price: riskPrice,
         category,
+        reduceOnly: actionMapping.reduceOnly,
       });
     } catch (err) {
       log.error('submitOrder — riskEngine.validateOrder threw', { error: err });
