@@ -36,6 +36,9 @@ const log = createLogger('BacktestEngine');
 /** Percentage of available cash used per trade (strategy-metadata aware) */
 const DEFAULT_POSITION_SIZE_PCT = '15';
 
+/** Absolute cap on concurrent positions regardless of strategy metadata */
+const ABSOLUTE_MAX_POSITIONS = 10;
+
 /** Max kline history kept in the backtest indicator cache */
 const BT_MAX_HISTORY = 500;
 
@@ -221,7 +224,9 @@ class BacktestEngine {
 
     // Simulation state (reset on each run)
     this._cash = '0';
-    this._position = null;
+    /** @type {Map<string, {side: string, entryPrice: string, qty: string, entryTime: string, fee: string}>} */
+    this._positions = new Map();
+    this._nextPositionId = 1;
     this._trades = [];
     this._equityCurve = [];
     this._currentKline = null;
@@ -229,8 +234,10 @@ class BacktestEngine {
     this._pendingSignals = [];
     /** @type {number|null} Last funding settlement timestamp (ms) — R8-T2-3 */
     this._lastFundingTs = null;
-    /** @type {string} Accumulated funding PnL for the current position — R8-T2-3 */
-    this._accumulatedFunding = '0';
+    /** @type {Map<string, string>} Per-position accumulated funding PnL — R8-T2-3 */
+    this._accumulatedFundings = new Map();
+    /** @type {number} Max concurrent positions (set during run()) */
+    this._maxPositions = 1;
   }
 
   // =========================================================================
@@ -260,18 +267,22 @@ class BacktestEngine {
 
     // 1. Initialize simulation state
     this._cash = this.initialCapital;
-    this._position = null;
+    this._positions = new Map();
+    this._nextPositionId = 1;
     this._trades = [];
     this._equityCurve = [];
     this._pendingSignals = [];
     this._lastFundingTs = null;
-    this._accumulatedFunding = '0';
+    this._accumulatedFundings = new Map();
 
     // 2. Create and configure strategy instance
     this._strategy = this._createStrategy();
 
     // 2b. Cache position-size percentage from strategy metadata (T2-3)
     this._positionSizePct = this._getPositionSizePercent();
+
+    // 2c. Cache max concurrent positions from strategy metadata (AD-60)
+    this._maxPositions = this._getMaxConcurrentPositions();
 
     // 3. Bind signal listener
     const onSignal = (signal) => {
@@ -456,6 +467,21 @@ class BacktestEngine {
     }
   }
 
+  /**
+   * Determine max concurrent positions from strategy metadata (AD-60).
+   *
+   * Falls back to 1 (single-position mode) if metadata is unavailable.
+   * Capped at ABSOLUTE_MAX_POSITIONS to prevent runaway position counts.
+   *
+   * @returns {number}
+   * @private
+   */
+  _getMaxConcurrentPositions() {
+    const metadata = registry.getMetadata(this.strategyName);
+    const maxPos = (metadata && metadata.maxConcurrentPositions) || 1;
+    return Math.min(maxPos, ABSOLUTE_MAX_POSITIONS);
+  }
+
   // =========================================================================
   // Signal processing
   // =========================================================================
@@ -530,9 +556,10 @@ class BacktestEngine {
    * @private
    */
   _openLong(kline) {
-    if (this._position !== null) {
-      log.debug('OPEN_LONG skipped — already in position', {
-        side: this._position.side,
+    if (this._positions.size >= this._maxPositions) {
+      log.debug('OPEN_LONG skipped — max positions reached', {
+        current: this._positions.size,
+        max: this._maxPositions,
         ts: kline.ts,
       });
       return;
@@ -546,7 +573,7 @@ class BacktestEngine {
     // Fill price: slippage applied upward (worse for buyer)
     const fillPrice = math.multiply(kline.close, math.add('1', this.slippage));
 
-    // Position value: metadata-based % of available cash (T2-3)
+    // Position value: metadata-based % of available (remaining) cash (T2-3)
     const positionValue = math.multiply(this._cash, math.divide(this._positionSizePct, '100'));
 
     // Quantity
@@ -560,16 +587,19 @@ class BacktestEngine {
     const totalCost = math.add(notional, fee);
     this._cash = math.subtract(this._cash, totalCost);
 
-    // Record position
-    this._position = {
+    // Record position with unique ID
+    const posId = `pos_${this._nextPositionId++}`;
+    this._positions.set(posId, {
       side: 'long',
       entryPrice: fillPrice,
       qty,
       entryTime: kline.ts,
       fee,
-    };
+    });
+    this._accumulatedFundings.set(posId, '0');
 
     log.debug('OPEN_LONG executed', {
+      posId,
       fillPrice,
       qty,
       fee,
@@ -593,9 +623,10 @@ class BacktestEngine {
    * @private
    */
   _openShort(kline) {
-    if (this._position !== null) {
-      log.debug('OPEN_SHORT skipped — already in position', {
-        side: this._position.side,
+    if (this._positions.size >= this._maxPositions) {
+      log.debug('OPEN_SHORT skipped — max positions reached', {
+        current: this._positions.size,
+        max: this._maxPositions,
         ts: kline.ts,
       });
       return;
@@ -609,7 +640,7 @@ class BacktestEngine {
     // Fill price: slippage applied downward (worse for short seller)
     const fillPrice = math.multiply(kline.close, math.subtract('1', this.slippage));
 
-    // Position value: metadata-based % of available cash (T2-3)
+    // Position value: metadata-based % of available (remaining) cash (T2-3)
     const positionValue = math.multiply(this._cash, math.divide(this._positionSizePct, '100'));
 
     // Quantity
@@ -623,16 +654,19 @@ class BacktestEngine {
     const totalCost = math.add(notional, fee);
     this._cash = math.subtract(this._cash, totalCost);
 
-    // Record position
-    this._position = {
+    // Record position with unique ID
+    const posId = `pos_${this._nextPositionId++}`;
+    this._positions.set(posId, {
       side: 'short',
       entryPrice: fillPrice,
       qty,
       entryTime: kline.ts,
       fee,
-    };
+    });
+    this._accumulatedFundings.set(posId, '0');
 
     log.debug('OPEN_SHORT executed', {
+      posId,
       fillPrice,
       qty,
       fee,
@@ -656,12 +690,17 @@ class BacktestEngine {
    * @private
    */
   _closeLong(kline) {
-    if (this._position === null || this._position.side !== 'long') {
+    // FIFO: find the oldest long position (Map iteration order = insertion order)
+    let targetId = null;
+    for (const [id, pos] of this._positions) {
+      if (pos.side === 'long') { targetId = id; break; }
+    }
+    if (!targetId) {
       log.debug('CLOSE_LONG skipped — no long position open', { ts: kline.ts });
       return;
     }
 
-    const position = this._position;
+    const position = this._positions.get(targetId);
 
     // Fill price: slippage applied downward (worse for seller)
     const fillPrice = math.multiply(kline.close, math.subtract('1', this.slippage));
@@ -686,8 +725,7 @@ class BacktestEngine {
     const netPnl = math.subtract(grossPnl, totalFee);
 
     // Capture accumulated funding for the position (R8-T2-3)
-    const fundingPnl = this._accumulatedFunding;
-    this._accumulatedFunding = '0';
+    const fundingPnl = this._accumulatedFundings.get(targetId) || '0';
 
     // Record trade
     this._trades.push({
@@ -703,6 +741,7 @@ class BacktestEngine {
     });
 
     log.debug('CLOSE_LONG executed', {
+      posId: targetId,
       entryPrice: position.entryPrice,
       exitPrice: fillPrice,
       pnl: netPnl,
@@ -715,8 +754,9 @@ class BacktestEngine {
     // Notify strategy of the fill
     this._notifyFill('sell', fillPrice, SIGNAL_ACTIONS.CLOSE_LONG);
 
-    // Clear position
-    this._position = null;
+    // Remove position from maps
+    this._positions.delete(targetId);
+    this._accumulatedFundings.delete(targetId);
   }
 
   /**
@@ -731,12 +771,17 @@ class BacktestEngine {
    * @private
    */
   _closeShort(kline) {
-    if (this._position === null || this._position.side !== 'short') {
+    // FIFO: find the oldest short position (Map iteration order = insertion order)
+    let targetId = null;
+    for (const [id, pos] of this._positions) {
+      if (pos.side === 'short') { targetId = id; break; }
+    }
+    if (!targetId) {
       log.debug('CLOSE_SHORT skipped — no short position open', { ts: kline.ts });
       return;
     }
 
-    const position = this._position;
+    const position = this._positions.get(targetId);
 
     // Fill price: slippage applied upward (worse for short cover)
     const fillPrice = math.multiply(kline.close, math.add('1', this.slippage));
@@ -769,8 +814,7 @@ class BacktestEngine {
     const netPnl = math.subtract(grossPnl, totalFee);
 
     // Capture accumulated funding for the position (R8-T2-3)
-    const fundingPnl = this._accumulatedFunding;
-    this._accumulatedFunding = '0';
+    const fundingPnl = this._accumulatedFundings.get(targetId) || '0';
 
     // Record trade
     this._trades.push({
@@ -786,6 +830,7 @@ class BacktestEngine {
     });
 
     log.debug('CLOSE_SHORT executed', {
+      posId: targetId,
       entryPrice: position.entryPrice,
       exitPrice: fillPrice,
       pnl: netPnl,
@@ -798,8 +843,9 @@ class BacktestEngine {
     // Notify strategy of the fill
     this._notifyFill('buy', fillPrice, SIGNAL_ACTIONS.CLOSE_SHORT);
 
-    // Clear position
-    this._position = null;
+    // Remove position from maps
+    this._positions.delete(targetId);
+    this._accumulatedFundings.delete(targetId);
   }
 
   // =========================================================================
@@ -814,21 +860,26 @@ class BacktestEngine {
    * @private
    */
   _forceClosePosition(kline) {
-    if (this._position === null) {
+    if (this._positions.size === 0) {
       return;
     }
 
-    log.info('Force-closing open position at end of backtest', {
-      side: this._position.side,
-      entryPrice: this._position.entryPrice,
+    log.info('Force-closing all open positions at end of backtest', {
+      count: this._positions.size,
       closePrice: kline.close,
       ts: kline.ts,
     });
 
-    if (this._position.side === 'long') {
-      this._closeLong(kline);
-    } else if (this._position.side === 'short') {
-      this._closeShort(kline);
+    // Snapshot the keys to avoid mutation during iteration
+    const openIds = [...this._positions.keys()];
+    for (const id of openIds) {
+      const pos = this._positions.get(id);
+      if (!pos) continue;
+      if (pos.side === 'long') {
+        this._closeLong(kline);
+      } else {
+        this._closeShort(kline);
+      }
     }
   }
 
@@ -881,28 +932,22 @@ class BacktestEngine {
    * @private
    */
   _calculateEquity(kline) {
-    if (this._position === null) {
-      return this._cash;
+    let equity = this._cash;
+
+    for (const [, pos] of this._positions) {
+      if (pos.side === 'long') {
+        // Mark-to-market value of the long position
+        equity = math.add(equity, math.multiply(pos.qty, kline.close));
+      } else {
+        // Short position
+        // Unrealized PnL = qty * (entryPrice - currentPrice)
+        const entryNotional = math.multiply(pos.qty, pos.entryPrice);
+        const unrealizedPnl = math.multiply(pos.qty, math.subtract(pos.entryPrice, kline.close));
+        equity = math.add(equity, math.add(entryNotional, unrealizedPnl));
+      }
     }
 
-    const currentPrice = kline.close;
-    const position = this._position;
-
-    if (position.side === 'long') {
-      // Mark-to-market value of the long position
-      const positionMtm = math.multiply(position.qty, currentPrice);
-      return math.add(this._cash, positionMtm);
-    }
-
-    // Short position
-    // Unrealized PnL = qty * (entryPrice - currentPrice)
-    const unrealizedPnl = math.multiply(
-      position.qty,
-      math.subtract(position.entryPrice, currentPrice),
-    );
-    // The entry notional was deducted from cash, so add back entry notional + unrealized
-    const entryNotional = math.multiply(position.qty, position.entryPrice);
-    return math.add(this._cash, math.add(entryNotional, unrealizedPnl));
+    return equity;
   }
 
   // =========================================================================
@@ -944,7 +989,7 @@ class BacktestEngine {
    * @private
    */
   _applyFundingIfDue(kline) {
-    if (!this._position) return;
+    if (this._positions.size === 0) return;
     if (math.isZero(this.fundingRate)) return;
 
     const ts = parseInt(kline.ts, 10);
@@ -963,32 +1008,36 @@ class BacktestEngine {
     while (this._lastFundingTs + FUNDING_INTERVAL_MS <= ts) {
       this._lastFundingTs += FUNDING_INTERVAL_MS;
 
-      const position = this._position;
-      const markPrice = kline.close;
-      const posSize = math.multiply(position.qty, markPrice);
+      // Apply funding to each open position
+      for (const [posId, position] of this._positions) {
+        const markPrice = kline.close;
+        const posSize = math.multiply(position.qty, markPrice);
 
-      // For longs in positive funding: payer (negative)
-      // For shorts in positive funding: receiver (positive)
-      // Formula: fundingPnl = positionSize * fundingRate * -1 (from long perspective)
-      // For short: the sign naturally flips because short profits from positive funding
-      let fundingPnl;
-      if (position.side === 'long') {
-        fundingPnl = math.multiply(math.multiply(posSize, this.fundingRate), '-1');
-      } else {
-        // Short position receives funding in positive funding rate environment
-        fundingPnl = math.multiply(posSize, this.fundingRate);
+        // For longs in positive funding: payer (negative)
+        // For shorts in positive funding: receiver (positive)
+        // Formula: fundingPnl = positionSize * fundingRate * -1 (from long perspective)
+        // For short: the sign naturally flips because short profits from positive funding
+        let fundingPnl;
+        if (position.side === 'long') {
+          fundingPnl = math.multiply(math.multiply(posSize, this.fundingRate), '-1');
+        } else {
+          // Short position receives funding in positive funding rate environment
+          fundingPnl = math.multiply(posSize, this.fundingRate);
+        }
+
+        const accumulated = this._accumulatedFundings.get(posId) || '0';
+        this._accumulatedFundings.set(posId, math.add(accumulated, fundingPnl));
+
+        log.debug('Funding settlement applied', {
+          posId,
+          side: position.side,
+          fundingRate: this.fundingRate,
+          posSize,
+          fundingPnl,
+          accumulatedFunding: this._accumulatedFundings.get(posId),
+          ts: this._lastFundingTs,
+        });
       }
-
-      this._accumulatedFunding = math.add(this._accumulatedFunding, fundingPnl);
-
-      log.debug('Funding settlement applied', {
-        side: position.side,
-        fundingRate: this.fundingRate,
-        posSize,
-        fundingPnl,
-        accumulatedFunding: this._accumulatedFunding,
-        ts: this._lastFundingTs,
-      });
     }
   }
 }

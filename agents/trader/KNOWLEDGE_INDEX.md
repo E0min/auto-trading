@@ -31,7 +31,13 @@
 | `../shared/decisions/round_7.md` | Round 7 합의 결정문서 (17건, AD-40~AD-45) — 삼중 보호 체계, 유예기간 — **구현 완료** | Round 7 | active |
 | `proposals/round_8.md` | 코드베이스 재분석: 19개 발견 (CRITICAL 3/HIGH 6/MEDIUM 7/LOW 3) — reduceOnly bypass, 멀티심볼, 전략 warm-up | Round 8 | active |
 | `proposals/round_8_review.md` | Round 8 교차 리뷰 (Engineer+UI 제안 검토) — decimal.js 이견, 캡슐화 동의, 접근성 동의 | Round 8 | active |
-| `../shared/decisions/round_8.md` | Round 8 합의 결정문서 (46건, AD-46~AD-52) — reduceOnly bypass, severity toast, Snapshot 생성 — **25/27 구현 완료** | Round 8 | active |
+| `../shared/decisions/round_8.md` | Round 8 합의 결정문서 (46건, AD-46~AD-52) — reduceOnly bypass, severity toast, Snapshot 생성 — **구현 완료** | Round 8 | active |
+| `proposals/round_9.md` | Tier 2 Quality 11건 분석: 멀티심볼 라우팅, warm-up, 펀딩비 PnL, 코인 재선정, InstrumentCache | Round 9 | active |
+| `proposals/round_9_review.md` | Round 9 교차 리뷰 (Engineer+UI 제안 검토) | Round 9 | active |
+| `../shared/decisions/round_9.md` | Round 9 합의 결정문서 (13건, AD-53~AD-57) — InstrumentCache, warm-up, 멀티심볼, 펀딩PnL, 재선정 — **구현 완료** | Round 9 | active |
+| `proposals/round_10.md` | Tier 3 Enhancement 8건 분석: trailing stop, peakEquity 영속성, 멀티포지션 백테스트, Sortino/Calmar | Round 10 | active |
+| `proposals/round_10_review.md` | Round 10 교차 리뷰 (Engineer+UI 제안 검토) — ATR 연기 동의, percent 모드 선행 | Round 10 | active |
+| `../shared/decisions/round_10.md` | Round 10 합의 결정문서 (8건, AD-58~AD-62) — peakEquity 영속성, trailing stop, 멀티포지션, Sortino/Calmar, EquityCurveBase — **구현 완료** | Round 10 | active |
 
 ## Round 1 Key Findings Summary
 - **C1**: multi-symbol 라우팅 버그 — `_symbol` 단일 값이라 마지막 심볼만 유효
@@ -61,13 +67,27 @@
 - **SignalFilter CLOSE bypass**: 쿨다운이 청산 시그널도 차단하는 설계 결함 → CLOSE/SL/TP 시그널은 쿨다운 무시
 - **Snapshot 주기적 생성 (AD-52)**: 주식 곡선 60초 간격 스냅샷 — equity/cash/unrealizedPnl 추적, paper/live 자동 전환
 - **BotSession 실시간 통계**: ORDER_FILLED 이벤트 수신 → totalTrades/wins/losses/totalPnl/peakEquity/maxDrawdown 즉시 반영
-- **PositionManager 전략 매핑 미구현**: 범위가 크고 멀티심볼 라우팅과 함께 다음 라운드에서 구현이 효율적
+
+## Round 9 Key Findings Summary
+- **InstrumentCache (AD-53)**: 심볼별 lotStep/minQty/maxQty 캐싱 — 하드코딩 '0.0001' 제거, 멀티심볼 전제조건
+- **멀티심볼 라우팅 Phase 1 (AD-55)**: 전략마다 다른 단일 심볼 배정 — CoinSelector 스코어 기반, 이전 심볼 재배정 방지
+- **전략 warm-up (AD-54)**: StrategyBase.emitSignal() 게이트 — 최초 N 캔들 무시, 지표 안정화 대기
+- **펀딩비 PnL Phase 1 (AD-57)**: 라이브+Paper+백테스트 펀딩비 추적 — 실현 PnL에 펀딩 수수료 반영
+- **코인 재선정 4h 주기 (AD-56)**: CoinSelector 4시간 고정 간격 재실행 — 시장 상황 변화 반영
+
+## Round 10 Key Findings Summary
+- **DrawdownMonitor peakEquity 영속성 (AD-58)**: 서버 재시작 시 peakEquity='0' 리셋 → drawdown 보호 무력화. loadState()/getState() + updateEquity() 패턴으로 BotSession에서 복원, 자동 halt 감지
+- **Trailing Stop 6전략 (AD-59)**: StrategyBase opt-in, percent 모드만. 추세/모멘텀 6개 전략에 activationPercent+callbackPercent 설정. 고정 SL과 trailing 중 더 타이트한 것 적용
+- **멀티포지션 백테스트 (AD-60)**: _position → _positions Map, incrementalId 키, FIFO 청산. maxConcurrentPositions=1 전략은 동작 변경 없음
+- **Sortino + Calmar Ratio (AD-61)**: Sortino(하방 편차 기반), Calmar(수익/최대낙폭). meanReturn 스코프 수정으로 정확한 계산
 
 ## Accumulated Insights
 - **전략 품질 진화**: R1 14/18 전략 IndicatorCache 미제공 크래시 → R2 백테스트 수정 → R5 exchange-side SL 제안 → R7 유예기간으로 전략 활성 시간 보장 → R8 reduceOnly bypass로 SL/TP 실행 보장. 현재 상태: 전략 안정성 및 청산 경로 완비
 - **리스크 관리 체계**: R1 ExposureGuard qty 10,000x 오류 → R2 수정 → R4 포지션 사이징 파이프라인 정비 → R7 유예기간으로 고아 포지션 방지 → R8 RiskEngine reduceOnly bypass + SignalFilter CLOSE bypass. 현재 상태: 리스크 파이프라인 정상 작동, 청산 경로 보호
 - **레짐 시스템 성숙**: R1 레짐 분류 구축 → R4 7-factor 코인 선정 강화 → R7 삼중 보호 체계(hysteresis+cooldown+grace)로 안정화. 현재 상태: 노이즈 내성 확보, 자동 최적화 범위 확장
-- **수익성 인프라**: R1 Sharpe ratio ~10x 과대평가 발견 → R3 보정 → R5 성과 귀인 API → R6 실거래 준비도 → R8 Snapshot 60초 주기 + BotSession 실시간 통계. 현재 상태: 실시간 성과 추적 완비, 실거래 전환 가능 수준
+- **수익성 인프라**: R1 Sharpe ~10x 과대평가 → R3 보정 → R5 성과 귀인 → R6 실거래 준비도 → R8 Snapshot 60초 주기 → R9 펀딩비 PnL 추적 → R10 Sortino+Calmar Ratio 추가. 현재 상태: Sharpe/Sortino/Calmar 3대 비율 완비, 펀딩비 반영 실현 PnL
+- **포지션 관리 진화**: R1 단일 심볼 → R8 PositionManager 전략 매핑 → R9 멀티심볼 라우팅 Phase 1 + InstrumentCache → R10 백테스트 멀티포지션(FIFO). 현재 상태: 전략별 독립 심볼+포지션 관리 체계, 백테스트 멀티포지션 지원
+- **Trailing Stop 도입**: R5 exchange-side SL(presetStopLossPrice) → R10 StrategyBase trailing stop opt-in(6개 추세/모멘텀 전략). 현재 상태: 고정SL + trailing SL 이중 보호, ATR 모드는 향후 구현 예정
 
 ## Knowledge Management Rules
 1. 새 정보를 받으면 이 인덱스의 기존 항목과 비교

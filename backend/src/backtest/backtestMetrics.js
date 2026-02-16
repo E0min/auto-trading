@@ -108,6 +108,8 @@ function computeMetrics({ trades, equityCurve, initialCapital, interval }) {
       maxDrawdown: '0.00',
       maxDrawdownPercent: '0.00',
       sharpeRatio: '0.00',
+      sortinoRatio: '0.00',
+      calmarRatio: '0.00',
       avgHoldTime: 0,
       consecutiveWins: 0,
       consecutiveLosses: 0,
@@ -236,9 +238,12 @@ function computeMetrics({ trades, equityCurve, initialCapital, interval }) {
   let sharpeRatio = '0.00';
   const periodsPerYear = _getPeriodsPerYear(interval);
 
+  // Declare meanReturn and periodReturns in outer scope for Sortino reuse
+  let meanReturn = '0';
+  let periodReturns = [];
+
   if (equityCurve.length >= 2) {
     // Compute per-period returns from equity curve
-    const periodReturns = [];
     for (let i = 1; i < equityCurve.length; i++) {
       const prevEquity = equityCurve[i - 1].equity;
       const currEquity = equityCurve[i].equity;
@@ -255,7 +260,7 @@ function computeMetrics({ trades, equityCurve, initialCapital, interval }) {
       for (const r of periodReturns) {
         sumReturns = add(sumReturns, r);
       }
-      const meanReturn = divide(sumReturns, String(periodReturns.length));
+      meanReturn = divide(sumReturns, String(periodReturns.length));
 
       // Standard deviation of per-period returns
       let sumSquaredDiff = '0';
@@ -275,6 +280,35 @@ function computeMetrics({ trades, equityCurve, initialCapital, interval }) {
       }
     }
   }
+
+  // -- Sortino ratio (annualised, downside deviation only, MAR = 0) --
+  let sortinoRatio = '0.00';
+
+  if (periodReturns.length > 0 && !isZero(meanReturn)) {
+    let sumSquaredDownside = '0';
+    for (const r of periodReturns) {
+      if (isLessThan(r, '0')) {
+        sumSquaredDownside = add(sumSquaredDownside, multiply(r, r));
+      }
+    }
+    // Downside deviation: sqrt(sum(min(r,0)^2) / N) where N = total periods
+    const downsideVariance = divide(sumSquaredDownside, String(periodReturns.length));
+    const downsideDeviation = sqrt(downsideVariance);
+
+    if (!isZero(downsideDeviation)) {
+      const sqrtPeriods = sqrt(String(periodsPerYear));
+      const annualisedReturn = multiply(meanReturn, sqrtPeriods);
+      sortinoRatio = toFixed(divide(annualisedReturn, downsideDeviation), 2);
+    } else {
+      // No downside = all returns positive
+      sortinoRatio = isGreaterThan(meanReturn, '0') ? '999.99' : '0.00';
+    }
+  }
+
+  // -- Calmar ratio (totalReturn / maxDrawdownPercent) --
+  const calmarRatio = !isZero(maxDrawdownPercent)
+    ? toFixed(divide(totalReturn, maxDrawdownPercent), 2)
+    : '0.00';
 
   // -- Final equity --------------------------------------------------------
   const finalEquity = equityCurve.length > 0
@@ -297,6 +331,8 @@ function computeMetrics({ trades, equityCurve, initialCapital, interval }) {
     maxDrawdown: toFixed(maxDrawdown, 2),
     maxDrawdownPercent,
     sharpeRatio,
+    sortinoRatio,
+    calmarRatio,
     avgHoldTime,
     consecutiveWins,
     consecutiveLosses,

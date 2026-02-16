@@ -26,6 +26,12 @@ class StrategyBase extends EventEmitter {
   setAccountContext({ getEquity }) // equity DI 주입 (콜백 패턴)
   getEquity()        // 주입된 equity 조회 (fallback: config.equity || '0')
   onFundingUpdate(data) // 펀딩비 데이터 수신 (no-op, 오버라이드 가능)
+
+  // Sprint R10 추가 — Trailing Stop
+  _checkTrailingStop(price)  // trailing stop 체크 (try-catch fail-safe)
+  _resetTrailingState()      // trailing 상태 초기화
+  _initTrailingFromMetadata() // 전략 metadata에서 trailing 설정 읽기
+  onFill(fill)               // OPEN 시 진입가 설정, CLOSE 시 trailing 리셋
 }
 ```
 
@@ -388,6 +394,29 @@ registry.register(TurtleBreakoutStrategy);
 
 > **범례**: UP=trending_up, DOWN=trending_down, VOL=volatile, RANGE=ranging, QUIET=quiet
 > **유예기간** (Sprint R7): 레짐 변경 시 전략 비활성화 전 OPEN 차단 / CLOSE 허용 기간. `gracePeriodMs` 메타데이터.
+
+### Trailing Stop (Sprint R10, AD-59)
+
+StrategyBase에 opt-in 방식의 trailing stop이 내장되어 있습니다. 전략 메타데이터에 `trailingStop` 설정이 있으면 자동 활성화됩니다.
+
+**대상 전략** (6개 추세/모멘텀):
+| 전략 | activationPercent | callbackPercent |
+|------|-------------------|-----------------|
+| TurtleBreakout | 1.5% | 1.0% |
+| Supertrend | 1.5% | 1.0% |
+| MaTrend | 1.5% | 1.0% |
+| SwingStructure | 1.5% | 1.0% |
+| RsiPivot | 1.0% | 0.8% |
+| MacdDivergence | 1.0% | 0.8% |
+
+**안전 규칙**:
+1. activation 전에는 기존 고정 SL 유지
+2. trailing SL과 고정 SL 중 더 타이트한 것 적용
+3. onFill() CLOSE 분기에서 trailing state 리셋
+4. `_checkTrailingStop()`을 try-catch로 감싸 fail-safe
+5. AdaptiveRegimeStrategy는 `trailingStop.enabled: false`로 충돌 방지
+
+**비활성 전략** (12개): Grid, Bollinger, Vwap, QuietRangeScalp, Breakout, FibonacciRetracement, CandlePattern, SupportResistance, AdaptiveRegime, Funding, CandlePattern, SupportResistance
 
 ---
 

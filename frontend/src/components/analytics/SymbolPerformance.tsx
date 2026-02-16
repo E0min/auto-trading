@@ -13,15 +13,8 @@ import {
 import Card from '@/components/ui/Card';
 import Spinner from '@/components/ui/Spinner';
 import { formatCurrency, formatSymbol } from '@/lib/utils';
+import { CHART_TOOLTIP_STYLE } from '@/lib/chart-config';
 import type { SymbolPerformanceEntry } from '@/types';
-
-const TOOLTIP_STYLE = {
-  backgroundColor: 'var(--bg-elevated)',
-  border: '1px solid var(--border-muted)',
-  borderRadius: '6px',
-  fontSize: '11px',
-  padding: '8px 12px',
-};
 
 interface SymbolPerformanceProps {
   data: Record<string, SymbolPerformanceEntry> | null;
@@ -103,7 +96,7 @@ export default function SymbolPerformance({ data, loading }: SymbolPerformancePr
                 width={120}
               />
               <Tooltip
-                contentStyle={TOOLTIP_STYLE}
+                contentStyle={CHART_TOOLTIP_STYLE}
                 labelStyle={{ color: 'var(--text-secondary)' }}
                 formatter={((value: number) => [
                   `$${formatCurrency(String(value))}`,
@@ -130,10 +123,10 @@ export default function SymbolPerformance({ data, loading }: SymbolPerformancePr
           <table>
             <thead>
               <tr>
-                <th>심볼</th>
-                <th className="text-right">거래수</th>
-                <th className="text-right">승률</th>
-                <th className="text-right">총 PnL</th>
+                <th scope="col">심볼</th>
+                <th scope="col" className="text-right">거래수</th>
+                <th scope="col" className="text-right">승률</th>
+                <th scope="col" className="text-right">총 PnL</th>
               </tr>
             </thead>
             <tbody>

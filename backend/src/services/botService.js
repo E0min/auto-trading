@@ -542,7 +542,40 @@ class BotService extends EventEmitter {
         this.paperPositionManager.startTournament(strategyNames);
       }
 
-      // 14c. Paper mode: sync initial balance to RiskEngine so ExposureGuard has equity > 0
+      // 14c. R10 AD-58: Restore peakEquity from last stopped session
+      try {
+        const lastSession = await BotSession.findOne(
+          { status: 'stopped' },
+          { stats: 1 },
+          { sort: { stoppedAt: -1 } },
+        );
+        if (lastSession && lastSession.stats && lastSession.stats.peakEquity && lastSession.stats.peakEquity !== '0') {
+          this.riskEngine.drawdownMonitor.loadState({
+            peakEquity: lastSession.stats.peakEquity,
+          });
+
+          // Get current equity and feed it in so halt detection runs immediately
+          let currentEquity;
+          if (this.paperMode && this.paperPositionManager) {
+            currentEquity = String(this.paperPositionManager.getEquity());
+          } else {
+            currentEquity = this.riskEngine.getAccountState().equity || '0';
+          }
+          if (currentEquity && currentEquity !== '0') {
+            this.riskEngine.drawdownMonitor.updateEquity(currentEquity);
+          }
+
+          log.info('start — peakEquity restored from last session', {
+            peakEquity: lastSession.stats.peakEquity,
+            currentEquity,
+          });
+        }
+      } catch (err) {
+        log.error('start — peakEquity restoration failed (non-fatal)', { error: err.message });
+        // NOT fatal — continue startup
+      }
+
+      // 14d. Paper mode: sync initial balance to RiskEngine so ExposureGuard has equity > 0
       if (this.paperMode && this.paperPositionManager) {
         this.riskEngine.updateAccountState({
           equity: this.paperPositionManager.getEquity(),
@@ -550,7 +583,7 @@ class BotService extends EventEmitter {
         });
       }
 
-      // 14d. Start orphan order cleanup (R8-T2-6, live mode only)
+      // 14e. Start orphan order cleanup (R8-T2-6, live mode only)
       if (this.orphanOrderCleanup && !this.paperMode) {
         this.orphanOrderCleanup.start(category);
         this._eventCleanups.push(() => {
@@ -1496,6 +1529,12 @@ class BotService extends EventEmitter {
       const peakEquity = session.stats.peakEquity || '0';
       if (math.isGreaterThan(currentEquity, peakEquity)) {
         session.stats.peakEquity = currentEquity;
+      }
+
+      // R10 AD-58: Sync DrawdownMonitor peakEquity → session stats
+      const ddState = this.riskEngine.drawdownMonitor.getState();
+      if (ddState.peakEquity && math.isGreaterThan(ddState.peakEquity, session.stats.peakEquity || '0')) {
+        session.stats.peakEquity = ddState.peakEquity;
       }
 
       if (!math.isZero(session.stats.peakEquity)) {

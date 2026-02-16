@@ -30,7 +30,13 @@
 | `../shared/decisions/round_7.md` | Round 7 합의 결정문서 (17건, AD-40~AD-45) — 삼중 보호 체계, 유예기간 — **구현 완료** | Round 7 | active |
 | `proposals/round_8.md` | 코드베이스 재분석: 16개 발견 (CRITICAL 2/HIGH 6/MEDIUM 8) — Router singleton, timer unref, parseFloat 제거, BacktestStore 제한 | Round 8 | active |
 | `proposals/round_8_review.md` | Round 8 교차 리뷰 (Trader+UI 제안 검토) — decimal.js deferred, 멀티심볼 Phase 1만, 모바일 MEDIUM | Round 8 | active |
-| `../shared/decisions/round_8.md` | Round 8 합의 결정문서 (46건, AD-46~AD-52) — reduceOnly bypass, Snapshot 주기 생성, express limit — **25/27 구현 완료** | Round 8 | active |
+| `../shared/decisions/round_8.md` | Round 8 합의 결정문서 (46건, AD-46~AD-52) — reduceOnly bypass, Snapshot 주기 생성, express limit — **구현 완료** | Round 8 | active |
+| `proposals/round_9.md` | Tier 2 Quality 분석: InstrumentCache 신규 서비스, StateRecovery 활성화, PositionManager 전략 매핑 | Round 9 | active |
+| `proposals/round_9_review.md` | Round 9 교차 리뷰 (Trader+UI 제안 검토) | Round 9 | active |
+| `../shared/decisions/round_9.md` | Round 9 합의 결정문서 (13건, AD-53~AD-57) — InstrumentCache, warm-up, 멀티심볼, 펀딩PnL, 재선정 — **구현 완료** | Round 9 | active |
+| `proposals/round_10.md` | Tier 3 Enhancement 분석: DrawdownMonitor loadState/getState, trailing stop StrategyBase 인프라, 멀티포지션 Map | Round 10 | active |
+| `proposals/round_10_review.md` | Round 10 교차 리뷰 (Trader+UI 제안 검토) — incrementalId 키 동의, FIFO 전용, percent 모드 선행 | Round 10 | active |
+| `../shared/decisions/round_10.md` | Round 10 합의 결정문서 (8건, AD-58~AD-62) — peakEquity 영속성, trailing stop, 멀티포지션, Sortino/Calmar, EquityCurveBase — **구현 완료** | Round 10 | active |
 
 ## Round 1 Key Findings Summary
 - **C-1**: unhandledRejection/uncaughtException 핸들러 누락 — 프로세스 즉시 종료 위험
@@ -58,19 +64,33 @@
 - **AD-40 삼중 보호**: Hysteresis(10캔들) + Cooldown(5분) + Grace Period(5~15분) — 3개 독립 레이어로 노이즈 내성 확보
 
 ## Round 8 Key Findings Summary
-- **Router Singleton 패턴 정비**: 8개 라우트 파일에서 `Router()` 호출이 팩토리 함수 외부에 위치 — 테스트/재사용 불가. 팩토리 내부로 이동
-- **Timer unref() 전면 적용**: OrphanOrderCleanup, TickerAggregator, PositionManager의 setInterval 타이머가 프로세스 종료 차단. `.unref()` 일괄 추가
-- **parseFloat 직접 사용 제거**: tradeRoutes, tournamentRoutes, tickerAggregator에서 parseFloat → mathUtils 함수로 교체. 정밀도 일관성 확보
+- **Router Singleton 패턴 정비**: 8개 라우트 파일에서 `Router()` 호출이 팩토리 함수 외부에 위치 — 팩토리 내부로 이동
+- **Timer unref() 전면 적용**: OrphanOrderCleanup, TickerAggregator, PositionManager의 setInterval 타이머에 `.unref()` 일괄 추가
+- **parseFloat 직접 사용 제거**: tradeRoutes, tournamentRoutes, tickerAggregator에서 parseFloat → mathUtils로 교체
 - **BacktestStore 무제한 성장**: FIFO 50제한 추가 — 메모리 O.O.M 방지
 - **_lastTickerEmit Map cleanup**: 10분 stale 기준 5분 주기 정리 — 장기 운영 시 Map 누수 방지
-- **TournamentRoutes 캡슐화**: `_initialBalance`, `_accounts.get()` 직접 접근 → 공개 메서드(`setInitialBalance()`, `getStrategyPositions()`) 사용
+- **TournamentRoutes 캡슐화**: 직접 접근 → 공개 메서드(`setInitialBalance()`, `getStrategyPositions()`) 사용
+
+## Round 9 Key Findings Summary
+- **InstrumentCache 서비스 (AD-53)**: 신규 서비스 생성 — exchangeClient.getInstruments()로 심볼별 lotStep/minQty/maxQty/tickSize 캐싱, 24h 갱신, 캐시 미스 시 보수적 기본값 '1' 폴백
+- **PositionManager 전략-포지션 매핑 (AD-53)**: BotService 내 Map 방식, 전략별 독립 포지션 관리
+- **StateRecovery + OrphanCleanup 활성화**: age 필터 포함 — 스테일 주문 정리 자동화
+- **멀티심볼 Phase 1 (AD-55)**: symbolRouter 패턴 — 전략마다 다른 심볼 배정, CoinSelector 스코어 기반
+
+## Round 10 Key Findings Summary
+- **DrawdownMonitor loadState()/getState() (AD-58)**: 서버 재시작 시 peakEquity 복원 → updateEquity() 호출로 자동 halt 감지. isHalted 별도 영속화 불필요
+- **Trailing Stop StrategyBase 인프라 (AD-59)**: _checkTrailingStop(price) try-catch fail-safe, _resetTrailingState(), _initTrailingFromMetadata(). 6개 전략 opt-in, onFill()에서 super.onFill(fill) 호출 패턴
+- **멀티포지션 백테스트 Map (AD-60)**: _positions Map + incrementalId 키, ABSOLUTE_MAX_POSITIONS=10, FIFO 청산, per-position 펀딩비, _calculateEquity 전 포지션 합산
+- **Sortino + Calmar (AD-61)**: meanReturn 스코프 수정(if 블록 밖으로), downside deviation 분모=전체 period 수, Calmar=totalReturn/maxDrawdownPercent
 
 ## Accumulated Insights
 - **에러 핸들링 진화**: R1 unhandledRejection 핸들러 누락 → R2 crashHandler 추가 → R3 graceful shutdown 순서 정비 → R6 getAccountInfo 크래시 수정 → R8 getStatus()/getSignal() try-catch 추가. 현재 상태: 프로세스 안정성 확보, 미처리 예외 없음
 - **리소스 관리 패턴**: R1 CircuitBreaker rapidLosses 무한 성장 → R4 window 기반 정리 → R7 setTimeout+unref() 패턴 도입 → R8 전 타이머 unref() 적용 + _lastTickerEmit 5분 주기 정리 + BacktestStore FIFO 50제한. 현재 상태: 타이머/Map/배열 누수 방지 패턴 확립, 무제한 성장 경로 제거
 - **DI 패턴 안정화**: R1 DI 체계 구축 → R2 orderManager/positionManager 분리 → R4 equity DI 개선 → R6 서비스 간 참조 정리 → R8 Router singleton 팩토리 내부 이동. 현재 상태: app.js bootstrap 순서 안정, 라우트 팩토리 일관성 확보
 - **동시성 제어**: R1 orderManager 동시성 미제어 → R2 mutex 도입 → R7 grace Map 원자적 조작. 현재 상태: 핵심 경로에 동시성 보호 적용 완료
-- **캡슐화 준수**: R8 TournamentRoutes에서 paperAccountManager 내부 필드 직접 접근 제거 → 공개 API 메서드 패턴으로 전환. 현재 상태: 서비스 경계 깨끗
+- **캡슐화 준수**: R8 TournamentRoutes 캡슐화 수정 → R9 InstrumentCache 서비스 분리 + StateRecovery 활성화. 현재 상태: 서비스 경계 깨끗, 인프라 서비스 분리 완료
+- **상태 영속성 패턴**: R8 BotSession 실시간 통계 → R10 DrawdownMonitor loadState()/getState(). 패턴: MongoDB에 주기적 저장 → 재시작 시 복원 → updateEquity()로 자동 halt 감지. isHalted 별도 영속화 불필요
+- **백테스트 진화**: R1 단일 포지션 → R3 IndicatorCache 주입 → R9 펀딩비 PnL → R10 Map 기반 멀티포지션(FIFO, incrementalId). 현재 상태: 멀티포지션 + 펀딩비 반영 백테스트
 
 ## Knowledge Management Rules
 1. 새 정보를 받으면 이 인덱스의 기존 항목과 비교

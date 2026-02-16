@@ -43,6 +43,7 @@ class RsiPivotStrategy extends StrategyBase {
     gracePeriodMs: 300000,
     warmupCandles: 15,
     volatilityPreference: 'neutral',
+    trailingStop: { enabled: true, activationPercent: '1.0', callbackPercent: '0.8' },
     description: 'RSI + Pivot 역추세 (양방향)',
     defaultConfig: {
       rsiPeriod: 14,
@@ -329,6 +330,7 @@ class RsiPivotStrategy extends StrategyBase {
    * @param {object} fill — { side, price, action, ... }
    */
   onFill(fill) {
+    super.onFill(fill); // R10: update StrategyBase trailing stop state
     if (!fill) return;
 
     const price = fill.price !== undefined ? String(fill.price) : null;

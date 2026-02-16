@@ -200,14 +200,14 @@
 
 | ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
 |----|--------|------|------|--------|--------|------|
-| R8-T3-1 | T3 | Backtest | 백테스트 멀티포지션 지원 | T:H-2 | R8 | agreed |
-| R8-T3-2 | T3 | Backend | Trailing Stop 구현 | T:H-1 | R8 | agreed |
-| R8-T3-3 | T3 | Backend | DrawdownMonitor peakEquity 영속성 | T:M-6 | R8 | agreed |
-| R8-T3-4 | T3 | Backtest | Sortino Ratio 산출 | T:M-1 | R8 | agreed |
-| R8-T3-5 | T3 | Frontend | 데드 코드 삭제 (StrategyPanel, ClientGate) | UI:A-1,A-2 | R8 | agreed |
-| R8-T3-6 | T3 | Frontend | EquityCurveChart 공통 추출 | UI:M-8 | R8 | agreed |
-| R8-T3-7 | T3 | Frontend | th scope="col" 일괄 추가 | UI:M-5 | R8 | agreed |
-| R8-T3-8 | T3 | Frontend | TOOLTIP_STYLE 통일 | UI:L-1 | R8 | agreed |
+| R8-T3-1 | T3 | Backtest | 백테스트 멀티포지션 지원 (AD-60) | T:H-2 | R8→R10 | done |
+| R8-T3-2 | T3 | Backend | Trailing Stop 구현 (AD-59, 6전략 percent) | T:H-1 | R8→R10 | done |
+| R8-T3-3 | T3 | Backend | DrawdownMonitor peakEquity 영속성 (AD-58) | T:M-6 | R8→R10 | done |
+| R8-T3-4 | T3 | Backtest | Sortino + Calmar Ratio 산출 (AD-61) | T:M-1 | R8→R10 | done |
+| R8-T3-5 | T3 | Frontend | 데드 코드 삭제 (StrategyPanel, ClientGate) | UI:A-1,A-2 | R8→R10 | done |
+| R8-T3-6 | T3 | Frontend | EquityCurveChart 공통 추출 (AD-62) | UI:M-8 | R8→R10 | done |
+| R8-T3-7 | T3 | Frontend | th scope="col" 일괄 추가 | UI:M-5 | R8→R10 | done |
+| R8-T3-8 | T3 | Frontend | TOOLTIP_STYLE 통일 | UI:L-1 | R8→R10 | done |
 
 ---
 
@@ -221,3 +221,4 @@
 → `decisions/round_7.md` — AD-40~AD-45 참조 (R7 레짐 안정화 + 유예기간)
 → `decisions/round_8.md` — AD-46~AD-52 참조 (R8 코드베이스 재분석)
 → `decisions/round_9.md` — AD-53~AD-57 참조 (R9 Tier 2 Quality)
+→ `decisions/round_10.md` — AD-58~AD-62 참조 (R10 Tier 3 Enhancement)

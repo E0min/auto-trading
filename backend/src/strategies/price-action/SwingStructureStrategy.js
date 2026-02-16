@@ -56,6 +56,7 @@ class SwingStructureStrategy extends StrategyBase {
     gracePeriodMs: 600000,
     warmupCandles: 20,
     volatilityPreference: 'high',
+    trailingStop: { enabled: true, activationPercent: '1.5', callbackPercent: '1.0' },
     description: '스윙 구조 추세 — HH/HL/LH/LL 구조 분석 + BOS 돌파 진입',
     defaultConfig: {
       swingLookback: 3,              // Bars each side to confirm a swing point
@@ -416,6 +417,7 @@ class SwingStructureStrategy extends StrategyBase {
 
   /** @param {object} fill — fill data from the exchange */
   onFill(fill) {
+    super.onFill(fill); // R10: update StrategyBase trailing stop state
     if (!fill) return;
     const action = fill.action || (fill.signal && fill.signal.action);
 

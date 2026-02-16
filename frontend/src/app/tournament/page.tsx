@@ -210,14 +210,14 @@ export default function TournamentPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-[var(--border-subtle)]">
-                      <th className="px-6 py-2.5 text-left text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium w-12">#</th>
-                      <th className="px-4 py-2.5 text-left text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium">전략</th>
-                      <th className="px-4 py-2.5 text-left text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium">카테고리</th>
-                      <th className="px-4 py-2.5 text-right text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium">자산</th>
-                      <th className="px-4 py-2.5 text-right text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium">실현 PnL</th>
-                      <th className="px-4 py-2.5 text-right text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium">수익률</th>
-                      <th className="px-4 py-2.5 text-right text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium">미실현</th>
-                      <th className="px-6 py-2.5 text-right text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium">포지션</th>
+                      <th scope="col" className="px-6 py-2.5 text-left text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium w-12">#</th>
+                      <th scope="col" className="px-4 py-2.5 text-left text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium">전략</th>
+                      <th scope="col" className="px-4 py-2.5 text-left text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium">카테고리</th>
+                      <th scope="col" className="px-4 py-2.5 text-right text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium">자산</th>
+                      <th scope="col" className="px-4 py-2.5 text-right text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium">실현 PnL</th>
+                      <th scope="col" className="px-4 py-2.5 text-right text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium">수익률</th>
+                      <th scope="col" className="px-4 py-2.5 text-right text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium">미실현</th>
+                      <th scope="col" className="px-6 py-2.5 text-right text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium">포지션</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -391,7 +391,7 @@ function StrategyDetailPanel({
                   <thead>
                     <tr className="border-b border-[var(--border-subtle)]">
                       {['심볼', '방향', '수량', '진입가', '현재가', '미실현 PnL'].map((h, i) => (
-                        <th key={h} className={cn(
+                        <th scope="col" key={h} className={cn(
                           'px-6 py-2 text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium',
                           i >= 2 ? 'text-right' : 'text-left',
                         )}>
@@ -432,7 +432,7 @@ function StrategyDetailPanel({
                   <thead>
                     <tr className="border-b border-[var(--border-subtle)]">
                       {['시간', '심볼', '방향', '수량', '체결가', 'PnL'].map((h, i) => (
-                        <th key={h} className={cn(
+                        <th scope="col" key={h} className={cn(
                           'px-6 py-2 text-[10px] uppercase tracking-[0.06em] text-[var(--text-muted)] font-medium',
                           i >= 3 ? 'text-right' : 'text-left',
                         )}>

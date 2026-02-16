@@ -11,7 +11,14 @@
  */
 
 const { EventEmitter } = require('events');
-const { TRADE_EVENTS, CATEGORIES, MARKET_REGIMES } = require('../utils/constants');
+const { TRADE_EVENTS, CATEGORIES, MARKET_REGIMES, SIGNAL_ACTIONS } = require('../utils/constants');
+const {
+  isGreaterThan,
+  isLessThan,
+  isGreaterThanOrEqual,
+  pctChange,
+  abs,
+} = require('../utils/mathUtils');
 const { createLogger } = require('../utils/logger');
 
 class StrategyBase extends EventEmitter {
@@ -61,6 +68,22 @@ class StrategyBase extends EventEmitter {
     this._warmedUp = this._warmupCandles === 0;
 
     this._log = createLogger(`Strategy:${name}`);
+
+    // R10: Trailing stop infrastructure (opt-in via static metadata)
+    this._trailingStopEnabled = false;
+    this._trailingStopConfig = {
+      activationPercent: null,  // profit % before trailing activates (null = immediate)
+      callbackPercent: '1',     // trail distance as % from extreme
+    };
+    this._trailingState = {
+      entryPrice: null,
+      positionSide: null,       // 'long' | 'short'
+      extremePrice: null,       // highest (long) / lowest (short) since entry
+      activated: false,
+    };
+
+    // Read trailing stop config from static metadata
+    this._initTrailingFromMetadata();
   }
 
   // ---------------------------------------------------------------------------
@@ -88,11 +111,29 @@ class StrategyBase extends EventEmitter {
   }
 
   /**
-   * Called when an order fill is received. Optional — default is a no-op.
+   * Called when an order fill is received.
+   * R10: Manages trailing stop state based on fill actions.
+   * Sub-classes that override onFill() should call super.onFill(fill).
+   *
    * @param {object} fill
    */
   onFill(fill) {
-    // No-op by default; sub-classes may override.
+    if (!fill) return;
+
+    const action = fill.action || (fill.signal && fill.signal.action);
+    if (!action) return;
+
+    if (action === SIGNAL_ACTIONS.OPEN_LONG || action === SIGNAL_ACTIONS.OPEN_SHORT) {
+      const entryPrice = fill.price !== undefined ? String(fill.price) : null;
+      if (entryPrice) {
+        this._trailingState.entryPrice = entryPrice;
+        this._trailingState.positionSide = action === SIGNAL_ACTIONS.OPEN_LONG ? 'long' : 'short';
+        this._trailingState.extremePrice = entryPrice;
+        this._trailingState.activated = false;
+      }
+    } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
+      this._resetTrailingState();
+    }
   }
 
   /**
@@ -343,6 +384,133 @@ class StrategyBase extends EventEmitter {
       received: this._receivedCandles,
       required: this._warmupCandles,
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // R10: Trailing stop infrastructure (AD-59)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Read trailingStop config from static metadata and initialise if enabled.
+   * Called at the end of the constructor.
+   * @private
+   */
+  _initTrailingFromMetadata() {
+    const meta = this.constructor.metadata;
+    if (!meta || !meta.trailingStop || !meta.trailingStop.enabled) return;
+
+    this._trailingStopEnabled = true;
+    if (meta.trailingStop.activationPercent !== undefined) {
+      this._trailingStopConfig.activationPercent = String(meta.trailingStop.activationPercent);
+    }
+    if (meta.trailingStop.callbackPercent !== undefined) {
+      this._trailingStopConfig.callbackPercent = String(meta.trailingStop.callbackPercent);
+    }
+
+    this._log.debug('Trailing stop enabled from metadata', {
+      activationPercent: this._trailingStopConfig.activationPercent,
+      callbackPercent: this._trailingStopConfig.callbackPercent,
+    });
+  }
+
+  /**
+   * Check whether the trailing stop should trigger a position close.
+   *
+   * Call this from onTick() or onKline() with the current price.
+   *
+   * @param {string} price — current market price (String)
+   * @returns {{ action: string, reason: string }|null} — close signal info, or null
+   */
+  _checkTrailingStop(price) {
+    try {
+      if (!this._trailingStopEnabled) return null;
+
+      const { entryPrice, positionSide, extremePrice } = this._trailingState;
+      if (!entryPrice || !positionSide) return null;
+
+      // Update extreme price
+      if (positionSide === 'long') {
+        if (extremePrice === null || isGreaterThan(price, extremePrice)) {
+          this._trailingState.extremePrice = price;
+        }
+      } else {
+        if (extremePrice === null || isLessThan(price, extremePrice)) {
+          this._trailingState.extremePrice = price;
+        }
+      }
+
+      const currentExtreme = this._trailingState.extremePrice;
+      const { activationPercent, callbackPercent } = this._trailingStopConfig;
+
+      // Check activation: profit % must exceed activationPercent
+      if (!this._trailingState.activated) {
+        if (activationPercent !== null) {
+          let profitPct;
+          try {
+            if (positionSide === 'long') {
+              profitPct = pctChange(entryPrice, price);
+            } else {
+              // For short: profit when price drops
+              profitPct = pctChange(price, entryPrice);
+            }
+          } catch (_) {
+            return null;
+          }
+
+          if (!isGreaterThanOrEqual(profitPct, activationPercent)) {
+            return null; // Not yet activated
+          }
+        }
+
+        this._trailingState.activated = true;
+        this._log.debug('Trailing stop activated', {
+          positionSide,
+          entryPrice,
+          price,
+          extremePrice: currentExtreme,
+        });
+      }
+
+      // Check callback: has price dropped callbackPercent from extreme?
+      if (this._trailingState.activated && currentExtreme) {
+        let retracement;
+        try {
+          if (positionSide === 'long') {
+            // Price has dropped from extreme (negative pctChange)
+            retracement = pctChange(currentExtreme, price);
+            // retracement is negative when price drops; compare abs against callback
+            if (isGreaterThan(abs(retracement), callbackPercent)) {
+              return { action: SIGNAL_ACTIONS.CLOSE_LONG, reason: 'trailing_stop' };
+            }
+          } else {
+            // Price has risen from extreme (positive pctChange from short's extreme low)
+            retracement = pctChange(currentExtreme, price);
+            // retracement is positive when price rises from low; compare against callback
+            if (isGreaterThan(retracement, callbackPercent)) {
+              return { action: SIGNAL_ACTIONS.CLOSE_SHORT, reason: 'trailing_stop' };
+            }
+          }
+        } catch (_) {
+          return null;
+        }
+      }
+
+      return null;
+    } catch (err) {
+      this._log.error('_checkTrailingStop error (fail-safe)', { error: err.message });
+      return null;
+    }
+  }
+
+  /**
+   * Reset all trailing stop state. Called on position close.
+   * @private
+   */
+  _resetTrailingState() {
+    this._trailingState.entryPrice = null;
+    this._trailingState.positionSide = null;
+    this._trailingState.extremePrice = null;
+    this._trailingState.activated = false;
   }
 
   /**

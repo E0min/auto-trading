@@ -177,22 +177,28 @@ getSocket()      // 현재 소켓 인스턴스 조회 (없으면 null)
 |----------|------|
 | `BotControlPanel` | 시작/정지/일시정지/재개/긴급정지 버튼 (LIVE 모드 시작 확인, EmergencyStopDialog 통합, Sprint R8: 정지 확인 다이얼로그 — 열린 포지션 경고). Props: tradingMode, openPositionCount, unrealizedPnl |
 | `TradingModeToggle` | 라이브/페이퍼 모드 전환 |
-| `StrategyPanel` | 전략 선택기 (3단 필터: 카테고리, 방향, 변동성) |
+| ~~`StrategyPanel`~~ | 삭제됨 (Sprint R10, 데드 코드) |
 | `AccountOverview` | 자산, 잔고, 미실현 PnL |
 | `RiskStatusPanel` | 서킷 브레이커, 노출, 낙폭 지표 + 복합 리스크 점수 (Sprint R4: DD 40% + Exp 30% + CB 30%, 색상 코딩) |
 | `MarketRegimeIndicator` | 현재 시장 레짐 배지 + 신뢰도 |
 | `SymbolRegimeTable` | 심볼별 레짐 분류 테이블 |
 | `RegimeStrategyRecommendation` | 현재 레짐에 맞는 전략 추천 |
-| `EquityCurveChart` | Recharts 자산 곡선 |
+| `EquityCurveChart` | 대시보드 자산 곡선 (EquityCurveBase 래퍼, Sprint R10) |
 | `DrawdownChart` | Drawdown 시각화 차트 (Sprint R4: 접기/펼치기 토글, 경고/한계선 참조선, 빨간 그래디언트) |
 | `PositionsTable` | 오픈 포지션 (진입가, SL 가격, 현재가, 미실현 PnL, Sprint R3: 수동 청산, Sprint R5: SL 컬럼) |
 | `SignalFeed` | 실시간 시그널 피드 (최대 50개, 최신순, Sprint R4: rejectReason 표시) |
 | `TradesTable` | 거래 내역 + 페이지네이션 |
 | `SystemHealth` | API 상태, 지연, 소켓 연결 |
-| `ClientGate` | 서버/클라이언트 경계 안전 컴포넌트 |
+| ~~`ClientGate`~~ | 삭제됨 (Sprint R10, 데드 코드) |
 | `EmergencyStopDialog` | 긴급 정지 체크박스 확인 다이얼로그 (Sprint R8: Escape 키, 포커스 트랩, 배경 클릭 닫기) |
 | `TradingModeBanner` | 트레이딩 모드 배너 (LIVE=빨강 펄스, PAPER=초록 배너) |
 | `RiskAlertBanner` | 심각도 기반 리스크 알림 배너 (critical=수동 닫기, warning=30초, info=10초 자동 닫기) |
+
+### 차트 공통 컴포넌트 (`components/charts/`) (Sprint R10)
+
+| 컴포넌트 | 설명 |
+|----------|------|
+| `EquityCurveBase` | Config 기반 범용 자산 곡선 (Card 래핑 없음). `EquityCurveConfig`로 데이터 키, 라벨, 색상 등 설정. 대시보드/백테스트 래퍼가 사용 |
 
 ### 분석 컴포넌트 (`components/analytics/`) (Sprint R5)
 
@@ -208,8 +214,8 @@ getSocket()      // 현재 소켓 인스턴스 조회 (없으면 null)
 | 컴포넌트 | 설명 |
 |----------|------|
 | `BacktestForm` | 백테스트 설정 폼 |
-| `BacktestStatsPanel` | 성과 지표 그리드 |
-| `BacktestEquityCurve` | 자산 곡선 차트 |
+| `BacktestStatsPanel` | 성과 지표 그리드 (Sprint R10: Sortino+Calmar 추가) |
+| `BacktestEquityCurve` | 백테스트 자산 곡선 (EquityCurveBase 래퍼, Sprint R10) |
 | `BacktestPriceChart` | 가격 차트 + 진입/청산 마커 |
 | `BacktestTradeList` | 거래 상세 목록 |
 | `BacktestListPanel` | 이전 결과 목록 (선택/삭제) |
@@ -320,7 +326,8 @@ translateRejectReason('confidence_too_low')     // → '신뢰도 부족' (Sprin
 | `DailyPerformanceEntry` | `types/index.ts` | 일별 성과 (Sprint R5) |
 | `BacktestConfig` | `types/backtest.ts` | 백테스트 설정 |
 | `BacktestResult` | `types/backtest.ts` | 백테스트 결과 |
-| `BacktestMetrics` | `types/backtest.ts` | 백테스트 성과 지표 |
+| `BacktestMetrics` | `types/backtest.ts` | 백테스트 성과 지표 (Sprint R10: sortinoRatio, calmarRatio 추가) |
+| `EquityCurveConfig` | `lib/chart-config.ts` | EquityCurveBase 설정 인터페이스 (Sprint R10) |
 
 ---
 

@@ -51,16 +51,16 @@ export default function PositionsTable({ positions, loading, onClosePosition, cl
           <table>
             <thead>
               <tr>
-                <th>심볼</th>
-                <th>방향</th>
-                <th>수량</th>
-                <th>진입가</th>
-                <th>SL 가격</th>
-                <th>현재가</th>
-                <th>미실현 PnL</th>
-                <th>레버리지</th>
-                <th>청산가</th>
-                {onClosePosition && <th>작업</th>}
+                <th scope="col">심볼</th>
+                <th scope="col">방향</th>
+                <th scope="col">수량</th>
+                <th scope="col">진입가</th>
+                <th scope="col">SL 가격</th>
+                <th scope="col">현재가</th>
+                <th scope="col">미실현 PnL</th>
+                <th scope="col">레버리지</th>
+                <th scope="col">청산가</th>
+                {onClosePosition && <th scope="col">작업</th>}
               </tr>
             </thead>
             <tbody>

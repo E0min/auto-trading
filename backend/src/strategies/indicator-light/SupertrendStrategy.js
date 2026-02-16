@@ -38,6 +38,7 @@ class SupertrendStrategy extends StrategyBase {
     gracePeriodMs: 300000,
     warmupCandles: 60,
     volatilityPreference: 'neutral',
+    trailingStop: { enabled: true, activationPercent: '1.5', callbackPercent: '1.0' },
     description: '슈퍼트렌드 + MACD 추세추종',
     defaultConfig: {
       atrPeriod: 10,
@@ -205,6 +206,7 @@ class SupertrendStrategy extends StrategyBase {
    * @param {object} fill
    */
   onFill(fill) {
+    super.onFill(fill); // R10: update StrategyBase trailing stop state
     if (!fill) return;
 
     if (fill.action === SIGNAL_ACTIONS.OPEN_LONG) {

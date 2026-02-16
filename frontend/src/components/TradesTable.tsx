@@ -73,15 +73,15 @@ export default function TradesTable({ trades, loading }: TradesTableProps) {
           <table>
             <thead>
               <tr>
-                <th>시간</th>
-                <th>심볼</th>
-                <th>방향</th>
-                <th>유형</th>
-                <th>수량</th>
-                <th>가격</th>
-                <th>상태</th>
-                <th>PnL</th>
-                <th>전략</th>
+                <th scope="col">시간</th>
+                <th scope="col">심볼</th>
+                <th scope="col">방향</th>
+                <th scope="col">유형</th>
+                <th scope="col">수량</th>
+                <th scope="col">가격</th>
+                <th scope="col">상태</th>
+                <th scope="col">PnL</th>
+                <th scope="col">전략</th>
               </tr>
             </thead>
             <tbody>

@@ -13,15 +13,8 @@ import {
 import Card from '@/components/ui/Card';
 import Spinner from '@/components/ui/Spinner';
 import { formatCurrency, translateStrategyName } from '@/lib/utils';
+import { CHART_TOOLTIP_STYLE } from '@/lib/chart-config';
 import type { StrategyPerformanceEntry } from '@/types';
-
-const TOOLTIP_STYLE = {
-  backgroundColor: 'var(--bg-elevated)',
-  border: '1px solid var(--border-muted)',
-  borderRadius: '6px',
-  fontSize: '11px',
-  padding: '8px 12px',
-};
 
 interface StrategyPerformanceProps {
   data: Record<string, StrategyPerformanceEntry> | null;
@@ -105,7 +98,7 @@ export default function StrategyPerformance({ data, loading }: StrategyPerforman
                 width={150}
               />
               <Tooltip
-                contentStyle={TOOLTIP_STYLE}
+                contentStyle={CHART_TOOLTIP_STYLE}
                 labelStyle={{ color: 'var(--text-secondary)' }}
                 formatter={((value: number) => [
                   `$${formatCurrency(String(value))}`,
@@ -132,10 +125,10 @@ export default function StrategyPerformance({ data, loading }: StrategyPerforman
           <table>
             <thead>
               <tr>
-                <th>전략명</th>
-                <th className="text-right">거래수</th>
-                <th className="text-right">승률</th>
-                <th className="text-right">총 PnL</th>
+                <th scope="col">전략명</th>
+                <th scope="col" className="text-right">거래수</th>
+                <th scope="col" className="text-right">승률</th>
+                <th scope="col" className="text-right">총 PnL</th>
               </tr>
             </thead>
             <tbody>

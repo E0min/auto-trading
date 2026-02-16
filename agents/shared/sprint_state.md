@@ -1,11 +1,11 @@
-# Sprint State — Round 9
+# Sprint State — Round 10
 
 ## Meta
-- round: 9
-- topic: Tier 2 Quality — R8 미구현 agreed 항목 (11건) + deferred 2건 재활성화
-- started: 2026-02-17T04:00:00Z
-- last_updated: 2026-02-17T08:00:00Z
-- current_phase: 7
+- round: 10
+- topic: Tier 3 Enhancement — R8 미구현 agreed 항목 (8건)
+- started: 2026-02-17T10:00:00Z
+- last_updated: 2026-02-17T14:00:00Z
+- current_phase: 6
 - status: in_progress
 
 ## Phase Progress
@@ -19,49 +19,43 @@
 - [ ] Phase 7 — Commit & Push
 
 ## Phase 0 Result
-- BACKLOG 미완료: 11건 agreed (T2) + 8건 agreed (T3) + 2건 deferred (R8-T0-5, R8-T1-1)
-- 최우선 Tier: Tier 2 (11건)
-- Track A (Backend): R8-T2-1, R8-T2-2, R8-T2-3, R8-T2-4, R8-T2-5, R8-T2-6
-- Track B (Backtest): — (T2에 해당 없음)
-- Track C (Frontend): R8-T2-8, R8-T2-9, R8-T2-10, R8-T2-11, R8-T2-12
-- 재활성화 검토: R8-T0-5 (PositionManager 전략 매핑), R8-T1-1 (InstrumentCache lot step)
+- BACKLOG 미완료: 8건 agreed (T3)
+- 최우선 Tier: Tier 3 (8건)
+- Track A (Backend): R8-T3-2, R8-T3-3
+- Track B (Backtest): R8-T3-1, R8-T3-4
+- Track C (Frontend): R8-T3-5, R8-T3-6, R8-T3-7, R8-T3-8
 
 ## Phase 1 Result
-- Trader: agents/trader/proposals/round_9.md (860줄, 8건 분석, deferred 2건 모두 재활성화 권장)
-- Engineer: agents/engineer/proposals/round_9.md (12개 소스 분석, R8-T1-1 재활성화 필수 판단)
-- UI/UX: agents/ui/proposals/round_9.md (616줄, FE 5건 코드레벨 분석, 총 2h20m 예상)
-- 3/3 공통: R8-T0-5 + R8-T1-1 재활성화 동의
+- Trader: agents/trader/proposals/round_10.md
+- Engineer: agents/engineer/proposals/round_10.md (574줄)
+- UI/UX: agents/ui/proposals/round_10.md
+- 3/3 공통: R8-T3-3 (peakEquity) 최우선 동의, R8-T3-5 데드코드 삭제 안전 확인
 
 ## Phase 2 Result
-- Trader review: agents/trader/proposals/round_9_review.md
-- Engineer review: agents/engineer/proposals/round_9_review.md
-- UI review: agents/ui/proposals/round_9_review.md
-- 핵심 이견: (1) 펀딩비 PnL 관측용 vs Trade 반영, (2) BTCUSDT 배정 제외 여부, (3) unsubscribeSymbols 존재 오인
-- 3/3 합의: 13건 전체 동의 기반, 조건부 4건
+- Trader: agents/trader/proposals/round_10_review.md
+- Engineer: agents/engineer/proposals/round_10_review.md
+- UI/UX: agents/ui/proposals/round_10_review.md
 
 ## Phase 3 Result
-- 결정문서: agents/shared/decisions/round_9.md
-- 합의 항목: 13건 (BE 8건 + FE 5건)
-- 아키텍처 결정: 5건 (AD-53 ~ AD-57)
-- 재활성화: R8-T0-5, R8-T1-1 (deferred → agreed)
-- 이견 해소: BTCUSDT 배정 허용(Engineer), warm-up StrategyBase(2/3), 펀딩비 Phase 분할
-- BACKLOG 업데이트 완료
+- 결정문서: agents/shared/decisions/round_10.md
+- 합의 항목: 8건 (전체 Tier 0 즉시 실행)
+- 아키텍처 결정: 5건 (AD-58 ~ AD-62)
+- 이견 해소: 8건 (멀티포지션 key, trailing scope, ATR 모드 등)
+- BACKLOG 업데이트: 8건 agreed → in_progress
 
 ## Phase 4 Result
-- 구현 완료: 13/13건
-- 변경 파일: 32개 (신규 1개 + 수정 31개), +1153/-216줄
-- 신규 파일: backend/src/services/instrumentCache.js
-- BE 테스트: 51/51 pass (mathUtils 100% coverage)
-- FE 빌드: 성공 (4 routes, 0 errors)
-- 구현 상세:
-  - BE Phase 1: InstrumentCache(AD-53) + warm-up(AD-54) — 22파일
-  - BE Phase 2: 전략 매핑(R8-T0-5) + 멀티심볼(AD-55) — 21파일
-  - BE Phase 3: 펀딩비 PnL(AD-57) + 코인 재선정(AD-56) — 4파일
-  - BE Phase 4: Paper 경고(R8-T2-5) + StateRecovery(R8-T2-6) — 4파일
-  - FE: 접근성(T2-8) + 모바일 반응형(T2-10~12) — 4파일
+- 구현 항목: 8건 전체 완료
+- Track A (BE): R8-T3-3 peakEquity 영속성 + R8-T3-2 Trailing Stop (6전략)
+- Track B (Backtest): R8-T3-4 Sortino+Calmar + R8-T3-1 멀티포지션 FIFO
+- Track C (FE): R8-T3-5 데드코드 삭제 + R8-T3-8 TOOLTIP + R8-T3-7 th scope + R8-T3-6 EquityCurveBase
+- 워크트리: 미사용 (master 직접 작업)
+- 변경 파일: 수정 30 + 삭제 2 + 신규 1 = 33개
+- 테스트: BE 51/51 통과, Backtest 기능 테스트 3/3 통과, FE tsc+lint 0에러
 
 ## Phase 5 Result
-- KNOWLEDGE_INDEX: 코드 변경 반영 (Phase 7에서 커밋 시 포함)
+- KNOWLEDGE_INDEX 업데이트: 3개 에이전트 (Trader, Engineer, UI) — R9+R10 항목 추가
+- 체크포인트: sprint_state.md 자동 저장
 
 ## Phase 6 Result
-- CLAUDE.md 업데이트: DI 순서에 instrumentCache 추가, 전략 메타데이터에 warmupCandles/volatilityPreference 추가
+- 수정: md/risk-engine.md (peakEquity 영속성 섹션), md/strategies.md (trailing stop 섹션), md/backtest.md (멀티포지션+Sortino+Calmar), md/frontend.md (EquityCurveBase, 삭제 컴포넌트, 타입)
+- 변경 없음: md/architecture.md, md/trading-pipeline.md, md/api-reference.md, md/configuration.md, md/market-regime.md, md/database.md, md/paper-trading.md, CLAUDE.md

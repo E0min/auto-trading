@@ -93,12 +93,12 @@ export default function StrategyDetail({
               <table className="w-full text-xs">
                 <thead>
                   <tr className="text-[var(--text-muted)] border-b border-[var(--border-subtle)]/50">
-                    <th className="text-left py-1 pr-2 font-medium">심볼</th>
-                    <th className="text-left py-1 pr-2 font-medium">방향</th>
-                    <th className="text-right py-1 pr-2 font-medium">수량</th>
-                    <th className="text-right py-1 pr-2 font-medium">진입가</th>
-                    <th className="text-right py-1 pr-2 font-medium">현재가</th>
-                    <th className="text-right py-1 font-medium">미실현 PnL</th>
+                    <th scope="col" className="text-left py-1 pr-2 font-medium">심볼</th>
+                    <th scope="col" className="text-left py-1 pr-2 font-medium">방향</th>
+                    <th scope="col" className="text-right py-1 pr-2 font-medium">수량</th>
+                    <th scope="col" className="text-right py-1 pr-2 font-medium">진입가</th>
+                    <th scope="col" className="text-right py-1 pr-2 font-medium">현재가</th>
+                    <th scope="col" className="text-right py-1 font-medium">미실현 PnL</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -166,14 +166,14 @@ export default function StrategyDetail({
               <table className="w-full text-xs">
                 <thead>
                   <tr className="text-[var(--text-muted)] border-b border-[var(--border-subtle)]/50">
-                    <th className="text-left py-1 pr-2 font-medium">심볼</th>
-                    <th className="text-left py-1 pr-2 font-medium">방향</th>
-                    <th className="text-left py-1 pr-2 font-medium">타입</th>
-                    <th className="text-right py-1 pr-2 font-medium">수량</th>
-                    <th className="text-right py-1 pr-2 font-medium">체결가</th>
-                    <th className="text-right py-1 pr-2 font-medium">PnL</th>
-                    <th className="text-center py-1 pr-2 font-medium">상태</th>
-                    <th className="text-right py-1 font-medium">시간</th>
+                    <th scope="col" className="text-left py-1 pr-2 font-medium">심볼</th>
+                    <th scope="col" className="text-left py-1 pr-2 font-medium">방향</th>
+                    <th scope="col" className="text-left py-1 pr-2 font-medium">타입</th>
+                    <th scope="col" className="text-right py-1 pr-2 font-medium">수량</th>
+                    <th scope="col" className="text-right py-1 pr-2 font-medium">체결가</th>
+                    <th scope="col" className="text-right py-1 pr-2 font-medium">PnL</th>
+                    <th scope="col" className="text-center py-1 pr-2 font-medium">상태</th>
+                    <th scope="col" className="text-right py-1 font-medium">시간</th>
                   </tr>
                 </thead>
                 <tbody>

@@ -11,6 +11,7 @@ import {
   Legend,
 } from 'recharts';
 import { formatCurrency, shortenNumber, cn } from '@/lib/utils';
+import { CHART_TOOLTIP_STYLE } from '@/lib/chart-config';
 import type { CoinScoringData } from '@/types';
 
 interface CoinScoreboardProps {
@@ -97,12 +98,7 @@ export default function CoinScoreboard({ data }: CoinScoreboardProps) {
               tickLine={false}
             />
             <Tooltip
-              contentStyle={{
-                backgroundColor: 'var(--bg-elevated)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 6,
-                fontSize: 11,
-              }}
+              contentStyle={CHART_TOOLTIP_STYLE}
               labelStyle={{ color: 'var(--text-primary)', fontWeight: 600 }}
               formatter={((value: number | undefined, name: string | undefined) => [
                 Math.round(Number(value ?? 0)),
@@ -126,13 +122,13 @@ export default function CoinScoreboard({ data }: CoinScoreboardProps) {
         <table>
           <thead>
             <tr>
-              <th>#</th>
-              <th>심볼</th>
-              <th>점수</th>
-              <th>가격</th>
-              <th>24h</th>
-              <th>거래량</th>
-              <th>스프레드</th>
+              <th scope="col">#</th>
+              <th scope="col">심볼</th>
+              <th scope="col">점수</th>
+              <th scope="col">가격</th>
+              <th scope="col">24h</th>
+              <th scope="col">거래량</th>
+              <th scope="col">스프레드</th>
             </tr>
           </thead>
           <tbody>

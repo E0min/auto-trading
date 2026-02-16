@@ -220,6 +220,50 @@ class DrawdownMonitor extends EventEmitter {
     log.info('Full reset', { equity });
   }
 
+  // ---------------------------------------------------------------------------
+  // R10: State persistence — loadState / getState (AD-58)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Hydrate peak equity and daily start equity from a previous session.
+   * Called during BotService.start() to restore drawdown tracking across restarts.
+   *
+   * @param {object} state
+   * @param {string} [state.peakEquity]      — persisted peak equity from prior session
+   * @param {string} [state.dailyStartEquity] — persisted daily start equity
+   */
+  loadState({ peakEquity, dailyStartEquity } = {}) {
+    if (peakEquity && isGreaterThan(peakEquity, this.peakEquity)) {
+      this.peakEquity = peakEquity;
+    }
+
+    if (dailyStartEquity && dailyStartEquity !== '0') {
+      this.dailyStartEquity = dailyStartEquity;
+    }
+
+    log.info('DrawdownMonitor state hydrated', {
+      peakEquity: this.peakEquity,
+      dailyStartEquity: this.dailyStartEquity,
+    });
+  }
+
+  /**
+   * Return a minimal, serialisable snapshot of state for persistence.
+   * Unlike getStatus(), this returns only the fields needed for cross-session
+   * restoration (no computed drawdown percentages or params).
+   *
+   * @returns {{ peakEquity: string, dailyStartEquity: string, currentEquity: string, isHalted: boolean, haltReason: string|null }}
+   */
+  getState() {
+    return {
+      peakEquity: this.peakEquity,
+      dailyStartEquity: this.dailyStartEquity,
+      currentEquity: this.currentEquity,
+      isHalted: this.isHalted,
+      haltReason: this.haltReason,
+    };
+  }
+
   /**
    * Hot-update parameters without recreating the instance.
    *

@@ -149,13 +149,34 @@ fillPrice = close × (1 + slippage)
 
 **Equity DI**: 백테스트 엔진은 `strategy.setAccountContext({ getEquity: () => this._cash })`로 현재 가용 자금을 전략에 주입합니다.
 
+### 멀티포지션 지원 (Sprint R10, AD-60)
+
+`_position` (단일) 대신 `_positions` (Map)으로 전환되어 동시 다중 포지션을 지원합니다.
+
+| 항목 | 값 |
+|------|-----|
+| 포지션 키 | `pos_${autoIncrementId}` |
+| 최대 동시 포지션 | 전략 metadata `maxConcurrentPositions` (hard cap: 10) |
+| 청산 방식 | FIFO (Map insertion order) |
+| 펀딩비 | 포지션별 개별 적용 |
+
+**핵심 동작**:
+- `_openLong`/`_openShort`: 포지션 수 ≥ maxPositions이면 스킵, 잔여 cash 확인
+- `_closeLong`/`_closeShort`: Map 순서대로 첫 번째 포지션 청산 (FIFO)
+- `_calculateEquity`: 모든 열린 포지션의 MTM 합산
+- `_forceClosePosition`: 모든 포지션 순회 청산
+- `_applyFundingIfDue`: 포지션별 개별 펀딩비 적용
+
+**회귀 안전**: `maxConcurrentPositions=1` 전략은 동작 변경 없음 (기존과 동일한 결과)
+
 ### Equity 계산
 
 ```
 포지션 없음:  equity = cash
-롱 포지션:    equity = cash + (qty × currentPrice)
-숏 포지션:    equity = cash + entryNotional + unrealizedPnl
-  where unrealizedPnl = (entryPrice - currentPrice) × qty
+단일 포지션:
+  롱:    equity = cash + (qty × currentPrice)
+  숏:    equity = cash + entryNotional + unrealizedPnl
+멀티포지션: equity = cash + Σ(각 포지션의 MTM)
 ```
 
 ---
@@ -193,6 +214,8 @@ fillPrice = close × (1 + slippage)
 | `maxDrawdown` | 최대 낙폭 (절대값) | peak - trough |
 | `maxDrawdownPercent` | 최대 낙폭 (%) | (peak - trough) / peak × 100 |
 | `sharpeRatio` | 연간화 샤프 비율 | (평균 수익률 × √intervalsPerYear) / 수익률 표준편차 |
+| `sortinoRatio` | 소르티노 비율 (Sprint R10) | (평균 수익률 × √intervalsPerYear) / 하방 편차. 하방만 고려 (MAR=0) |
+| `calmarRatio` | 칼마 비율 (Sprint R10) | totalReturn / maxDrawdownPercent. 수익 대비 최대 낙폭 |
 | `totalFees` | 총 수수료 | 모든 거래 수수료 합산 |
 | `finalEquity` | 최종 자산 | 시뮬레이션 종료 시 equity |
 
@@ -214,7 +237,11 @@ fillPrice = close × (1 + slippage)
 예: 1H 백테스트 → `sharpeRatio = (평균 시간별 수익률 × 93.6) / 표준편차`
 
 ### 거래 0건 시
-모든 지표 0 또는 빈값, `finalEquity = initialCapital`
+모든 지표 0 또는 빈값, `finalEquity = initialCapital`, `sortinoRatio = '0.00'`, `calmarRatio = '0.00'`
+
+### Edge Cases (Sprint R10)
+- 하방 편차 = 0 (모든 수익 양수) → `sortinoRatio = '999.99'`
+- 최대 낙폭 = 0 → `calmarRatio = '999.99'`
 
 ---
 

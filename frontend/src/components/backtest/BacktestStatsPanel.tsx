@@ -46,6 +46,15 @@ const STATS: StatDefinition[] = [
     getColor: () => 'text-[var(--loss)]',
   },
   {
+    label: '칼마 비율',
+    getValue: (m) => parseFloat(m.calmarRatio).toFixed(2),
+    getColor: (m) => {
+      const v = parseFloat(m.calmarRatio);
+      if (isNaN(v)) return 'text-[var(--text-primary)]';
+      return v >= 1 ? 'text-[var(--profit)]' : v >= 0 ? 'text-[var(--text-primary)]' : 'text-[var(--loss)]';
+    },
+  },
+  {
     label: '수익 팩터',
     getValue: (m) => parseFloat(m.profitFactor).toFixed(2),
     getColor: (m) => {
@@ -59,6 +68,15 @@ const STATS: StatDefinition[] = [
     getValue: (m) => parseFloat(m.sharpeRatio).toFixed(2),
     getColor: (m) => {
       const v = parseFloat(m.sharpeRatio);
+      if (isNaN(v)) return 'text-[var(--text-primary)]';
+      return v >= 1 ? 'text-[var(--profit)]' : v >= 0 ? 'text-[var(--text-primary)]' : 'text-[var(--loss)]';
+    },
+  },
+  {
+    label: '소르티노 비율',
+    getValue: (m) => parseFloat(m.sortinoRatio).toFixed(2),
+    getColor: (m) => {
+      const v = parseFloat(m.sortinoRatio);
       if (isNaN(v)) return 'text-[var(--text-primary)]';
       return v >= 1 ? 'text-[var(--profit)]' : v >= 0 ? 'text-[var(--text-primary)]' : 'text-[var(--loss)]';
     },

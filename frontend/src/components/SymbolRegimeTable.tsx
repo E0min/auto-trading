@@ -19,10 +19,10 @@ export default function SymbolRegimeTable({ symbolRegimes }: SymbolRegimeTablePr
         <table>
           <thead>
             <tr>
-              <th>심볼</th>
-              <th>레짐</th>
-              <th>신뢰도</th>
-              <th>상태</th>
+              <th scope="col">심볼</th>
+              <th scope="col">레짐</th>
+              <th scope="col">신뢰도</th>
+              <th scope="col">상태</th>
             </tr>
           </thead>
           <tbody>

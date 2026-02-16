@@ -14,15 +14,8 @@ import {
 import Card from '@/components/ui/Card';
 import Spinner from '@/components/ui/Spinner';
 import { formatCurrency } from '@/lib/utils';
+import { CHART_TOOLTIP_STYLE } from '@/lib/chart-config';
 import type { DailyPerformanceEntry } from '@/types';
-
-const TOOLTIP_STYLE = {
-  backgroundColor: 'var(--bg-elevated)',
-  border: '1px solid var(--border-muted)',
-  borderRadius: '6px',
-  fontSize: '11px',
-  padding: '8px 12px',
-};
 
 interface DailyPerformanceProps {
   data: DailyPerformanceEntry[] | null;
@@ -99,7 +92,7 @@ export default function DailyPerformance({ data, loading }: DailyPerformanceProp
                 tickFormatter={(v) => `$${formatCurrency(String(v), 0)}`}
               />
               <Tooltip
-                contentStyle={TOOLTIP_STYLE}
+                contentStyle={CHART_TOOLTIP_STYLE}
                 labelStyle={{ color: 'var(--text-secondary)' }}
                 formatter={((value: number) => [
                   `$${formatCurrency(String(value))}`,

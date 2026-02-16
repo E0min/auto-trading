@@ -51,6 +51,7 @@ class MacdDivergenceStrategy extends StrategyBase {
     gracePeriodMs: 300000,
     warmupCandles: 35,
     volatilityPreference: 'neutral',
+    trailingStop: { enabled: true, activationPercent: '1.0', callbackPercent: '0.8' },
     description: 'MACD 다이버전스 역추세 전략',
     defaultConfig: {
       macdFast: 12,
@@ -469,6 +470,7 @@ class MacdDivergenceStrategy extends StrategyBase {
    * @param {object} fill — { side, price, action, ... }
    */
   onFill(fill) {
+    super.onFill(fill); // R10: update StrategyBase trailing stop state
     if (!fill) return;
 
     const price = fill.price !== undefined ? String(fill.price) : null;

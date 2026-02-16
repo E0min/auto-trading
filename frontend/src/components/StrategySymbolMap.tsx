@@ -112,10 +112,10 @@ export default function StrategySymbolMap({
               <table>
                 <thead>
                   <tr>
-                    <th className="text-left">전략명</th>
-                    <th className="text-left">카테고리</th>
-                    <th className="text-right">심볼</th>
-                    <th className="text-left">대상 레짐</th>
+                    <th scope="col" className="text-left">전략명</th>
+                    <th scope="col" className="text-left">카테고리</th>
+                    <th scope="col" className="text-right">심볼</th>
+                    <th scope="col" className="text-left">대상 레짐</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -169,10 +169,10 @@ export default function StrategySymbolMap({
               <table>
                 <thead>
                   <tr>
-                    <th className="text-left">전략명</th>
-                    <th className="text-left">카테고리</th>
-                    <th className="text-right">심볼</th>
-                    <th className="text-left">대상 레짐</th>
+                    <th scope="col" className="text-left">전략명</th>
+                    <th scope="col" className="text-left">카테고리</th>
+                    <th scope="col" className="text-right">심볼</th>
+                    <th scope="col" className="text-left">대상 레짐</th>
                   </tr>
                 </thead>
                 <tbody>

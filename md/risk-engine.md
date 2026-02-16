@@ -117,6 +117,28 @@
 }
 ```
 
+### peakEquity 영속성 (Sprint R10, AD-58)
+
+서버 재시작 시 `peakEquity`가 `'0'`으로 리셋되어 drawdown 보호가 무력화되는 문제를 해결합니다.
+
+```javascript
+// DrawdownMonitor 상태 복원/저장 메서드
+drawdownMonitor.loadState({ peakEquity, dailyStartEquity })  // BotSession에서 복원
+drawdownMonitor.getState()  // { peakEquity, dailyStartEquity, currentDrawdown, ... } 스냅샷 반환
+```
+
+**복원 흐름** (`botService.start()`):
+```
+1. 마지막 stopped BotSession 조회
+2. session.stats.peakEquity → loadState()
+3. updateEquity(currentEquity) 호출
+4. drawdown 한도 초과 시 자동 halt 트리거 (isHalted 별도 영속화 불필요)
+```
+
+**방어 로직**: hydrate 시 peakEquity가 현재 equity보다 낮으면 현재 equity를 사용.
+
+**영속화**: `botService._updateSessionStats()`에서 DrawdownMonitor의 peakEquity를 BotSession.stats에 동기화.
+
 ### 수동 리셋 (Sprint R3)
 
 낙폭 모니터를 수동으로 리셋할 수 있습니다:

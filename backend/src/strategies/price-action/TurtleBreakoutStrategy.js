@@ -65,6 +65,7 @@ class TurtleBreakoutStrategy extends StrategyBase {
     gracePeriodMs: 600000,
     warmupCandles: 51,
     volatilityPreference: 'high',
+    trailingStop: { enabled: true, activationPercent: '1.5', callbackPercent: '1.0' },
     description: '터틀 트레이딩 — Donchian 채널 돌파 + ATR 기반 2% 리스크 룰',
     defaultConfig: {
       entryChannel: 20,       // Donchian entry channel period (N-bar high/low)
@@ -440,6 +441,7 @@ class TurtleBreakoutStrategy extends StrategyBase {
   // --------------------------------------------------------------------------
 
   onFill(fill) {
+    super.onFill(fill); // R10: update StrategyBase trailing stop state
     if (!fill) return;
     const action = fill.action || (fill.signal && fill.signal.action);
 

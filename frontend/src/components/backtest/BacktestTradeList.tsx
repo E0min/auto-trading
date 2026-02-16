@@ -83,24 +83,27 @@ export default function BacktestTradeList({ trades, loading }: BacktestTradeList
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-[var(--border-subtle)] text-[var(--text-muted)] text-xs">
-              <th className="text-left px-4 py-2 font-medium">#</th>
-              <th className="text-left px-4 py-2 font-medium">방향</th>
-              <th className="text-right px-4 py-2 font-medium">진입가</th>
-              <th className="text-right px-4 py-2 font-medium">청산가</th>
+              <th scope="col" className="text-left px-4 py-2 font-medium">#</th>
+              <th scope="col" className="text-left px-4 py-2 font-medium">방향</th>
+              <th scope="col" className="text-right px-4 py-2 font-medium">진입가</th>
+              <th scope="col" className="text-right px-4 py-2 font-medium">청산가</th>
               <th
+                scope="col"
                 className="text-right px-4 py-2 font-medium cursor-pointer select-none hover:text-[var(--text-secondary)]"
                 onClick={() => handleSort('qty')}
               >
                 수량{sortIndicator('qty')}
               </th>
               <th
+                scope="col"
                 className="text-right px-4 py-2 font-medium cursor-pointer select-none hover:text-[var(--text-secondary)]"
                 onClick={() => handleSort('pnl')}
               >
                 손익{sortIndicator('pnl')}
               </th>
-              <th className="text-right px-4 py-2 font-medium">수수료</th>
+              <th scope="col" className="text-right px-4 py-2 font-medium">수수료</th>
               <th
+                scope="col"
                 className="text-right px-4 py-2 font-medium cursor-pointer select-none hover:text-[var(--text-secondary)]"
                 onClick={() => handleSort('holdTime')}
               >

@@ -48,6 +48,8 @@ export interface BacktestMetrics {
   maxDrawdown: string;
   maxDrawdownPercent: string;
   sharpeRatio: string;
+  sortinoRatio: string;
+  calmarRatio: string;
   avgHoldTime: number;
   consecutiveWins: number;
   consecutiveLosses: number;
