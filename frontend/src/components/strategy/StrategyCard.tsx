@@ -248,14 +248,11 @@ function ExpandedContent({
   realtimeSignals: Signal[];
   positions: Position[];
 }) {
-  const hasDocs = !!strategy.docs;
   const hasParamMeta = (strategy.paramMeta?.length ?? 0) > 0;
-  const defaultTab: ExpandedTab = hasDocs ? 'overview' : 'detail';
-  const [tab, setTab] = useState<ExpandedTab>(defaultTab);
-  const hasTabs = hasDocs || hasParamMeta;
+  const [tab, setTab] = useState<ExpandedTab>('overview');
 
   const tabs: { key: ExpandedTab; label: string; show: boolean }[] = [
-    { key: 'overview', label: '개요', show: hasDocs },
+    { key: 'overview', label: '개요', show: true },
     { key: 'detail', label: '상세', show: true },
     { key: 'config', label: '설정', show: hasParamMeta },
   ];
@@ -263,7 +260,7 @@ function ExpandedContent({
   return (
     <div className="px-4 pb-4 animate-fade-in">
       {/* Tab bar */}
-      {hasTabs && (
+      {(
         <div className="flex gap-1 mb-3 border-b border-[var(--border-subtle)]">
           {tabs.filter(t => t.show).map(t => (
             <button
@@ -283,8 +280,8 @@ function ExpandedContent({
         </div>
       )}
 
-      {tab === 'overview' && strategy.docs ? (
-        <StrategyExplainer docs={strategy.docs} strategyName={strategy.name} />
+      {tab === 'overview' ? (
+        <StrategyExplainer strategy={strategy} />
       ) : tab === 'config' ? (
         <StrategyConfigPanel
           strategyName={strategy.name}
