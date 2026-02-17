@@ -7,7 +7,7 @@
  * identify strong trends and enter on pullbacks to the 1h slow EMA. Exits via
  * TP (+4%), SL (-2%), trailing stop (-2% from extreme), or EMA crossover reversal.
  *
- * Bidirectional (Long & Short). Leverage 3x, max position 5% of equity.
+ * Bidirectional (Long & Short). Configurable leverage, max position 5% of equity.
  */
 
 const StrategyBase = require('../../services/strategyBase');
@@ -42,6 +42,61 @@ class MaTrendStrategy extends StrategyBase {
     volatilityPreference: 'neutral',
     trailingStop: { enabled: false, activationPercent: '1.5', callbackPercent: '1.0' },
     description: '멀티타임프레임 EMA 추세추종 + 트레일링 스탑',
+    docs: {
+      summary: '일봉 EMA(20/30), 4시간봉 EMA(20/50), 1시간봉 EMA(9/21) 3개 타임프레임 정렬 확인 후 1시간 EMA(21) 풀백에서 진입하는 추세추종 전략. 타임스탬프 기반 실제 시간 경계로 상위 타임프레임을 집계한다(AD-13-5).',
+      timeframe: '1분봉 수집 → 타임스탬프 기반 1시간/4시간/일봉 자동 집계',
+      entry: {
+        long: '일봉·4시간·1시간 모두 상승추세(Fast EMA > Slow EMA) + 1시간 저점이 EMA(21) ±1% 내 풀백 + 양봉(close>open) + 거래량 확인',
+        short: '일봉·4시간·1시간 모두 하락추세(Fast EMA < Slow EMA) + 1시간 고점이 EMA(21) ±1% 내 랠리 + 음봉(close<open) + 거래량 확인',
+        conditions: [
+          '일봉 EMA(20) > EMA(30) (롱) 또는 < (숏)',
+          '4시간 EMA(20) > EMA(50) (롱) 또는 < (숏)',
+          '1시간 EMA(9) > EMA(21) (롱) 또는 < (숏)',
+          '1시간 저/고점이 EMA(21) ±1% 이내 (풀백/랠리)',
+          '현재 거래량 > 20봉 평균 거래량',
+          '레짐: TRENDING_UP (롱) 또는 TRENDING_DOWN (숏)',
+        ],
+      },
+      exit: {
+        tp: '+4% (진입가 대비)',
+        sl: '-2% (진입가 대비)',
+        trailing: '최고/최저가 대비 -2% 하락/상승 시 트레일링 스탑',
+        other: [
+          '1시간 EMA(9)이 EMA(21)을 역크로스하면 청산',
+          '4시간 추세 깨짐(EMA(20) vs EMA(50) 역전) 시 청산',
+        ],
+      },
+      indicators: [
+        'EMA(9), EMA(21) — 1시간봉',
+        'EMA(20), EMA(50) — 4시간봉',
+        'EMA(20), EMA(30) — 일봉',
+        '거래량 SMA(20)',
+      ],
+      riskReward: {
+        tp: '+4%',
+        sl: '-2%',
+        ratio: '2:1',
+      },
+      strengths: [
+        '3개 타임프레임 정렬로 거짓 신호 필터링',
+        '풀백 진입으로 유리한 가격에 포지션 확보',
+        '트레일링 스탑으로 추세 지속 시 수익 극대화',
+        '타임스탬프 기반 집계로 정확한 상위 TF 데이터',
+      ],
+      weaknesses: [
+        '3중 TF 정렬 대기 시간이 길어 신호 빈도 낮음',
+        '횡보장에서 잦은 손절 발생 가능',
+        '급등락에서 풀백 없이 진입 기회 놓칠 수 있음',
+        'EMA 후행 특성으로 추세 전환 초기 반응 지연',
+      ],
+      bestFor: '명확한 방향성이 있는 추세장(TRENDING_UP/DOWN)에서 풀백 매수/매도 기회 포착',
+      warnings: [
+        '워밍업 캔들 60봉(약 1시간) 필요 — 시작 직후 신호 없음',
+        'EMA 계산에 충분한 1시간/4시간/일봉 데이터 축적 시간 필요',
+        '레버리지 기본값 3배 — defaultConfig에서 미지정 시 시그널에 3배 적용',
+      ],
+      difficulty: 'intermediate',
+    },
     defaultConfig: {
       h1FastEma: 9,
       h1SlowEma: 21,
@@ -93,16 +148,18 @@ class MaTrendStrategy extends StrategyBase {
     return {
       ...super._createDefaultState(),
 
-      // Price / volume buffers (1h candles)
-      h1Closes: [],    // String[]
-      h1Volumes: [],   // String[]
+      // Aggregated higher-timeframe closes (AD-13-5: timestamp-based)
+      h1Closes: [],    // String[] — 1h candle closes
+      h1Volumes: [],   // String[] — 1h candle volumes (last 1m close volume)
+      h4Closes: [],    // String[] — 4h candle closes
+      dailyCloses: [], // String[] — daily candle closes
 
-      // Aggregated higher-timeframe closes
-      h4Closes: [],    // String[] — built from every 4 h1 candles
-      dailyCloses: [], // String[] — built from every 24 h1 candles
-
-      // Aggregation counter (how many h1 candles received since start)
-      h1Count: 0,
+      // Timestamp-based boundary tracking (replaces count-based h1Count)
+      _lastH1Idx: null,     // Math.floor(ts / 3600000)
+      _lastH4Idx: null,     // Math.floor(ts / 14400000)
+      _lastDailyIdx: null,  // Math.floor(ts / 86400000)
+      _prevClose: null,     // Close of previous 1m candle (for period boundary)
+      _prevVolume: null,    // Volume of previous 1m candle
 
       // Latest EMA values (String | null)
       h1Ema9: null,
@@ -246,42 +303,45 @@ class MaTrendStrategy extends StrategyBase {
     const sym = this.getCurrentSymbol();
     const s = this._s();
 
-    // ------ 1) Push to 1h buffers and trim ------
-    s.h1Closes.push(close);
-    s.h1Volumes.push(volume);
+    // ------ 1) Timestamp-based multi-timeframe aggregation (AD-13-5) ------
+    // Aggregate 1m candles into 1h/4h/daily using UTC time boundaries
+    // instead of count-based (fixes bug where 24 × 1min was treated as daily)
+    const ts = kline.ts || Date.now();
+    const h1Idx = Math.floor(ts / 3600000);     // hour index
+    const h4Idx = Math.floor(ts / 14400000);    // 4-hour index
+    const dailyIdx = Math.floor(ts / 86400000); // day index
 
-    if (s.h1Closes.length > this._maxHistory) {
-      s.h1Closes.splice(0, s.h1Closes.length - this._maxHistory);
+    let newH1 = false;
+    if (s._lastH1Idx !== null && h1Idx !== s._lastH1Idx && s._prevClose !== null) {
+      s.h1Closes.push(s._prevClose);
+      s.h1Volumes.push(s._prevVolume || '0');
+      if (s.h1Closes.length > this._maxHistory) s.h1Closes.splice(0, s.h1Closes.length - this._maxHistory);
+      if (s.h1Volumes.length > this._maxHistory) s.h1Volumes.splice(0, s.h1Volumes.length - this._maxHistory);
+      newH1 = true;
     }
-    if (s.h1Volumes.length > this._maxHistory) {
-      s.h1Volumes.splice(0, s.h1Volumes.length - this._maxHistory);
-    }
+    s._lastH1Idx = h1Idx;
 
-    // ------ 2) Increment aggregation counter (wrap to avoid overflow) ------
-    s.h1Count = (s.h1Count + 1) % 24;
-
-    // Aggregate to 4h (every 4 candles)
     let newH4 = false;
-    if (s.h1Count % 4 === 0) {
-      s.h4Closes.push(close);
-      if (s.h4Closes.length > this._maxHistory) {
-        s.h4Closes.splice(0, s.h4Closes.length - this._maxHistory);
-      }
+    if (s._lastH4Idx !== null && h4Idx !== s._lastH4Idx && s._prevClose !== null) {
+      s.h4Closes.push(s._prevClose);
+      if (s.h4Closes.length > this._maxHistory) s.h4Closes.splice(0, s.h4Closes.length - this._maxHistory);
       newH4 = true;
     }
+    s._lastH4Idx = h4Idx;
 
-    // Aggregate to daily (every 24 candles — when counter wraps to 0)
     let newDaily = false;
-    if (s.h1Count === 0) {
-      s.dailyCloses.push(close);
-      if (s.dailyCloses.length > this._maxHistory) {
-        s.dailyCloses.splice(0, s.dailyCloses.length - this._maxHistory);
-      }
+    if (s._lastDailyIdx !== null && dailyIdx !== s._lastDailyIdx && s._prevClose !== null) {
+      s.dailyCloses.push(s._prevClose);
+      if (s.dailyCloses.length > this._maxHistory) s.dailyCloses.splice(0, s.dailyCloses.length - this._maxHistory);
       newDaily = true;
     }
+    s._lastDailyIdx = dailyIdx;
 
-    // ------ 3) Calculate EMAs (only update each TF when new candle added) ------
-    this._updateEmas(s, newH4, newDaily);
+    s._prevClose = close;
+    s._prevVolume = volume;
+
+    // ------ 2) Calculate EMAs (only update each TF when new candle added) ------
+    this._updateEmas(s, newH1, newH4, newDaily);
 
     // Store kline for bounce/drop detection
     s.lastKline = { close, volume, high, low, open };
@@ -345,7 +405,7 @@ class MaTrendStrategy extends StrategyBase {
         suggestedPrice: close,
         stopLossPrice: multiply(close, subtract('1', divide(this._slPercent, '100'))),
         confidence: '0.75',
-        leverage: '3',
+        leverage: String(this.config.leverage || '3'),
         positionSizePercent: this._positionSizePercent,
         marketContext: {
           regime: this.getEffectiveRegime(),
@@ -391,7 +451,7 @@ class MaTrendStrategy extends StrategyBase {
         suggestedPrice: close,
         stopLossPrice: multiply(close, add('1', divide(this._slPercent, '100'))),
         confidence: '0.75',
-        leverage: '3',
+        leverage: String(this.config.leverage || '3'),
         positionSizePercent: this._positionSizePercent,
         marketContext: {
           regime: this.getEffectiveRegime(),
@@ -513,34 +573,37 @@ class MaTrendStrategy extends StrategyBase {
   // ---------------------------------------------------------------------------
 
   /**
-   * Recalculate EMA values. 1h EMAs update every kline; 4h/daily EMAs
-   * only update when a new candle was aggregated for that timeframe.
+   * Recalculate EMA values. Each timeframe's EMAs only update when a new
+   * candle was aggregated for that timeframe (AD-13-5: timestamp-based).
    *
+   * @param {boolean} newH1    — true when a new 1h candle was just added
    * @param {boolean} newH4    — true when a new 4h candle was just added
    * @param {boolean} newDaily — true when a new daily candle was just added
    * @private
    */
-  _updateEmas(s, newH4, newDaily) {
-    const h1Len = s.h1Closes.length;
+  _updateEmas(s, newH1, newH4, newDaily) {
+    // --- 1h EMAs (only when new 1h candle added) ---
+    if (newH1) {
+      const h1Len = s.h1Closes.length;
 
-    // --- 1h EMAs (update every kline) ---
-    if (h1Len >= this._h1FastPeriod) {
-      if (s.h1Ema9 !== null) {
-        s.h1Ema9 = this._calculateEma(
-          s.h1Ema9, s.h1Closes[h1Len - 1], this._h1FastPeriod,
-        );
-      } else {
-        s.h1Ema9 = this._calculateEmaFromArray(s.h1Closes, this._h1FastPeriod);
+      if (h1Len >= this._h1FastPeriod) {
+        if (s.h1Ema9 !== null) {
+          s.h1Ema9 = this._calculateEma(
+            s.h1Ema9, s.h1Closes[h1Len - 1], this._h1FastPeriod,
+          );
+        } else {
+          s.h1Ema9 = this._calculateEmaFromArray(s.h1Closes, this._h1FastPeriod);
+        }
       }
-    }
 
-    if (h1Len >= this._h1SlowPeriod) {
-      if (s.h1Ema21 !== null) {
-        s.h1Ema21 = this._calculateEma(
-          s.h1Ema21, s.h1Closes[h1Len - 1], this._h1SlowPeriod,
-        );
-      } else {
-        s.h1Ema21 = this._calculateEmaFromArray(s.h1Closes, this._h1SlowPeriod);
+      if (h1Len >= this._h1SlowPeriod) {
+        if (s.h1Ema21 !== null) {
+          s.h1Ema21 = this._calculateEma(
+            s.h1Ema21, s.h1Closes[h1Len - 1], this._h1SlowPeriod,
+          );
+        } else {
+          s.h1Ema21 = this._calculateEmaFromArray(s.h1Closes, this._h1SlowPeriod);
+        }
       }
     }
 

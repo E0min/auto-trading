@@ -68,6 +68,54 @@ class TurtleBreakoutStrategy extends StrategyBase {
     maxSymbolsPerStrategy: 3,
     trailingStop: { enabled: false, activationPercent: '2.0', callbackPercent: '1.5' },
     description: '터틀 트레이딩 — Donchian 채널 돌파 + ATR 기반 2% 리스크 룰',
+    docs: {
+      summary: '리처드 데니스의 터틀 트레이딩 시스템을 구현한 순수 가격행동 추세추종 전략. Donchian 채널(20봉) 돌파로 진입하고, 10봉 채널 이탈 또는 ATR 기반 트레일링 스탑으로 청산한다. 50봉 Donchian 중간선을 추세 필터로 사용하여 추세 방향과 일치하는 돌파만 진입한다.',
+      timeframe: {
+        primary: '1m',
+        effective: '1m (약 20~50분 단위 채널)',
+        note: '1분봉 기준 20봉/50봉 Donchian 채널 계산. 실질적으로 단기 추세 돌파를 포착한다.',
+      },
+      entry: {
+        long: [
+          '종가가 20봉 Donchian 상단(이전 20봉 최고가)을 돌파',
+          '종가가 50봉 Donchian 중간선 위에 위치 (추세 필터)',
+          '시장 레짐이 TRENDING_UP, TRENDING_DOWN, VOLATILE 중 하나',
+        ],
+        short: [
+          '종가가 20봉 Donchian 하단(이전 20봉 최저가)을 하향 돌파',
+          '종가가 50봉 Donchian 중간선 아래에 위치 (추세 필터)',
+          '시장 레짐이 TRENDING_UP, TRENDING_DOWN, VOLATILE 중 하나',
+        ],
+      },
+      exit: {
+        takeProfit: '10봉 Donchian 채널 반대편 돌파 시 청산 (롱: 10봉 최저가 하회, 숏: 10봉 최고가 상회)',
+        stopLoss: 'ATR(20) × 2 거리에 고정 손절 설정',
+        trailing: '2×ATR 수익 달성 후 활성화, 최고/최저가에서 2×ATR 간격으로 추적',
+        indicator: null,
+      },
+      indicators: ['Donchian Channel(20)', 'Donchian Channel(10)', 'Donchian Channel(50)', 'ATR(20)'],
+      riskReward: {
+        typicalRR: '1:2~3',
+        maxDrawdownPerTrade: 'ATR × 2 (약 2~4%)',
+        avgHoldingPeriod: '수십 분 ~ 수 시간',
+      },
+      strengths: [
+        '순수 가격행동 기반으로 후행 지표 의존 없음',
+        'ATR 기반 동적 손절로 변동성에 적응',
+        '50봉 추세 필터로 역추세 진입 방지',
+      ],
+      weaknesses: [
+        '횡보장(RANGING/QUIET)에서 빈번한 거짓 돌파 발생',
+        '진입 후 즉시 반전 시 ATR × 2 손실 발생 가능',
+        '추세가 짧을 경우 Donchian 채널 청산이 늦어질 수 있음',
+      ],
+      bestFor: '변동성이 높고 명확한 추세가 형성된 시장에서 채널 돌파를 따라가는 추세추종 매매',
+      warnings: [
+        'QUIET/RANGING 레짐에서는 자동으로 비활성화됨',
+        '레버리지 3배 적용되므로 연속 손실 시 드로다운 주의',
+      ],
+      difficulty: 'beginner',
+    },
     defaultConfig: {
       entryChannel: 20,       // Donchian entry channel period (N-bar high/low)
       exitChannel: 10,        // Donchian exit channel period

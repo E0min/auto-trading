@@ -49,6 +49,71 @@ class AdaptiveRegimeStrategy extends StrategyBase {
     volatilityPreference: 'high',
     trailingStop: { enabled: false, activationPercent: '1.5', callbackPercent: '1.0' },
     description: '장세 적응형 멀티전략 — 시장 국면에 따라 자동으로 매매 모드 전환',
+    docs: {
+      summary: '시장 레짐(TRENDING_UP/DOWN, RANGING, VOLATILE, QUIET)에 따라 자동으로 매매 모드를 전환하는 적응형 전략. 추세장에서는 EMA+ADX 추세추종, 횡보장에서는 BB 평균회귀, 변동성장에서는 RSI+거래량 모멘텀, QUIET에서는 대기. 레짐별 포지션 사이즈/레버리지/TP/SL 동적 조절.',
+      timeframe: '1분봉 (IndicatorCache 통한 EMA/RSI/ADX/ATR/BB 계산)',
+      entry: {
+        long: [
+          'TRENDING_UP: EMA(9) > EMA(21) + RSI 40~50(풀백) + ADX > 25',
+          'RANGING: close < BB 하단(20,2) + RSI < 35',
+          'VOLATILE: RSI < 25(극과매도) + 거래량 서지(20봉 평균 * 1.5 초과)',
+        ].join(' | '),
+        short: [
+          'TRENDING_DOWN: EMA(9) < EMA(21) + RSI 50~60(랠리) + ADX > 25',
+          'RANGING: close > BB 상단(20,2) + RSI > 65',
+          'VOLATILE: RSI > 75(극과매수) + 거래량 서지',
+        ].join(' | '),
+        conditions: [
+          '레짐이 null이 아닌 상태 (AdaptiveRegime은 레짐 필수)',
+          'QUIET 레짐: 진입 없음 (데이터 축적만)',
+          'EMA(9), EMA(21) — 인크리멘탈 업데이트',
+          'RSI(14), ADX(14), ATR(14), BB(20,2) 계산 완료',
+          '기존 포지션 없음',
+        ],
+      },
+      exit: {
+        tp: '추세장: 2*ATR / 횡보·변동성장: 1*ATR (동적)',
+        sl: '추세장: 1.5*ATR / 횡보·변동성장: 0.8*ATR (동적)',
+        trailing: '추세장(TRENDING)에서만: 최고/최저가 대비 1*ATR 트레일링 스탑',
+        other: [
+          '레짐 비호환 시 즉시 청산 (롱 보유 중 TRENDING_DOWN, 숏 보유 중 TRENDING_UP)',
+        ],
+      },
+      indicators: [
+        'EMA(9), EMA(21) — 추세 방향 + 인크리멘탈',
+        'RSI(14) — 과매수/과매도 + 풀백 확인',
+        'ADX(14) — 추세 강도',
+        'ATR(14) — 동적 TP/SL/트레일링 거리',
+        'Bollinger Bands(20, 2) — 횡보장 상/하단',
+        '거래량 SMA(20) — 서지 확인',
+      ],
+      riskReward: {
+        tp: '추세: 2*ATR, 횡보/변동성: 1*ATR',
+        sl: '추세: 1.5*ATR, 횡보/변동성: 0.8*ATR',
+        ratio: '추세 약 1.3:1, 횡보 약 1.25:1',
+      },
+      strengths: [
+        '모든 장세에 자동 적응 — 단일 전략으로 전 시장 커버',
+        '레짐별 최적화된 포지션 사이즈/레버리지/TP/SL 자동 조절',
+        '레짐 비호환 시 즉시 청산으로 리스크 관리',
+        'ATR 기반 동적 TP/SL로 변동성 적응',
+      ],
+      weaknesses: [
+        '레짐 오판 시 잘못된 모드 적용 → 손실 확대',
+        '레짐 전환 빈번 시 잦은 포지션 정리/재진입 발생',
+        '각 모드의 진입 조건이 개별 전문 전략보다 단순',
+        'QUIET 장세에서는 완전 대기 — 수익 기회 없음',
+      ],
+      bestFor: '시장 국면이 자주 변하는 환경에서 수동 전략 전환 없이 자동 적응 매매를 원하는 경우',
+      warnings: [
+        'gracePeriodMs: 0 — 레짐 전환 시 즉시 반응 (유예기간 없음)',
+        'QUIET 레짐에서는 완전 비활성 (데이터 축적만)',
+        'AD-37 적용: 포지션 상태는 onFill() 확인 후에만 반영',
+        '레짐별 레버리지: 추세 3배, 횡보 2배, 변동성 3배',
+        '레짐별 포지션 사이즈: 추세 3%, 횡보 2%, 변동성 4%',
+      ],
+      difficulty: 'advanced',
+    },
     defaultConfig: {
       emaPeriodFast: 9,
       emaPeriodSlow: 21,

@@ -196,6 +196,18 @@ getSocket()      // 현재 소켓 인스턴스 조회 (없으면 null)
 | `TradingModeBanner` | 트레이딩 모드 배너 (LIVE=빨강 펄스, PAPER=초록 배너) |
 | `RiskAlertBanner` | 심각도 기반 리스크 알림 배너 (critical=수동 닫기, warning=30초, info=10초 자동 닫기) |
 
+### 전략 컴포넌트 (`components/strategy/`)
+
+| 컴포넌트 | 설명 |
+|----------|------|
+| `StrategyHub` | 전략 관리 패널 (카테고리/레짐 필터, 커스텀 전략 빌더 진입) |
+| `StrategyCard` | 전략 카드 (토글, 확장, Quick Stats Bar). Sprint R13: Quick Stats Bar에 난이도/지표 수 표시. 확장 시 3탭: 개요/상세/설정 |
+| `StrategyDetail` | 전략 상세 (포지션, 거래내역, 시그널 탭) |
+| `StrategyConfigPanel` | 파라미터 튜닝 UI (paramMeta 기반 자동 폼 생성, 슬라이더+숫자 입력) |
+| `StrategyExplainer` | 전략 설명 패널 (Sprint R13). `docs` 메타데이터 기반 — 요약, 진입/청산 조건, 사용 지표, 강점/약점, 적합 장세, 주의사항, 난이도 |
+| `CustomStrategyBuilder` | 커스텀 전략 빌더 (지표 정의, 조건 편집, 리스크 설정) |
+| `ConditionRow` | 커스텀 전략 조건 행 편집기 |
+
 ### 차트 공통 컴포넌트 (`components/charts/`) (Sprint R10)
 
 | 컴포넌트 | 설명 |
@@ -289,6 +301,8 @@ getStrategyCategory('GridStrategy') // → 'indicator-light'
 translateRejectReason('confidence_too_low')     // → '신뢰도 부족' (Sprint R4)
 translateStrategyCategory('price-action')         // → '프라이스 액션' (Sprint R11)
 formatPnlValue('523.45')                          // → '+523.45' (양수 시 + 접두사) (Sprint R11)
+translateDifficulty('beginner')                    // → '초급' (Sprint R13)
+getDifficultyColor('advanced')                     // → 'text-red-400' (Sprint R13)
 ```
 
 ### 전략 카테고리 매핑
@@ -318,7 +332,9 @@ formatPnlValue('523.45')                          // → '+523.45' (양수 시 +
 | `Trade` | `types/index.ts` | 거래 기록 |
 | `Position` | `types/index.ts` | 포지션 정보 |
 | `Signal` | `types/index.ts` | 시그널 정보 |
-| `StrategyListItem` | `types/index.ts` | 전략 목록 항목 |
+| `StrategyListItem` | `types/index.ts` | 전략 목록 항목 (Sprint R13: docs, maxConcurrentPositions, cooldownMs, warmupCandles, volatilityPreference, runtime 추가) |
+| `StrategyDocs` | `types/index.ts` | 전략 설명 메타데이터 (Sprint R13) |
+| `StrategyRuntime` | `types/index.ts` | 전략 런타임 정보 — 봇 실행 중 currentConfig, assignedSymbols (Sprint R13) |
 | `SessionStats` | `types/index.ts` | 세션 통계 |
 | `HealthReport` | `types/index.ts` | 시스템 상태 |
 | `MarketRegimeData` | `types/index.ts` | 시장 레짐 데이터 |

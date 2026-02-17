@@ -418,6 +418,60 @@ StrategyBase에 opt-in 방식의 trailing stop이 내장되어 있습니다. 전
 3. onFill() CLOSE 분기에서 trailing state 리셋
 4. `_checkTrailingStop()`을 try-catch로 감싸 fail-safe
 
+### 전략 docs 메타데이터 (Sprint R13, AD-13-7)
+
+모든 18개 전략에 `metadata.docs` 객체가 추가되었습니다. 프론트엔드의 "개요" 탭에서 전략 동작 방식을 상세히 설명합니다.
+
+**스키마**:
+```javascript
+docs: {
+  summary: 'string',           // 2~3문장 개요
+  timeframe: 'string',         // 수신 분봉 + 실질 참조 기간
+  entry: {
+    long: 'string',            // 롱 진입 조건 설명
+    short: 'string',           // 숏 진입 조건 설명
+    conditions: ['string'],    // 공통 진입 전제조건 목록
+  },
+  exit: {
+    tp: 'string',              // 익절 조건
+    sl: 'string',              // 손절 조건
+    trailing: 'string',        // 트레일링 스탑 여부
+    other: ['string'],         // 기타 청산 조건
+  },
+  indicators: ['string'],      // 사용 지표 목록
+  riskReward: {
+    tp: 'string',              // 익절 %
+    sl: 'string',              // 손절 %
+    ratio: 'string',           // RR 비율
+  },
+  strengths: ['string'],       // 강점 (최대 4개)
+  weaknesses: ['string'],      // 약점 (최대 4개)
+  bestFor: 'string',           // 적합한 장세
+  warnings: ['string'],        // 주의사항
+  difficulty: 'beginner | intermediate | advanced',
+}
+```
+
+### paramMeta 그룹 분류 (Sprint R13, AD-13-3)
+
+`strategyParamMeta.js`의 각 파라미터에 `group`과 `description` 필드가 추가되었습니다:
+- `signal`: 진입/청산 조건 파라미터 (rsiOversold, tpPercent, slPercent 등)
+- `indicator`: 지표 설정 파라미터 (rsiPeriod, bbPeriod, macdFast 등)
+- `risk`: 트레일링/최대손실 파라미터 (stopMultiplier, maxDrawdownPercent 등)
+- `sizing`: 포지션 크기/레버리지 (positionSizePercent, leverage 등)
+
+### 서버측 Config 검증 (Sprint R13, R13-3)
+
+`PUT /strategies/:name/config` 요청 시 `strategyConfigValidator`가 paramMeta의 min/max/type 제약조건을 검증합니다. 범위 초과, 타입 불일치 등 검증 실패 시 400 응답과 `validationErrors` 배열이 반환됩니다.
+
+### Atomic updateConfig (Sprint R13, R13-4)
+
+`StrategyBase.updateConfig()`이 immutable replace 패턴(`{ ...this.config, ...newConfig }`)으로 변경되고, `config_updated` 이벤트를 emit합니다.
+
+### 하드코딩 레버리지 제거 (Sprint R13, R13-2)
+
+BollingerReversion, Supertrend, FundingRate, MaTrend 전략에서 시그널 emit 시 하드코딩된 `leverage: '3'` 또는 `leverage: '5'`가 `leverage: String(this.config.leverage || '3')`으로 변경되어 config 기반 동적 레버리지를 사용합니다.
+
 ### Close 시그널 reduceOnly (Sprint R12, P12-2)
 
 16개 전략의 close/exit 시그널에 `reduceOnly: true` 속성이 일괄 추가되었습니다. RiskEngine의 reduceOnly bypass (AD-46)와 결합하여, close 시그널이 CircuitBreaker/DrawdownMonitor에 의해 차단되지 않고 항상 실행됩니다.

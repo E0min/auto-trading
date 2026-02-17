@@ -51,6 +51,54 @@ class TrendlineBreakoutStrategy extends StrategyBase {
     volatilityPreference: 'neutral',
     maxSymbolsPerStrategy: 3,
     description: '추세선 돌파 -- 피봇 2개 연결 추세선 돌파 시 추격 진입, 짧은 손절 = 높은 손익비',
+    docs: {
+      summary: '1분봉을 1시간봉으로 집계한 뒤, 피봇 고점/저점 2개를 연결하여 저항/지지 추세선을 그리고, 실시간으로 추세선 돌파 시 진입하는 전략. 손절을 추세선 바로 뒤에 설정하여 짧은 손절 = 높은 손익비를 달성한다. 포지션 보유 중에는 추세선을 동결하여 재계산하지 않는다.',
+      timeframe: {
+        primary: '1m',
+        effective: '1h (60분 집계봉)',
+        note: '1분봉 60개를 1시간봉으로 집계하여 피봇 감지 및 추세선을 계산한다.',
+      },
+      entry: {
+        long: [
+          '저항 추세선(피봇 고점 2개 연결)의 투사 가격을 상향 돌파',
+          '돌파 거리 >= 0.1×ATR (노이즈 필터)',
+          '레짐이 TRENDING_UP, TRENDING_DOWN, 또는 VOLATILE',
+        ],
+        short: [
+          '지지 추세선(피봇 저점 2개 연결)의 투사 가격을 하향 돌파',
+          '돌파 거리 >= 0.1×ATR (노이즈 필터)',
+          '레짐이 TRENDING_UP, TRENDING_DOWN, 또는 VOLATILE',
+        ],
+      },
+      exit: {
+        takeProfit: null,
+        stopLoss: '추세선 투사 가격 ∓ 1.0×ATR 버퍼',
+        trailing: '1.5×ATR 수익 후 활성화, 1.5×ATR 간격으로 추적',
+        indicator: null,
+      },
+      indicators: ['ATR(14)', 'Pivot High/Low(5좌/3우)', '추세선 투사'],
+      riskReward: {
+        typicalRR: '1:3+ (추세선 바로 뒤 손절 = 짧은 SL)',
+        maxDrawdownPerTrade: '1×ATR (추세선~손절 거리)',
+        avgHoldingPeriod: '수 시간',
+      },
+      strengths: [
+        '짧은 손절 거리로 높은 손익비 달성 가능',
+        '포지션 중 추세선 동결로 안정적인 관리',
+        '추세선 기울기 기반 동적 신뢰도 계산',
+      ],
+      weaknesses: [
+        '1시간 집계로 인해 신호 발생까지 시간이 걸림',
+        '피봇 감지에 최소 5+3봉이 필요하여 빠른 시장 변화에 늦을 수 있음',
+        '추세선이 감지되지 않으면 진입 불가',
+      ],
+      bestFor: '1시간봉 기준 명확한 추세선이 형성된 시장에서의 돌파 추격 매매',
+      warnings: [
+        '1시간 집계 완성까지 60분 소요',
+        '피봇 간 최소 5봉 거리 필요',
+      ],
+      difficulty: 'intermediate',
+    },
     defaultConfig: {
       aggregationMinutes: 60,           // Aggregation bar size (minutes)
       pivotLeftBars: 5,                 // Pivot detection: left bars

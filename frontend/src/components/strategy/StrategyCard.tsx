@@ -1,13 +1,17 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import Badge from '@/components/ui/Badge';
 import Spinner from '@/components/ui/Spinner';
 import StrategyDetail from '@/components/strategy/StrategyDetail';
+import StrategyConfigPanel from '@/components/strategy/StrategyConfigPanel';
 import { useCountdown } from '@/hooks/useCountdown';
+import StrategyExplainer from '@/components/strategy/StrategyExplainer';
 import {
   translateStrategyName,
   translateRegime,
+  translateDifficulty,
+  getDifficultyColor,
   getStrategyCategory,
   translateStrategyCategory,
   getRegimeColor,
@@ -46,7 +50,6 @@ export default function StrategyCard({
   graceExpiresAt,
   recommended,
   expanded,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   botRunning,
   toggling,
   sessionId,
@@ -146,20 +149,31 @@ export default function StrategyCard({
                 {translateStrategyCategory(category)}
               </span>
             </div>
-            {/* Regime tags — dot + text only */}
-            {regimes.length > 0 && (
-              <div className="flex gap-2 mt-1.5">
-                {regimes.slice(0, 3).map((r) => (
-                  <span
-                    key={r}
-                    className={cn('inline-flex items-center gap-1 text-[10px]', getRegimeColor(r))}
-                  >
-                    <span className={cn('w-1 h-1 rounded-full', getRegimeDotColor(r))} />
-                    {translateRegime(r)}
+            {/* Quick Stats Bar — regime tags + key metrics */}
+            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+              {regimes.slice(0, 3).map((r) => (
+                <span
+                  key={r}
+                  className={cn('inline-flex items-center gap-1 text-[10px]', getRegimeColor(r))}
+                >
+                  <span className={cn('w-1 h-1 rounded-full', getRegimeDotColor(r))} />
+                  {translateRegime(r)}
+                </span>
+              ))}
+              {regimes.length > 0 && strategy.docs && (
+                <span className="text-[var(--border-muted)] text-[10px]">|</span>
+              )}
+              {strategy.docs && (
+                <>
+                  <span className={cn('text-[10px]', getDifficultyColor(strategy.docs.difficulty))}>
+                    {translateDifficulty(strategy.docs.difficulty)}
                   </span>
-                ))}
-              </div>
-            )}
+                  <span className="text-[10px] text-[var(--text-muted)]">
+                    {strategy.docs.indicators.length}개 지표
+                  </span>
+                </>
+              )}
+            </div>
           </div>
 
           {/* Right side: risk + status + countdown */}
@@ -198,16 +212,88 @@ export default function StrategyCard({
         </button>
       </div>
 
-      {/* Expanded detail */}
+      {/* Expanded detail with tabs */}
       {expanded && (
-        <div className="px-4 pb-4 animate-fade-in">
-          <StrategyDetail
-            strategyName={strategy.name}
-            sessionId={sessionId}
-            realtimeSignals={realtimeSignals}
-            positions={positions}
-          />
+        <ExpandedContent
+          strategy={strategy}
+          botRunning={botRunning}
+          sessionId={sessionId}
+          realtimeSignals={realtimeSignals}
+          positions={positions}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Expanded content with tabs ──────────────────────────────────────────────
+
+type ExpandedTab = 'overview' | 'detail' | 'config';
+
+function ExpandedContent({
+  strategy,
+  botRunning,
+  sessionId,
+  realtimeSignals,
+  positions,
+}: {
+  strategy: StrategyListItem;
+  botRunning: boolean;
+  sessionId: string | null;
+  realtimeSignals: Signal[];
+  positions: Position[];
+}) {
+  const hasDocs = !!strategy.docs;
+  const hasParamMeta = (strategy.paramMeta?.length ?? 0) > 0;
+  const defaultTab: ExpandedTab = hasDocs ? 'overview' : 'detail';
+  const [tab, setTab] = useState<ExpandedTab>(defaultTab);
+  const hasTabs = hasDocs || hasParamMeta;
+
+  const tabs: { key: ExpandedTab; label: string; show: boolean }[] = [
+    { key: 'overview', label: '개요', show: hasDocs },
+    { key: 'detail', label: '상세', show: true },
+    { key: 'config', label: '설정', show: hasParamMeta },
+  ];
+
+  return (
+    <div className="px-4 pb-4 animate-fade-in">
+      {/* Tab bar */}
+      {hasTabs && (
+        <div className="flex gap-1 mb-3 border-b border-[var(--border-subtle)]">
+          {tabs.filter(t => t.show).map(t => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={cn(
+                'px-3 py-1.5 text-[11px] transition-colors border-b-2 -mb-px',
+                tab === t.key
+                  ? 'text-[var(--accent)] border-[var(--accent)]'
+                  : 'text-[var(--text-muted)] border-transparent hover:text-[var(--text-secondary)]',
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
+      )}
+
+      {tab === 'overview' && strategy.docs ? (
+        <StrategyExplainer docs={strategy.docs} strategyName={strategy.name} />
+      ) : tab === 'config' ? (
+        <StrategyConfigPanel
+          strategyName={strategy.name}
+          paramMeta={strategy.paramMeta || []}
+          defaultConfig={strategy.defaultConfig}
+          botRunning={botRunning}
+        />
+      ) : (
+        <StrategyDetail
+          strategyName={strategy.name}
+          sessionId={sessionId}
+          realtimeSignals={realtimeSignals}
+          positions={positions}
+        />
       )}
     </div>
   );

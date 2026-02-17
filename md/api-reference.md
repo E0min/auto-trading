@@ -85,12 +85,36 @@
         "defaultConfig": { "entryChannel": 20, "exitChannel": 10 },
         "targetRegimes": ["trending_up", "trending_down", "volatile"],
         "riskLevel": "medium",
-        "active": true
+        "active": true,
+        "paramMeta": [
+          { "field": "entryChannel", "label": "진입 채널", "type": "integer", "min": 5, "max": 100, "step": 1, "group": "indicator", "description": "..." }
+        ],
+        "docs": {
+          "summary": "...", "timeframe": "1분봉", "entry": { "long": "...", "short": "...", "conditions": [] },
+          "exit": { "tp": "...", "sl": "...", "trailing": "...", "other": [] },
+          "indicators": ["EMA(20)", "ATR(14)"], "riskReward": { "tp": "+3%", "sl": "-2%", "ratio": "1:1.5" },
+          "strengths": [], "weaknesses": [], "bestFor": "...", "warnings": [], "difficulty": "intermediate"
+        },
+        "maxConcurrentPositions": 1,
+        "cooldownMs": 300000,
+        "warmupCandles": 50,
+        "volatilityPreference": "neutral",
+        "maxSymbolsPerStrategy": 1,
+        "runtime": {
+          "currentConfig": { "entryChannel": 20 },
+          "assignedSymbols": ["BTCUSDT"]
+        }
       }
     ]
   }
 }
 ```
+
+> **Sprint R13 확장**: `paramMeta` (group, description 포함), `docs` (전략 설명 메타데이터), `maxConcurrentPositions`, `cooldownMs`, `warmupCandles`, `volatilityPreference`, `maxSymbolsPerStrategy`, `runtime` (봇 실행 중일 때만) 필드가 추가되었습니다.
+
+#### PUT /api/bot/strategies/:name/config 요청
+
+Sprint R13: 서버측 config 검증이 추가되었습니다. `strategyConfigValidator`가 paramMeta의 min/max/type 제약조건을 검사하여, 위반 시 `400 Bad Request` + `validationErrors` 배열을 반환합니다.
 
 ---
 

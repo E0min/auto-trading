@@ -353,6 +353,49 @@
 
 ---
 
+## Tier R13 — 전략 모듈화 + 파라미터 튜닝 + UX (Round 13)
+
+### Backend T0 (즉시)
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R13-1 | T0 | Backend | MaTrend 타임프레임 버그 수정 (timestamp 기반 집계) | 3/3 동의 | R13 | done |
+| R13-2 | T0 | Backend | 하드코딩 레버리지 제거 (4개 전략 파일) | 3/3 동의 | R13 | done |
+| R13-3 | T0 | Backend | 서버측 config 검증 (strategyConfigValidator) | 3/3 동의 | R13 | done |
+| R13-4 | T0 | Backend | updateConfig atomic replace + 이벤트 발행 | 3/3 동의 | R13 | done |
+
+### Backend T1 (데이터 계층)
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R13-5 | T1 | Backend | paramMeta group + description 추가 (18개 전략) | 3/3 동의 | R13 | done |
+| R13-6 | T1 | Backend | 전략 docs 메타데이터 18개 작성 (AD-13-7 스키마) | 3/3 동의 | R13 | done |
+| R13-7 | T1 | Backend | 통합 전략 정보 API (GET /strategies 확장) | 3/3 동의 | R13 | done |
+| R13-8 | T1 | Backend | CustomStrategyStore 비동기 I/O 전환 | 3/3 동의 | R13 | done |
+
+### Frontend T1
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R13-9 | T1 | Frontend | Quick Stats Bar (StrategyCard 리디자인) | 3/3 동의 | R13 | done |
+| R13-10 | T1 | Frontend | 전략 설명 패널 (StrategyExplainer "개요" 탭) | 3/3 동의 | R13 | done |
+
+### 보류 (R14)
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R13-D1 | T2 | Backend | 전략 프리셋 시스템 (글로벌 vs 전략별 스키마) | 3/3 동의 | R13 | deferred |
+| R13-D2 | T2 | Backend | 실시간 전략 상태 대시보드 (getPublicState) | 2/3 동의 | R13 | deferred |
+| R13-D3 | T3 | Backend | SignalPipeline 추출 리팩토링 | 1/3 | R13 | deferred |
+| R13-D4 | T2 | Frontend | 파이프라인 시각화 (TradingPipeline.tsx) | 2/3 동의 | R13 | deferred |
+| R13-D5 | T2 | Frontend | 모듈별 설정 패널 아코디언 재구성 | 3/3 동의 | R13 | deferred |
+| R13-D6 | T3 | Frontend | 전략 비교 뷰 | 2/3 동의 | R13 | deferred |
+| R13-D7 | T3 | Frontend | 파라미터 효과 시각화 | 1/3 | R13 | deferred |
+| R13-D8 | T3 | Frontend | 모바일 반응형 | 3/3 동의 | R13 | deferred |
+| R13-D9 | T3 | Frontend | 전략 숨김/표시 기능 | 2/3 동의 | R13 | deferred |
+
+---
+
 ## 아키텍처 결정 참조
 → `decisions/round_1.md` — AD-1~AD-6 참조
 → `decisions/round_2.md` — AD-7~AD-12 참조 (T0-1~T0-9 구현 세부사항)
@@ -366,3 +409,4 @@
 → `decisions/round_10.md` — AD-58~AD-62 참조 (R10 Tier 3 Enhancement)
 → `decisions/round_11.md` — AD-63~AD-68 참조 (R11 코드베이스 재분석 Round 2)
 → `decisions/round_12.md` — AD-69~AD-73 참조 (R12 코드베이스 재분석 Round 3)
+→ `decisions/round_13.md` — AD-13-1~AD-13-7 참조 (R13 전략 모듈화 + 파라미터 튜닝 + UX)

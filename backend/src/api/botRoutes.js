@@ -8,6 +8,9 @@
 
 const { createLogger } = require('../utils/logger');
 const registry = require('../strategies');
+const { getParamMeta } = require('../services/strategyParamMeta');
+const { validateStrategyConfig } = require('../services/strategyConfigValidator');
+const CustomRuleStrategy = require('../strategies/custom/CustomRuleStrategy');
 
 const log = createLogger('BotRoutes');
 
@@ -15,9 +18,10 @@ const log = createLogger('BotRoutes');
  * @param {object} deps
  * @param {import('../services/botService')} deps.botService
  * @param {import('../services/riskEngine')} deps.riskEngine
+ * @param {import('../services/customStrategyStore')} [deps.customStrategyStore]
  * @returns {import('express').Router}
  */
-module.exports = function createBotRoutes({ botService, riskEngine }) {
+module.exports = function createBotRoutes({ botService, riskEngine, customStrategyStore }) {
   const router = require('express').Router();
 
   // POST /api/bot/start — start bot with optional config body
@@ -145,15 +149,75 @@ module.exports = function createBotRoutes({ botService, riskEngine }) {
     try {
       const allStrategies = registry.listWithMetadata();
       const activeNames = botService.strategies.map((s) => s.name);
+      const isRunning = botService._running;
+      const router_ = botService.strategyRouter;
 
-      const strategies = allStrategies.map((meta) => ({
-        name: meta.name,
-        description: meta.description || '',
-        defaultConfig: meta.defaultConfig || {},
-        targetRegimes: meta.targetRegimes || [],
-        riskLevel: meta.riskLevel || 'medium',
-        active: activeNames.includes(meta.name),
-      }));
+      const strategies = allStrategies.map((meta) => {
+        const entry = {
+          name: meta.name,
+          description: meta.description || '',
+          defaultConfig: meta.defaultConfig || {},
+          targetRegimes: meta.targetRegimes || [],
+          riskLevel: meta.riskLevel || 'medium',
+          active: activeNames.includes(meta.name),
+          paramMeta: getParamMeta(meta.name) || [],
+          // R13-7: additional metadata fields
+          docs: meta.docs || null,
+          maxConcurrentPositions: meta.maxConcurrentPositions || 1,
+          cooldownMs: meta.cooldownMs || 0,
+          warmupCandles: meta.warmupCandles || 0,
+          volatilityPreference: meta.volatilityPreference || 'neutral',
+          maxSymbolsPerStrategy: meta.maxSymbolsPerStrategy || 1,
+        };
+
+        // R13-7: runtime info when bot is running
+        if (isRunning) {
+          const instance = botService.strategies.find((s) => s.name === meta.name);
+          entry.runtime = {
+            currentConfig: instance ? instance.getConfig() : null,
+            assignedSymbols: router_ ? router_.getAssignedSymbols(meta.name) : [],
+          };
+        }
+
+        return entry;
+      });
+
+      // Append custom strategies
+      if (customStrategyStore) {
+        const customDefs = customStrategyStore.list();
+        for (const def of customDefs) {
+          const cName = `Custom_${def.id}`;
+          const entry = {
+            name: cName,
+            description: def.description || '커스텀 전략',
+            defaultConfig: def.config || {},
+            targetRegimes: def.targetRegimes || [],
+            riskLevel: 'medium',
+            active: activeNames.includes(cName),
+            paramMeta: [],
+            customId: def.id,
+            customDef: def,
+            // R13-7: additional metadata fields
+            docs: null,
+            maxConcurrentPositions: 1,
+            cooldownMs: 0,
+            warmupCandles: 0,
+            volatilityPreference: 'neutral',
+            maxSymbolsPerStrategy: 1,
+          };
+
+          // R13-7: runtime info when bot is running
+          if (isRunning) {
+            const instance = botService.strategies.find((s) => s.name === cName);
+            entry.runtime = {
+              currentConfig: instance ? instance.getConfig() : null,
+              assignedSymbols: router_ ? router_.getAssignedSymbols(cName) : [],
+            };
+          }
+
+          strategies.push(entry);
+        }
+      }
 
       res.json({ success: true, data: { strategies } });
     } catch (err) {
@@ -223,10 +287,118 @@ module.exports = function createBotRoutes({ botService, riskEngine }) {
         });
       }
 
+      const { valid, errors } = validateStrategyConfig(name, newConfig);
+      if (!valid) {
+        return res.status(400).json({
+          success: false,
+          error: 'Config validation failed',
+          validationErrors: errors,
+        });
+      }
+
       strategy.updateConfig(newConfig);
       res.json({ success: true, data: { name, config: strategy.getConfig() } });
     } catch (err) {
       log.error('PUT /strategies/:name/config — error', { error: err });
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // =========================================================================
+  // Custom strategy CRUD endpoints
+  // =========================================================================
+
+  // GET /api/bot/custom-strategies — list all custom strategies
+  router.get('/custom-strategies', (req, res) => {
+    try {
+      if (!customStrategyStore) {
+        return res.json({ success: true, data: [] });
+      }
+      const list = customStrategyStore.list();
+      res.json({ success: true, data: list });
+    } catch (err) {
+      log.error('GET /custom-strategies — error', { error: err });
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/bot/custom-strategies — create a new custom strategy
+  router.post('/custom-strategies', (req, res) => {
+    try {
+      if (!customStrategyStore) {
+        return res.status(500).json({ success: false, error: 'Custom strategy store not available' });
+      }
+
+      const def = req.body;
+      if (!def || !def.name) {
+        return res.status(400).json({ success: false, error: '전략 이름은 필수입니다.' });
+      }
+      if (!def.indicators || !Array.isArray(def.indicators)) {
+        return res.status(400).json({ success: false, error: '지표 정의가 필요합니다.' });
+      }
+      if (!def.rules || typeof def.rules !== 'object') {
+        return res.status(400).json({ success: false, error: '규칙 정의가 필요합니다.' });
+      }
+
+      const saved = customStrategyStore.save(def);
+
+      // Register dynamically in strategy registry
+      const strategyName = `Custom_${saved.id}`;
+      if (!registry.has(strategyName)) {
+        const metadata = CustomRuleStrategy._buildMetadata(saved);
+        const StrategyClass = class extends CustomRuleStrategy {
+          static metadata = metadata;
+          constructor(config = {}) { super(saved, config); }
+        };
+        registry.register(strategyName, StrategyClass);
+      }
+
+      res.json({ success: true, data: saved });
+    } catch (err) {
+      log.error('POST /custom-strategies — error', { error: err });
+      res.status(err.message.includes('최대') ? 400 : 500).json({ success: false, error: err.message });
+    }
+  });
+
+  // PUT /api/bot/custom-strategies/:id — update an existing custom strategy
+  router.put('/custom-strategies/:id', (req, res) => {
+    try {
+      if (!customStrategyStore) {
+        return res.status(500).json({ success: false, error: 'Custom strategy store not available' });
+      }
+
+      const { id } = req.params;
+      const def = req.body;
+
+      if (!def || typeof def !== 'object') {
+        return res.status(400).json({ success: false, error: 'Request body must be a valid definition object' });
+      }
+
+      const updated = customStrategyStore.update(id, def);
+      res.json({ success: true, data: updated });
+    } catch (err) {
+      log.error('PUT /custom-strategies/:id — error', { error: err });
+      res.status(err.message.includes('찾을 수 없') ? 404 : 500).json({ success: false, error: err.message });
+    }
+  });
+
+  // DELETE /api/bot/custom-strategies/:id — delete a custom strategy
+  router.delete('/custom-strategies/:id', (req, res) => {
+    try {
+      if (!customStrategyStore) {
+        return res.status(500).json({ success: false, error: 'Custom strategy store not available' });
+      }
+
+      const { id } = req.params;
+      const deleted = customStrategyStore.delete(id);
+
+      if (!deleted) {
+        return res.status(404).json({ success: false, error: `커스텀 전략 "${id}"을(를) 찾을 수 없습니다.` });
+      }
+
+      res.json({ success: true, data: { id, deleted: true } });
+    } catch (err) {
+      log.error('DELETE /custom-strategies/:id — error', { error: err });
       res.status(500).json({ success: false, error: err.message });
     }
   });

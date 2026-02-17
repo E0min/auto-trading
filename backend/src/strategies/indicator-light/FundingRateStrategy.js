@@ -50,6 +50,56 @@ class FundingRateStrategy extends StrategyBase {
     warmupCandles: 1,
     volatilityPreference: 'neutral',
     description: '펀딩비 역발상 + OI 분석 + 켈리 공식',
+    docs: {
+      summary: '극단적 펀딩비 불균형을 역발상으로 매매하는 전략. 펀딩비가 연속 음수(-0.01% 이하)이면 숏스퀴즈를 기대하여 롱, 연속 양수(+0.03% 이상)이면 롱스퀴즈를 기대하여 숏 진입. OI(미결제약정) 변화율 확인 및 Half-Kelly 포지션 사이징 적용.',
+      timeframe: '1분봉 (틱으로 펀딩비/OI 수집, 캔들로 SMA(20) 계산)',
+      entry: {
+        long: '최근 3회 연속 펀딩비 < 0 + 최신 펀딩비 ≤ -0.01% + 24시간 OI 변화율 > 5% + 가격이 SMA(20) ±3% 이내',
+        short: '최근 3회 연속 펀딩비 > 0 + 최신 펀딩비 ≥ +0.03% + 24시간 OI 변화율 > 5% + 가격이 SMA(20) ±3% 이내',
+        conditions: [
+          '연속 3회(consecutivePeriods) 동일 부호 펀딩비',
+          '펀딩비 임계값 초과 (롱: ≤ -0.01%, 숏: ≥ +0.03%)',
+          'OI 24시간 변화율 > 5%',
+          '가격이 SMA(20) ±3% 이내 (과열 방지)',
+          '레짐: TRENDING_DOWN/VOLATILE (롱) 또는 TRENDING_UP/VOLATILE (숏)',
+          'SMA(20) 계산 가능 (최소 20봉)',
+        ],
+      },
+      exit: {
+        tp: '+3% (진입가 대비)',
+        sl: '-2% (진입가 대비)',
+        trailing: '없음',
+        other: [
+          '24시간 시간 제한 초과 시 강제 청산',
+          '펀딩비 정상화(롱: 0% 이상 회복, 숏: 0% 이하 회복) 시 50% 부분 익절',
+        ],
+      },
+      indicators: ['SMA(20)', '펀딩비(Funding Rate)', '미결제약정(Open Interest)'],
+      riskReward: {
+        tp: '+3%',
+        sl: '-2%',
+        ratio: '1.5:1',
+      },
+      strengths: [
+        '군중 심리의 극단을 역이용하여 높은 승률 기대',
+        'Half-Kelly 공식으로 과학적 포지션 사이징',
+        '펀딩비 정상화 시 부분 익절로 수익 확보',
+        '시간 제한(24h)으로 장기 포지션 리스크 제한',
+      ],
+      weaknesses: [
+        '펀딩비/OI 데이터 수집에 시간 소요 (8시간 주기)',
+        '극단적 펀딩비가 더 극단으로 갈 수 있음',
+        '데이터 소스(ticker에서 펀딩비/OI) 가용성에 의존',
+        '연속 3회 조건 충족까지 대기 시간이 김',
+      ],
+      bestFor: '펀딩비가 극단적으로 쏠린 상황에서 숏/롱 스퀴즈를 역이용한 역발상 매매',
+      warnings: [
+        '펀딩비 데이터가 ticker에 포함되어야 작동 — FundingDataService(T2-4) 필요',
+        'OI 데이터 없이는 진입 조건 미충족',
+        '레버리지 기본값 3배 — 역추세 전략이므로 과도한 레버리지 주의',
+      ],
+      difficulty: 'intermediate',
+    },
     defaultConfig: {
       longFundingThreshold: '-0.01',
       shortFundingThreshold: '0.03',
@@ -230,7 +280,7 @@ class FundingRateStrategy extends StrategyBase {
         suggestedPrice: currentPrice,
         stopLossPrice: multiply(currentPrice, subtract('1', divide(this._slPercent, '100'))),
         confidence,
-        leverage: '3',
+        leverage: String(this.config.leverage || '3'),
         marketContext: {
           fundingRate: latestFunding,
           oiChange24h: oiChange,
@@ -277,7 +327,7 @@ class FundingRateStrategy extends StrategyBase {
         suggestedPrice: currentPrice,
         stopLossPrice: multiply(currentPrice, add('1', divide(this._slPercent, '100'))),
         confidence,
-        leverage: '3',
+        leverage: String(this.config.leverage || '3'),
         marketContext: {
           fundingRate: latestFunding,
           oiChange24h: oiChange,
@@ -465,7 +515,7 @@ class FundingRateStrategy extends StrategyBase {
       suggestedPrice: this._s().latestPrice,
       reduceOnly: true,
       confidence: '1.0000',
-      leverage: '3',
+      leverage: String(this.config.leverage || '3'),
       marketContext: {
         strategy: 'FundingRateStrategy',
         reason,
@@ -505,7 +555,7 @@ class FundingRateStrategy extends StrategyBase {
       suggestedQty: '50%',
       reduceOnly: true,
       confidence: '0.8000',
-      leverage: '3',
+      leverage: String(this.config.leverage || '3'),
       marketContext: {
         strategy: 'FundingRateStrategy',
         reason,

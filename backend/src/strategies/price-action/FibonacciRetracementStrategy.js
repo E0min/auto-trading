@@ -56,6 +56,58 @@ class FibonacciRetracementStrategy extends StrategyBase {
     volatilityPreference: 'neutral',
     maxSymbolsPerStrategy: 3,
     description: '피보나치 되돌림 — 골든 존(0.382-0.618) 바운스 + ATR 기반 리스크 관리',
+    docs: {
+      summary: '최근 50봉의 가장 큰 스윙 고점/저점을 찾아 피보나치 되돌림 레벨(0.236~0.786)과 확장 레벨(1.272, 1.618)을 계산하고, 골든 존(0.382~0.618)에서 반등/반락 시 진입하는 전략. TP1(스윙 극값)에서 50% 부분 청산 후 트레일링으로 나머지를 관리한다.',
+      timeframe: {
+        primary: '1m',
+        effective: '1m (50봉 = 약 50분 스윙)',
+        note: '1분봉 50봉 기준 스윙을 분석하므로 단기 조정 구간에서의 되돌림을 포착한다.',
+      },
+      entry: {
+        long: [
+          '상승 스윙(저점→고점) 감지 후 되돌림 발생',
+          '현재가가 골든 존(0.382~0.618 사이)에 위치',
+          '양봉(close > open) 확인 — 반등 캔들',
+          '저가가 0.786 레벨 위에 위치 (무효화 미발생)',
+          '레짐이 TRENDING_UP 또는 RANGING',
+        ],
+        short: [
+          '하락 스윙(고점→저점) 감지 후 되돌림 발생',
+          '현재가가 골든 존(0.382~0.618 사이)에 위치',
+          '음봉(close < open) 확인 — 반락 캔들',
+          '고가가 0.786 레벨 아래에 위치 (무효화 미발생)',
+          '레짐이 TRENDING_DOWN 또는 RANGING',
+        ],
+      },
+      exit: {
+        takeProfit: 'TP1: 스윙 극값(50% 부분 청산), TP2: 1.272 확장 레벨(전량 청산)',
+        stopLoss: '0.786 무효화 레벨 - 0.5×ATR 버퍼',
+        trailing: 'TP1 도달 후 자동 활성화, 2×ATR 간격으로 추적',
+        indicator: null,
+      },
+      indicators: ['ATR(14)', 'Fibonacci Levels(0.236~1.618)'],
+      riskReward: {
+        typicalRR: '1:2~3 (0.786 손절 → 스윙 극값/1.272 확장)',
+        maxDrawdownPerTrade: '골든존~0.786 거리 + 0.5×ATR',
+        avgHoldingPeriod: '수십 분 ~ 수 시간',
+      },
+      strengths: [
+        '피보나치 골든 존은 기관 트레이더도 많이 참고하는 레벨',
+        'TP1 부분 청산 + TP2 전량 청산으로 수익 극대화',
+        '0.786 무효화 레벨로 명확한 손절 기준 제공',
+      ],
+      weaknesses: [
+        '스윙 방향 판단이 잘못되면 골든 존 진입 자체가 역추세 매매가 됨',
+        '최소 3×ATR 이상의 스윙이 필요하므로 저변동성 구간에서는 신호 없음',
+        '1분봉 기준 피보나치 레벨은 상위 타임프레임 대비 신뢰도가 낮음',
+      ],
+      bestFor: '명확한 상승/하락 스윙 이후 되돌림 구간에서 골든 존 바운스를 노리는 매매',
+      warnings: [
+        '최소 50봉의 히스토리 필요',
+        '스윙 크기가 3×ATR 미만이면 무시됨',
+      ],
+      difficulty: 'intermediate',
+    },
     defaultConfig: {
       swingPeriod: 50,              // Lookback bars for swing detection
       atrPeriod: 14,                // ATR calculation period

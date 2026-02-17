@@ -48,6 +48,60 @@ class RsiPivotStrategy extends StrategyBase {
     maxSymbolsPerStrategy: 3,
     trailingStop: { enabled: false, activationPercent: '1.0', callbackPercent: '0.8' },
     description: 'RSI + Pivot 역추세 (양방향)',
+    docs: {
+      summary: 'RSI(14) 과매수/과매도 신호와 일봉 기준 Pivot Point(PP/S1/S2/R1/R2) 지지·저항 레벨을 결합한 역추세 전략. 가격이 S1 이하 + RSI ≤ 30이면 롱, R1 이상 + RSI ≥ 70이면 숏 진입.',
+      timeframe: '1분봉 (일봉 자동 집계로 Pivot 계산, RSI는 IndicatorCache 제공)',
+      entry: {
+        long: '가격 ≤ Pivot S1 + RSI(14) ≤ 30 + 레짐: TRENDING_DOWN/VOLATILE/RANGING',
+        short: '가격 ≥ Pivot R1 + RSI(14) ≥ 70 + 레짐: TRENDING_UP/VOLATILE/RANGING',
+        conditions: [
+          '일봉 Pivot 데이터 계산 완료 (최소 2일차부터)',
+          'RSI(14) 계산 완료 (최소 15봉)',
+          '롱: close ≤ S1 AND RSI ≤ 30',
+          '숏: close ≥ R1 AND RSI ≥ 70',
+          '기존 포지션 없음 (물타기 금지)',
+        ],
+      },
+      exit: {
+        tp: '+2% (진입가 대비)',
+        sl: '-2% (진입가 대비)',
+        trailing: '없음',
+        other: [
+          '롱 보유 중 RSI ≥ 70(과매수) 도달 시 청산',
+          '숏 보유 중 RSI ≤ 30(과매도) 도달 시 청산',
+          '롱 보유 중 가격 > Pivot R1 도달 시 청산',
+          '숏 보유 중 가격 < Pivot S1 도달 시 청산',
+        ],
+      },
+      indicators: [
+        'RSI(14)',
+        'Pivot Points: PP, S1, S2, R1, R2 (일봉 H/L/C 기반)',
+      ],
+      riskReward: {
+        tp: '+2%',
+        sl: '-2%',
+        ratio: '1:1 (RSI/Pivot 익절로 보완)',
+      },
+      strengths: [
+        'RSI + Pivot 이중 확인으로 과매수/과매도 정확도 향상',
+        '일봉 기반 Pivot으로 객관적 지지·저항 레벨 설정',
+        'TP/SL 간결하고 규칙 명확 — 백테스트 일관성 높음',
+        'RSI 극단값일수록 높은 신뢰도(confidence) 부여',
+      ],
+      weaknesses: [
+        '강한 추세에서 RSI가 장시간 과매수/과매도 유지 → 역추세 손실',
+        'Pivot 레벨이 실제 지지·저항과 괴리될 수 있음',
+        '1:1 RR 비율로 높은 승률 필요',
+        '일봉 전환 후에야 Pivot 재계산 — 당일 내 급변 대응 제한',
+      ],
+      bestFor: '지지·저항이 뚜렷한 횡보/변동성 장세에서 과매수·과매도 반전 매매',
+      warnings: [
+        '최소 2일차부터 Pivot 데이터 사용 가능 — 첫날은 진입 불가',
+        'AD-37 적용: 포지션 상태는 onFill() 확인 후에만 반영',
+        '레버리지 기본값 3배',
+      ],
+      difficulty: 'beginner',
+    },
     defaultConfig: {
       rsiPeriod: 14,
       rsiOversold: 30,

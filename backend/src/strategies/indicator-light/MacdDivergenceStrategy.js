@@ -54,6 +54,61 @@ class MacdDivergenceStrategy extends StrategyBase {
     volatilityPreference: 'neutral',
     trailingStop: { enabled: false, activationPercent: '1.0', callbackPercent: '0.8' },
     description: 'MACD 다이버전스 역추세 전략',
+    docs: {
+      summary: '가격과 MACD 히스토그램 간의 다이버전스(상승/하락)를 감지하여 추세 전환을 포착하는 역추세 전략. 히스토그램 영점 크로스 + RSI 필터로 진입 확인. EMA(50) 도달 시 TP, 스윙 저/고점 기반 SL(최대 2.5*ATR), 1*ATR 수익 후 1.5*ATR 트레일링, 5봉 이내 히스토그램 역전 시 실패 청산.',
+      timeframe: '1분봉 (IndicatorCache 통한 MACD/RSI/ATR/EMA 계산)',
+      entry: {
+        long: '상승 다이버전스(가격 Lower Low + MACD 히스토그램 Higher Low) + 히스토그램 음→양 크로스 + RSI < 45',
+        short: '하락 다이버전스(가격 Higher High + MACD 히스토그램 Lower High) + 히스토그램 양→음 크로스 + RSI > 55',
+        conditions: [
+          'Pivot 기반 다이버전스 감지 (pivotLeftBars=3, pivotRightBars=3)',
+          'MACD 히스토그램 영점(0) 크로스 확인',
+          'RSI(14) 필터: 롱 < 45, 숏 > 55',
+          '레짐: TRENDING_DOWN/VOLATILE/RANGING (롱) 또는 TRENDING_UP/VOLATILE/RANGING (숏)',
+          '최소 캔들: macdSlow(26) + macdSignal(9) + pivot(6) + 5 ≈ 46봉',
+        ],
+      },
+      exit: {
+        tp: 'EMA(50) 도달 시 청산',
+        sl: '최근 스윙 저/고점 기반 (최대 2.5 * ATR(14) 제한)',
+        trailing: '1*ATR 수익 달성 후 1.5*ATR 간격으로 트레일링 스탑 활성화',
+        other: [
+          '진입 후 5봉 이내 MACD 히스토그램 부호 반전 시 즉시 실패 청산',
+        ],
+      },
+      indicators: [
+        'MACD(12, 26, 9) — 히스토그램 배열',
+        'RSI(14)',
+        'ATR(14)',
+        'EMA(50) — TP 목표',
+        'Pivot 감지 (findPivots, detectDivergence)',
+      ],
+      riskReward: {
+        tp: 'EMA(50) 도달 (동적)',
+        sl: '스윙 기반, 최대 2.5*ATR',
+        ratio: '약 1:1~2:1 (다이버전스 크기에 따라 변동)',
+      },
+      strengths: [
+        '다이버전스 감지로 추세 전환 초기 포착 가능',
+        '스윙 기반 SL로 구조적 손절 레벨 설정',
+        'ATR 기반 트레일링으로 수익 보호',
+        '5봉 실패 감지로 거짓 다이버전스 빠르게 청산',
+      ],
+      weaknesses: [
+        '다이버전스 자체가 드물어 신호 빈도 매우 낮음',
+        '역추세이므로 추세 지속 시 손실 확대 가능',
+        'Pivot 감지 지연(leftBars + rightBars = 6봉)으로 실시간 반응 제한',
+        'EMA(50) TP가 너무 멀 수 있어 도달 전 트레일링/SL 발동',
+      ],
+      bestFor: '추세 전환 초기 다이버전스가 명확하게 형성된 구간에서의 역추세 진입',
+      warnings: [
+        '워밍업 35봉 필요',
+        '레버리지 기본값 2배 — 역추세 전략으로 보수적 설정',
+        '포지션 사이즈 기본값 2% — 역추세 리스크 반영',
+        'utils/indicators의 findPivots, detectDivergence 함수에 의존',
+      ],
+      difficulty: 'advanced',
+    },
     defaultConfig: {
       macdFast: 12,
       macdSlow: 26,

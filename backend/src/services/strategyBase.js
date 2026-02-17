@@ -732,11 +732,22 @@ class StrategyBase extends EventEmitter {
   updateConfig(newConfig) {
     if (!newConfig || typeof newConfig !== 'object') {
       this._log.warn('updateConfig called with invalid argument', { newConfig });
-      return;
+      return { success: false, reason: 'invalid_argument' };
     }
 
-    Object.assign(this.config, newConfig);
-    this._log.info('Configuration updated', { config: this.config });
+    const snapshot = { ...this.config };
+    const merged = { ...this.config, ...newConfig };
+    this.config = merged;
+
+    this.emit('config_updated', {
+      strategy: this.name,
+      previous: snapshot,
+      current: merged,
+      changedKeys: Object.keys(newConfig),
+    });
+
+    this._log.info('Configuration updated', { changedKeys: Object.keys(newConfig) });
+    return { success: true, config: merged };
   }
 }
 

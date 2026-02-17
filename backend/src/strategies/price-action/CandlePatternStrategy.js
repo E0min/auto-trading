@@ -62,6 +62,58 @@ class CandlePatternStrategy extends StrategyBase {
     volatilityPreference: 'neutral',
     maxSymbolsPerStrategy: 3,
     description: '캔들 패턴 가격행동 — Engulfing / Hammer / Star 패턴 + ATR 기반 TP/SL',
+    docs: {
+      summary: '6가지 클래식 일본식 캔들스틱 반전 패턴(Engulfing, Hammer, Shooting Star, Morning/Evening Star)을 감지하여 진입하는 순수 가격행동 전략. ATR로 변동성을 확인하고 동적 TP/SL을 설정한다. 3-candle 패턴을 2-candle 및 1-candle 패턴보다 우선 검사한다.',
+      timeframe: {
+        primary: '1m',
+        effective: '1m',
+        note: '1분봉 기준으로 캔들 패턴을 감지하므로 매우 단기 반전 신호를 포착한다.',
+      },
+      entry: {
+        long: [
+          'Bullish Engulfing: 이전 음봉 body를 현재 양봉이 완전히 감쌈',
+          'Hammer: 작은 body 상단 위치, 하단 그림자 >= 2배 body',
+          'Morning Star: 큰 음봉 + 작은 body + 큰 양봉 (3봉 패턴)',
+          'ATR(14) > 0 확인 (변동성 존재)',
+          '레짐이 QUIET이 아닐 것',
+        ],
+        short: [
+          'Bearish Engulfing: 이전 양봉 body를 현재 음봉이 완전히 감쌈',
+          'Shooting Star: 작은 body 하단 위치, 상단 그림자 >= 2배 body',
+          'Evening Star: 큰 양봉 + 작은 body + 큰 음봉 (3봉 패턴)',
+          'ATR(14) > 0 확인 (변동성 존재)',
+          '레짐이 QUIET이 아닐 것',
+        ],
+      },
+      exit: {
+        takeProfit: 'ATR(14) × 2 (진입가 대비)',
+        stopLoss: 'ATR(14) × 1.5 (진입가 대비)',
+        trailing: '1×ATR 수익 후 활성화, 최고/최저가에서 1.5×ATR 간격으로 추적',
+        indicator: null,
+      },
+      indicators: ['ATR(14)'],
+      riskReward: {
+        typicalRR: '1:1.3 (SL 1.5×ATR : TP 2×ATR)',
+        maxDrawdownPerTrade: 'ATR × 1.5 (약 1~3%)',
+        avgHoldingPeriod: '수 분 ~ 수십 분',
+      },
+      strengths: [
+        '후행 지표 없이 OHLC 데이터만으로 반전 신호 포착',
+        'Morning/Evening Star 3봉 패턴은 신뢰도 높은 반전 신호',
+        '거의 모든 시장 레짐(QUIET 제외)에서 작동 가능',
+      ],
+      weaknesses: [
+        '1분봉 캔들 패턴은 노이즈가 많아 거짓 신호 빈번',
+        'Hammer/Shooting Star 단일 캔들 패턴의 승률이 상대적으로 낮음',
+        '강한 추세 시 반전 패턴이 무효화될 수 있음',
+      ],
+      bestFor: '추세 중 일시적 조정 후 반전 포인트를 캔들 형태로 포착하는 단기 매매',
+      warnings: [
+        '1분봉 기준이므로 수수료/슬리피지 비중이 클 수 있음',
+        '동시 2포지션까지 허용되므로 리스크 관리 주의',
+      ],
+      difficulty: 'beginner',
+    },
     defaultConfig: {
       atrPeriod: 14,                   // ATR 계산 기간
       tpMultiplier: '2',               // Take Profit = ATR × N

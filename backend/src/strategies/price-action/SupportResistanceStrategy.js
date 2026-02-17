@@ -48,6 +48,56 @@ class SupportResistanceStrategy extends StrategyBase {
     volatilityPreference: 'neutral',
     maxSymbolsPerStrategy: 3,
     description: '지지저항 돌파 -- 수평 S/R 레벨 식별 + 리테스트 확인 후 돌파 진입',
+    docs: {
+      summary: '스윙 고점/저점에서 수평 지지/저항 레벨을 식별하고, ATR 기반 클러스터링으로 근접 레벨을 통합한 뒤, 리테스트 확인이 된 돌파에 진입하는 순수 가격행동 전략. 터치 횟수가 많은 레벨일수록 더 강한 신호로 판단한다.',
+      timeframe: {
+        primary: '1m',
+        effective: '1m',
+        note: '1분봉 기준으로 지지/저항 레벨을 식별하므로 단기 가격 구조를 활용한다.',
+      },
+      entry: {
+        long: [
+          '종가가 저항 레벨을 상향 돌파',
+          '최근 3봉 내 저항 레벨 부근(0.5×ATR 이내)에서 리테스트 확인',
+          '해당 레벨의 터치 횟수 >= 1회',
+          '레짐이 QUIET이 아닐 것',
+        ],
+        short: [
+          '종가가 지지 레벨을 하향 돌파',
+          '최근 3봉 내 지지 레벨 부근(0.5×ATR 이내)에서 리테스트 확인',
+          '해당 레벨의 터치 횟수 >= 1회',
+          '레짐이 QUIET이 아닐 것',
+        ],
+      },
+      exit: {
+        takeProfit: '다음 S/R 레벨 도달 시 (없으면 3×ATR fallback)',
+        stopLoss: '1.5×ATR 고정 손절',
+        trailing: '1.5×ATR 수익 후 활성화, 2×ATR 간격으로 추적',
+        indicator: null,
+      },
+      indicators: ['ATR(14)', 'Swing High/Low(3봉 lookback)'],
+      riskReward: {
+        typicalRR: '1:2 (SL 1.5×ATR : TP 다음 레벨 또는 3×ATR)',
+        maxDrawdownPerTrade: '1.5×ATR (약 1~3%)',
+        avgHoldingPeriod: '수 분 ~ 수십 분',
+      },
+      strengths: [
+        '리테스트 확인으로 거짓 돌파 필터링',
+        '터치 횟수 기반 레벨 강도 평가로 신뢰도 향상',
+        'TP를 다음 S/R 레벨로 설정하여 현실적인 목표 설정',
+      ],
+      weaknesses: [
+        '1분봉 기반 S/R 레벨은 상위 타임프레임 대비 신뢰도 낮음',
+        '강한 추세에서 레벨이 빠르게 무효화될 수 있음',
+        '클러스터링 허용 범위에 따라 레벨 정확도가 달라짐',
+      ],
+      bestFor: '가격이 특정 수평 레벨에서 반복적으로 반응하는 구간에서의 돌파 매매',
+      warnings: [
+        '최대 10개 레벨만 추적하므로 복잡한 가격 구조에서는 일부 레벨이 누락될 수 있음',
+        '동시 2포지션 허용',
+      ],
+      difficulty: 'intermediate',
+    },
     defaultConfig: {
       lookback: 3,                    // Swing detection lookback (each side)
       atrPeriod: 14,                  // ATR calculation period

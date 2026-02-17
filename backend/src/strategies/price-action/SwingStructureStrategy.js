@@ -61,6 +61,54 @@ class SwingStructureStrategy extends StrategyBase {
     maxSymbolsPerStrategy: 3,
     trailingStop: { enabled: false, activationPercent: '1.5', callbackPercent: '1.0' },
     description: '스윙 구조 추세 — HH/HL/LH/LL 구조 분석 + BOS 돌파 진입',
+    docs: {
+      summary: '스윙 고점/저점을 추적하여 시장 구조(Higher High/Higher Low = 상승추세, Lower High/Lower Low = 하락추세)를 판단하고, Break of Structure(BOS) 발생 시 추세 방향으로 진입하는 가격행동 전략. 구조 위반(반대 스윙 포인트 이탈) 시 즉시 청산한다.',
+      timeframe: {
+        primary: '1m',
+        effective: '1m',
+        note: '1분봉 기준 3봉 lookback으로 스윙 포인트를 감지하므로 빠른 구조 변화를 포착한다.',
+      },
+      entry: {
+        long: [
+          '상승 구조(HH + HL) 확인 — 최근 스윙 고점과 저점이 모두 이전보다 높음',
+          '종가가 가장 최근 스윙 고점을 상향 돌파 (Bullish BOS)',
+          '레짐이 TRENDING_UP 또는 VOLATILE',
+        ],
+        short: [
+          '하락 구조(LH + LL) 확인 — 최근 스윙 고점과 저점이 모두 이전보다 낮음',
+          '종가가 가장 최근 스윙 저점을 하향 돌파 (Bearish BOS)',
+          '레짐이 TRENDING_DOWN 또는 VOLATILE',
+        ],
+      },
+      exit: {
+        takeProfit: null,
+        stopLoss: '최근 스윙 저점(롱)/고점(숏) - 0.5×ATR 버퍼',
+        trailing: '2×ATR 수익 후 활성화, 1.5×ATR 간격으로 추적',
+        indicator: '구조 위반 시 즉시 청산 (롱: 최근 스윙 저점 하회, 숏: 최근 스윙 고점 상회)',
+      },
+      indicators: ['Swing High/Low(3봉 lookback)', 'ATR(14)'],
+      riskReward: {
+        typicalRR: '1:2~3 (스윙 구조 기반 동적 손절)',
+        maxDrawdownPerTrade: '스윙 범위 + 0.5×ATR',
+        avgHoldingPeriod: '수 분 ~ 수 시간',
+      },
+      strengths: [
+        'SMC(Smart Money Concept) 기반의 체계적인 시장 구조 분석',
+        '구조 위반 시 즉시 청산하여 손실을 빠르게 제한',
+        '스윙 깊이와 명확도에 따른 동적 신뢰도 계산',
+      ],
+      weaknesses: [
+        '횡보장에서 구조가 불명확하여 진입 신호가 발생하지 않음',
+        '1분봉 스윙 포인트는 노이즈에 취약할 수 있음',
+        '추세 전환 초기에 구조 판단이 늦어질 수 있음',
+      ],
+      bestFor: '명확한 HH/HL 또는 LH/LL 구조가 형성된 추세 시장에서의 돌파 매매',
+      warnings: [
+        '최소 2개의 스윙 고점과 2개의 스윙 저점이 필요하므로 워밍업 기간이 필요',
+        '레버리지 3배 적용',
+      ],
+      difficulty: 'intermediate',
+    },
     defaultConfig: {
       swingLookback: 3,              // Bars each side to confirm a swing point
       atrPeriod: 14,                 // ATR calculation period

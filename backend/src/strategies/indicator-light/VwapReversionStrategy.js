@@ -68,6 +68,61 @@ class VwapReversionStrategy extends StrategyBase {
     warmupCandles: 20,
     volatilityPreference: 'low',
     description: 'VWAP 회귀 전략 — 가격이 VWAP에서 크게 이탈했을 때 회귀를 기대',
+    docs: {
+      summary: '세션 VWAP(96봉 주기 리셋) 대비 가격 이탈 시 평균 회귀를 기대하는 전략. RSI(14) + 거래량 서지 + 캔들 방향 4중 확인 후 진입. TP1(VWAP 50%) + TP2(VWAP+0.5*ATR 나머지) 분할 익절, 추가 진입(0.5*ATR 추가 이탈 시 40%) 지원.',
+      timeframe: '1분봉 (세션 VWAP 96봉 ≈ 약 1.5시간 주기 리셋)',
+      entry: {
+        long: '가격 < VWAP - 1.5*ATR(14) + RSI(14) < 35 + 거래량 > SMA(20)*1.2 + 양봉(close>open)',
+        short: '가격 > VWAP + 1.5*ATR(14) + RSI(14) > 65 + 거래량 > SMA(20)*1.2 + 음봉(close<open)',
+        conditions: [
+          '세션 VWAP 계산 완료 (세션 내 2봉 이상)',
+          'RSI(14) 과매도(< 35) 또는 과매수(> 65)',
+          '거래량 > 20봉 SMA * 1.2 (서지 확인)',
+          '양봉/음봉 확인 (방향 전환 시작)',
+          '레짐: RANGING 또는 QUIET',
+          '초기 진입 60%, 추가 진입 40% (addOn)',
+        ],
+      },
+      exit: {
+        tp: 'TP1: VWAP 도달 시 50% 부분 익절 → TP2: VWAP + 0.5*ATR 오버슈트 시 나머지 전량 익절',
+        sl: '2 * ATR(14) (진입가 대비)',
+        trailing: '없음',
+        other: [
+          '48봉 시간 제한 초과 시 강제 청산',
+          '추가 진입: 진입가에서 0.5*ATR 추가 이탈 시 40% 물량 추가 매수/매도',
+        ],
+      },
+      indicators: [
+        'VWAP (세션 96봉 주기 리셋)',
+        'RSI(14)',
+        'ATR(14)',
+        '거래량 SMA(20)',
+      ],
+      riskReward: {
+        tp: 'VWAP 회귀(~1~2*ATR) + 오버슈트(+0.5*ATR)',
+        sl: '2*ATR',
+        ratio: '약 0.75:1~1.25:1 (VWAP 거리에 따라 변동)',
+      },
+      strengths: [
+        'VWAP 기반 객관적 평균가 대비 이탈 측정',
+        '4중 조건(VWAP 이탈+RSI+거래량+캔들)으로 신뢰도 높은 진입',
+        '분할 익절(TP1 50%, TP2 나머지)로 안정적 수익 확보',
+        '추가 진입(addOn)으로 평균 단가 개선 가능',
+      ],
+      weaknesses: [
+        '96봉 세션 리셋 시 VWAP 재계산으로 레벨 변동',
+        '강한 추세에서 VWAP 회귀 실패 가능',
+        '48봉 시간 제한이 짧아 회귀 완료 전 청산될 수 있음',
+        'SL 2*ATR이 좁은 변동성 구간에서는 과도할 수 있음',
+      ],
+      bestFor: 'RANGING/QUIET 장세에서 VWAP 대비 과도 이탈 후 평균 회귀를 기대하는 단기 트레이딩',
+      warnings: [
+        '레버리지 기본값 2배 — 역추세 전략으로 보수적 설정',
+        '포지션 사이즈 기본값 3% — 추가 진입 포함 시 최대 3%',
+        'VWAP 계산에 utils/indicators의 vwap 함수 사용 — 세션 klines 기반',
+      ],
+      difficulty: 'intermediate',
+    },
     defaultConfig: {
       rsiPeriod: 14,
       atrPeriod: 14,

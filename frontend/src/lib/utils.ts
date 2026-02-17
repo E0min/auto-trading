@@ -274,6 +274,30 @@ export function formatPnlValue(value: string | undefined | null): string {
 }
 
 /**
+ * Translate strategy difficulty to Korean
+ */
+export function translateDifficulty(difficulty: string): string {
+  const map: Record<string, string> = {
+    beginner: '초급',
+    intermediate: '중급',
+    advanced: '고급',
+  };
+  return map[difficulty] || difficulty;
+}
+
+/**
+ * Get difficulty badge color
+ */
+export function getDifficultyColor(difficulty: string): string {
+  const map: Record<string, string> = {
+    beginner: 'text-emerald-400',
+    intermediate: 'text-amber-400',
+    advanced: 'text-red-400',
+  };
+  return map[difficulty] || 'text-[var(--text-muted)]';
+}
+
+/**
  * cn - simple class name merger (no clsx dependency needed)
  */
 export function cn(...classes: (string | undefined | null | false)[]): string {

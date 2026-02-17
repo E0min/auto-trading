@@ -68,6 +68,55 @@ class GridStrategy extends StrategyBase {
     volatilityPreference: 'low',
     maxSymbolsPerStrategy: 2,
     description: 'ATR 기반 그리드 트레이딩 (양방향 헤지)',
+    docs: {
+      summary: 'ATR(14)로 변동성을 측정하여 현재가 기준 상하 10단계씩 그리드를 생성하고, 가격이 그리드 레벨에 도달하면 자동으로 진입/청산하는 양방향 헤지 전략. RANGING 장세에서만 활성화되며, 레인지 이탈 30분 초과 시 그리드를 재설정한다.',
+      timeframe: '1분봉 (틱 기반 그리드 레벨 감시)',
+      entry: {
+        long: '가격이 기준가 아래 그리드 레벨(기준가 - ATR*0.3*N)에 도달하면 OPEN_LONG',
+        short: '가격이 기준가 위 그리드 레벨(기준가 + ATR*0.3*N)에 도달하면 OPEN_SHORT',
+        conditions: [
+          'MarketRegime === RANGING (null 허용: 백테스트)',
+          'ATR(14) 계산 완료 (최소 15봉)',
+          '그리드 초기화 완료 (basePrice + gridSpacing 설정)',
+          '해당 그리드 레벨이 아직 미트리거 상태',
+          '그리드 간격 최소 0.1% (슬리피지/수수료 방지)',
+        ],
+      },
+      exit: {
+        tp: '진입 그리드 레벨에서 gridSpacing(ATR*0.3) 1칸 반대 방향 — 리밋 주문',
+        sl: '전체 그리드 미실현 손실이 기준가 대비 -3% 초과 시 전 포지션 청산',
+        trailing: '없음',
+        other: [
+          '가격이 그리드 범위 밖 30분 초과 체류 시 그리드 리셋 (최소 1시간 간격)',
+          'RANGING 이외 장세 전환 시 신규 진입 차단',
+        ],
+      },
+      indicators: ['ATR(14)'],
+      riskReward: {
+        tp: 'gridSpacing 1칸 (ATR * 0.3 ≈ 0.3~0.5%)',
+        sl: '-3% (그리드 전체 낙폭 기준)',
+        ratio: '약 1:0.6~1 (빈도로 보완)',
+      },
+      strengths: [
+        '횡보장에서 안정적 수익 누적',
+        '양방향 헤지로 방향성 리스크 분산',
+        'ATR 기반 동적 그리드 간격으로 변동성 적응',
+        '리밋 주문 기반이라 슬리피지 최소화',
+      ],
+      weaknesses: [
+        '추세장에서 한 방향 그리드 연속 피격 시 큰 손실 가능',
+        '장세 전환 감지 지연 시 낙폭 확대',
+        '거래 빈도 높아 수수료 부담 존재',
+        '레인지 이탈 후 리셋 전까지 비효율적 운영',
+      ],
+      bestFor: 'RANGING 장세에서 좁은 레인지 내 빈번한 가격 왕복을 활용한 양방향 수익 누적',
+      warnings: [
+        '추세 돌파 시 전체 그리드 SL(-3%)이 발동할 수 있음',
+        '레버리지 2배로 고정 — 변경 시 그리드 전체 손실 배율 고려 필요',
+        'BTC 급등락(5%) 시 비활성화될 수 있음',
+      ],
+      difficulty: 'beginner',
+    },
     defaultConfig: {
       atrPeriod: 14,
       gridSpacingMultiplier: '0.3',

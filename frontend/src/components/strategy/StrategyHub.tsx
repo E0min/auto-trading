@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Card from '@/components/ui/Card';
 import Spinner from '@/components/ui/Spinner';
 import StrategyCard from '@/components/strategy/StrategyCard';
+import CustomStrategyBuilder from '@/components/strategy/CustomStrategyBuilder';
 import { botApi } from '@/lib/api-client';
 import {
   translateRegime,
@@ -17,7 +18,7 @@ import type { StrategyGraceInfo } from '@/hooks/useSocket';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type CategoryFilter = 'all' | 'price-action' | 'indicator-light' | 'indicator-heavy';
+type CategoryFilter = 'all' | 'price-action' | 'indicator-light' | 'indicator-heavy' | 'custom';
 
 const ALL_REGIMES: MarketRegime[] = [
   'trending_up',
@@ -64,6 +65,9 @@ export default function StrategyHub({
   // Disable mode dialog
   const [disableTarget, setDisableTarget] = useState<string | null>(null);
 
+  // Custom strategy builder
+  const [showBuilder, setShowBuilder] = useState(false);
+
   // ── Data fetching ────────────────────────────────────────────────────────
 
   const fetchStrategies = useCallback(async () => {
@@ -93,8 +97,12 @@ export default function StrategyHub({
 
   const filteredStrategies = useMemo(() => {
     return strategies.filter((s) => {
-      if (categoryFilter !== 'all' && getStrategyCategory(s.name) !== categoryFilter) {
-        return false;
+      const isCustom = s.name.startsWith('Custom_');
+      if (categoryFilter === 'custom') {
+        if (!isCustom) return false;
+      } else if (categoryFilter !== 'all') {
+        if (isCustom) return false;
+        if (getStrategyCategory(s.name) !== categoryFilter) return false;
       }
       if (regimeFilter !== 'all') {
         const regimes = s.targetRegimes || [];
@@ -220,6 +228,15 @@ export default function StrategyHub({
             )}
           </span>
         </div>
+        {/* Custom strategy builder button */}
+        <button
+          type="button"
+          onClick={() => setShowBuilder(true)}
+          className="px-2.5 py-1 text-[10px] rounded-md text-[var(--accent)] bg-[var(--accent-subtle)] border border-[var(--accent)]/20 hover:bg-[var(--accent)]/10 transition-colors"
+        >
+          + 커스텀 전략
+        </button>
+
         {/* Current regime */}
         {currentRegime && (
           <span className={cn('inline-flex items-center gap-1.5 text-[11px] font-medium', getRegimeColor(currentRegime))}>
@@ -236,6 +253,7 @@ export default function StrategyHub({
           ['price-action', 'Price Action'],
           ['indicator-light', 'Indicator-Light'],
           ['indicator-heavy', 'Indicator-Heavy'],
+          ['custom', '커스텀'],
         ] as const).map(([value, label]) => (
           <button
             key={value}
@@ -334,6 +352,17 @@ export default function StrategyHub({
           strategyName={disableTarget}
           onConfirm={handleDisableConfirm}
           onClose={() => setDisableTarget(null)}
+        />
+      )}
+
+      {/* Custom strategy builder */}
+      {showBuilder && (
+        <CustomStrategyBuilder
+          onClose={() => setShowBuilder(false)}
+          onSaved={() => {
+            setShowBuilder(false);
+            fetchStrategies();
+          }}
         />
       )}
     </Card>

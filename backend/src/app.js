@@ -41,6 +41,7 @@ const RegimeOptimizer = require('./services/regimeOptimizer');
 const SymbolRegimeManager = require('./services/symbolRegimeManager');
 const FundingDataService = require('./services/fundingDataService');
 const CoinGeckoClient = require('./services/coinGeckoClient');
+const CustomStrategyStore = require('./services/customStrategyStore');
 
 // --- Wrapper service imports ---
 const scannerService = require('./services/scannerService');
@@ -208,6 +209,9 @@ async function bootstrap() {
   // Funding data polling service (T2-4)
   const fundingDataService = new FundingDataService({ exchangeClient });
 
+  // Custom strategy store (file-based)
+  const customStrategyStore = new CustomStrategyStore();
+
   // Determine which position manager the rest of the system should use
   const activePositionManager = PAPER_TRADING ? paperPositionManager : positionManager;
 
@@ -320,7 +324,7 @@ async function bootstrap() {
   //     /api/health — NO rate limit (monitoring)
 
   // 6. Mount routes
-  app.use('/api/bot', createBotRoutes({ botService, riskEngine }));
+  app.use('/api/bot', createBotRoutes({ botService, riskEngine, customStrategyStore }));
   app.use('/api/trades', createTradeRoutes({ traderService, positionManager: activePositionManager, botService }));
   app.use('/api/analytics', createAnalyticsRoutes({ trackerService }));
   app.use('/api/health', createHealthRoutes({ healthCheck, exchangeClient }));

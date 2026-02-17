@@ -58,6 +58,60 @@ class QuietRangeScalpStrategy extends StrategyBase {
     warmupCandles: 30,
     volatilityPreference: 'low',
     description: 'QUIET 장세 Keltner Channel 스캘핑 (양방향)',
+    docs: {
+      summary: 'QUIET 장세 전용 스캘핑 전략. ATR(14)이 20봉 ATR 평균의 70% 이하로 극도로 낮을 때, Keltner Channel(EMA 20, ATR*1.5) 상/하단 터치 시 역방향 진입. EMA 중앙선 복귀 시 50% 부분 익절, TP +1.2%/SL -0.8% 관리, 장세 전환 시 즉시 청산.',
+      timeframe: '1분봉 (IndicatorCache 통한 EMA/ATR 계산)',
+      entry: {
+        long: 'ATR(14) ≤ ATR SMA(20) * 0.7 + close ≤ Keltner 하단(EMA - ATR*1.5) + 레짐 QUIET',
+        short: 'ATR(14) ≤ ATR SMA(20) * 0.7 + close ≥ Keltner 상단(EMA + ATR*1.5) + 레짐 QUIET',
+        conditions: [
+          'MarketRegime === QUIET',
+          'ATR(14) ≤ ATR SMA(20) * 0.7 (극저변동성 확인)',
+          '가격이 Keltner Channel 상/하단 터치',
+          '기존 포지션 없음',
+          'EMA(20) + ATR(14) 계산 완료 (최소 30봉)',
+        ],
+      },
+      exit: {
+        tp: '+1.2% (진입가 대비)',
+        sl: '-0.8% (진입가 대비)',
+        trailing: '없음',
+        other: [
+          'EMA 중앙선 복귀 시 50% 부분 익절',
+          'QUIET 이외 장세로 전환 시 즉시 전량 청산',
+        ],
+      },
+      indicators: [
+        'EMA(20) — Keltner Channel 중앙선',
+        'ATR(14) — Keltner Channel 밴드 + 변동성 필터',
+        'ATR SMA(20) — 변동성 베이스라인',
+      ],
+      riskReward: {
+        tp: '+1.2%',
+        sl: '-0.8%',
+        ratio: '1.5:1',
+      },
+      strengths: [
+        'QUIET 장세에서 좁은 레인지 내 높은 승률 기대',
+        '극저변동성 필터(ATR ≤ 70% SMA)로 거짓 브레이크아웃 방지',
+        'EMA 부분 익절로 안정적 수익 확보',
+        '장세 전환 시 즉시 청산으로 추세 진입 리스크 제거',
+      ],
+      weaknesses: [
+        'QUIET 장세에서만 작동 — 활성 시간이 제한적',
+        'TP +1.2% / SL -0.8%로 단위 수익이 작음',
+        '레버리지 2배로 수익 배율 제한',
+        'QUIET→VOLATILE 급전환 시 청산 슬리피지 발생 가능',
+      ],
+      bestFor: '시장이 매우 조용한 QUIET 장세에서 Keltner Channel 밴드 내 스캘핑 수익 누적',
+      warnings: [
+        '워밍업 30봉 필요',
+        'gracePeriodMs가 900000(15분)으로 길게 설정 — QUIET 장세 판정 안정화',
+        '레버리지 기본값 2배, 포지션 사이즈 3%',
+        'QUIET 장세가 짧으면 기회 자체가 거의 없을 수 있음',
+      ],
+      difficulty: 'beginner',
+    },
     defaultConfig: {
       emaPeriod: 20,
       atrPeriod: 14,

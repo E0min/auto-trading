@@ -41,6 +41,61 @@ class SupertrendStrategy extends StrategyBase {
     maxSymbolsPerStrategy: 3,
     trailingStop: { enabled: false, activationPercent: '1.5', callbackPercent: '1.0' },
     description: '슈퍼트렌드 + MACD 추세추종',
+    docs: {
+      summary: 'Supertrend(10,3) 방향 전환을 메인 시그널로, MACD(12,26,9) 골든/데드 크로스로 모멘텀을 확인하고, Volume Oscillator(5,20) > 0으로 횡보장 거짓 신호를 제거하는 추세추종 전략.',
+      timeframe: '1분봉 (자체 klineHistory로 지표 계산)',
+      entry: {
+        long: 'Supertrend DOWN→UP 전환 + MACD 라인 > 시그널 라인 + 히스토그램 > 0 + Volume Oscillator > 0',
+        short: 'Supertrend UP→DOWN 전환 + MACD 라인 < 시그널 라인 + 히스토그램 < 0 + Volume Oscillator > 0',
+        conditions: [
+          'Supertrend 방향 전환 (prevDir ≠ currentDir)',
+          'MACD 라인과 시그널 라인의 정렬 (롱: MACD > Signal, 숏: MACD < Signal)',
+          'MACD 히스토그램 부호 확인 (롱: > 0, 숏: < 0)',
+          'Volume Oscillator > 0 (거래량 확인)',
+          '레짐: TRENDING_UP/VOLATILE (롱) 또는 TRENDING_DOWN/VOLATILE (숏)',
+          '최소 캔들: macdSlow(26) + macdSignal(9) = 35봉 이상',
+        ],
+      },
+      exit: {
+        tp: '+3% (진입가 대비 PnL 비율)',
+        sl: '-2% (진입가 대비 PnL 비율)',
+        trailing: '없음 (StrategyBase trailing 비활성화)',
+        other: [
+          'Supertrend 역전환 시 청산 (UP→DOWN: 롱 청산, DOWN→UP: 숏 청산)',
+          'MACD 역크로스 시 청산 (골든→데드: 롱 청산, 데드→골든: 숏 청산)',
+        ],
+      },
+      indicators: [
+        'Supertrend(ATR 10, Multiplier 3)',
+        'MACD(12, 26, 9) — 라인, 시그널, 히스토그램',
+        'Volume Oscillator(Short EMA 5, Long EMA 20)',
+        'ATR(10) — Supertrend 밴드 계산용',
+      ],
+      riskReward: {
+        tp: '+3%',
+        sl: '-2%',
+        ratio: '1.5:1',
+      },
+      strengths: [
+        'Supertrend + MACD + Volume 3중 필터로 높은 신호 품질',
+        'Volume Oscillator로 저거래량 횡보 구간 자동 필터링',
+        'Supertrend의 추세 추적력과 MACD의 모멘텀 확인 시너지',
+        '인크리멘탈 EMA 계산으로 효율적 연산',
+      ],
+      weaknesses: [
+        '3개 지표 동시 충족 조건이 까다로워 신호 빈도 낮음',
+        '추세 전환 초기 Supertrend 지연으로 늦은 진입 가능',
+        '횡보→추세 전환 시 Volume Oscillator가 늦게 반응할 수 있음',
+        'MACD 역크로스 청산이 조기 이탈을 유발할 수 있음',
+      ],
+      bestFor: '명확한 추세장에서 방향 전환 시점을 3중 확인으로 포착하는 중기 추세추종',
+      warnings: [
+        '워밍업 60봉(약 1시간) 필요 — MACD + ATR 데이터 축적',
+        '레버리지 기본값 5배 — 추세추종이지만 높은 레버리지 주의',
+        'Supertrend Multiplier(3)가 클수록 노이즈 감소하지만 진입 지연 증가',
+      ],
+      difficulty: 'intermediate',
+    },
     defaultConfig: {
       atrPeriod: 10,
       supertrendMultiplier: 3,
@@ -702,7 +757,7 @@ class SupertrendStrategy extends StrategyBase {
         suggestedPrice: s.latestPrice,
         stopLossPrice: multiply(s.latestPrice, subtract('1', divide(this._slPercent, '100'))),
         confidence,
-        leverage: '5',
+        leverage: String(this.config.leverage || '5'),
         marketContext: {
           supertrendDir: s.supertrendDir,
           macdLine: s.macdLine,
@@ -748,7 +803,7 @@ class SupertrendStrategy extends StrategyBase {
         suggestedPrice: s.latestPrice,
         stopLossPrice: multiply(s.latestPrice, add('1', divide(this._slPercent, '100'))),
         confidence,
-        leverage: '5',
+        leverage: String(this.config.leverage || '5'),
         marketContext: {
           supertrendDir: s.supertrendDir,
           macdLine: s.macdLine,
