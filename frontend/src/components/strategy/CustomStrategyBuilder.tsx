@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import ConditionRow from '@/components/strategy/ConditionRow';
 import { botApi } from '@/lib/api-client';
 import type {
@@ -64,6 +64,54 @@ export default function CustomStrategyBuilder({
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // R14-18: Modal ref for focus trap
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // R14-18: ESC key to close modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  // R14-18: Focus trap — return focus to modal on Tab out
+  useEffect(() => {
+    const modal = modalRef.current;
+    if (!modal) return;
+
+    const focusableSelector = 'input, select, button, textarea, [tabindex]:not([tabindex="-1"])';
+
+    const handleFocusTrap = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+
+      const focusable = modal.querySelectorAll<HTMLElement>(focusableSelector);
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    modal.addEventListener('keydown', handleFocusTrap);
+
+    // Auto-focus first focusable element
+    const firstFocusable = modal.querySelector<HTMLElement>(focusableSelector);
+    firstFocusable?.focus();
+
+    return () => modal.removeEventListener('keydown', handleFocusTrap);
+  }, []);
 
   // ── Indicator management ────────────────────────────────────────────────
 
@@ -182,8 +230,8 @@ export default function CustomStrategyBuilder({
   ]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 backdrop-blur-sm overflow-y-auto py-8">
-      <div className="bg-[var(--bg-card)] border border-[var(--border-muted)] rounded-xl w-full max-w-2xl shadow-xl mx-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 backdrop-blur-sm overflow-y-auto py-8" role="dialog" aria-modal="true" aria-label={isEditing ? '커스텀 전략 수정' : '커스텀 전략 빌더'}>
+      <div ref={modalRef} className="bg-[var(--bg-card)] border border-[var(--border-muted)] rounded-xl w-full max-w-2xl shadow-xl mx-4">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border-subtle)]">
           <h3 className="text-sm font-medium text-[var(--text-primary)]">

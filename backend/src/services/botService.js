@@ -524,9 +524,17 @@ class BotService extends EventEmitter {
       });
 
       // 12. Wire up: strategy SIGNAL_GENERATED -> _handleStrategySignal (T0-2 qty resolution + filter + submit)
+      // R14-6: Add .catch() to prevent unhandled promise rejections from crashing the process
       for (const strategy of this.strategies) {
         const onSignal = (signal) => {
-          this._handleStrategySignal(signal, sessionId);
+          Promise.resolve(this._handleStrategySignal(signal, sessionId)).catch((err) => {
+            log.error('_handleStrategySignal — unhandled error', {
+              strategy: signal?.strategy,
+              symbol: signal?.symbol,
+              action: signal?.action,
+              error: err.message || err,
+            });
+          });
         };
         strategy.on(TRADE_EVENTS.SIGNAL_GENERATED, onSignal);
         this._eventCleanups.push(() => {
@@ -1260,9 +1268,17 @@ class BotService extends EventEmitter {
       }
 
       // Wire signal handler (T0-2: uses common _handleStrategySignal)
+      // R14-6: Add .catch() to prevent unhandled promise rejections
       const sessionId = this.currentSession ? this.currentSession._id.toString() : null;
       const onSignal = (signal) => {
-        this._handleStrategySignal(signal, sessionId);
+        Promise.resolve(this._handleStrategySignal(signal, sessionId)).catch((err) => {
+          log.error('_handleStrategySignal — unhandled error (enableStrategy)', {
+            strategy: signal?.strategy,
+            symbol: signal?.symbol,
+            action: signal?.action,
+            error: err.message || err,
+          });
+        });
       };
       strategy.on(TRADE_EVENTS.SIGNAL_GENERATED, onSignal);
       this._eventCleanups.push(() => {

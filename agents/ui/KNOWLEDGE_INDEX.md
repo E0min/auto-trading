@@ -43,6 +43,9 @@
 | `proposals/round_12.md` | 코드베이스 재분석 Round 3: 13건 FE (addToast deps, useBacktest visibility, SignalFeed mobile, DrawdownChart useId, AccountOverview flash, SymbolRegimeTable collapse, PositionsTable strategy, BacktestForm leverage, 이중 구독 정리) | Round 12 | active |
 | `proposals/round_12_review.md` | Round 12 교차 리뷰 (Trader+Engineer 제안 검토) — R12-FE-08 BE 선행 필요 발견, timeframe 변수명 합의, mobile 2줄 레이아웃 동의 | Round 12 | active |
 | `../shared/decisions/round_12.md` | Round 12 합의 결정문서 (31건, AD-69~AD-73) — FE 12건: addToast deps, timeframe, onError, useId, visibility API, mobile 2줄, strategy 컬럼, value flash, 이중 구독, 접기/펼치기, 레버리지 UI, Calmar 라벨 — **구현 완료** | Round 12 | active |
+| `proposals/round_14.md` | 코드베이스 재분석 Round 4: 15건 FE (StrategyConfigPanel 검증, CustomStrategyBuilder 접근성, PerformanceTabs SWR, useAdaptivePolling 리스너 통합, Quick Stats 과밀, StrategyExplainer 반응형, RiskStatusPanel aria, ConditionRow UX) | Round 14 | active |
+| `proposals/round_14_review.md` | Round 14 교차 리뷰 (Trader+Engineer 제안 검토) | Round 14 | active |
+| `../shared/decisions/round_14.md` | Round 14 합의 결정문서 (24건, AD-14-1~AD-14-5) — FE 8건: config 검증, focus trap, SWR, 리스너 통합, 과밀 해소, 반응형, aria, UX — **구현 완료** | Round 14 | active |
 
 ## Round 1 Key Findings Summary
 - **C1**: Emergency Stop에 확인 다이얼로그 없음 — 실수로 전포지션 청산 위험
@@ -113,7 +116,10 @@
 - **접근성 진화**: R6 aria-disabled/aria-label → R8 포커스 트랩 + aria-expanded → R9 StrategyCard toggle button 분리 → R10 th scope="col" 88개 추가 → R11 DisableModeDialog focus trap + Escape + aria. 현재 상태: 전 다이얼로그 접근성 패턴 통일 (EmergencyStop/DisableMode)
 - **코드 정리 패턴**: R9 MarketRegimeIndicator 데드코드 삭제 → R10 StrategyPanel+ClientGate 삭제 + TOOLTIP_STYLE 4파일 통일 + EquityCurveBase 공통 추출 → R11 MarketRegimeIndicator 최종 삭제 + as never 7건 제거 + EquityCurveBase 제네릭 완화. 현재 상태: 타입 캐스트 최소화, 공통 formatter 확립
 - **타입 안전성 진화**: R1 Recharts `as never` 3곳 발견 → R10 EquityCurveBase 추출 → R11 `as never` 7건 제거(chart-config formatter) + `any` → RiskStatusExtended + EquityCurveBase 제네릭 `<T extends object>`. 현재 상태: 타입 캐스트 제거 완료, 제네릭 기반 타입 안전성
-- **성능 최적화**: R4 적응형 폴링 도입 → R8 useSocket state 분리 → R11 PerformanceTabs lazy loading + BacktestForm 클라이언트 검증 → R12 useBacktest visibility API + addToast deps 수정 + DrawdownChart useId() + SignalFeed mobile 2줄 + SymbolRegimeTable 접기(기본 접힘). 현재 상태: visibility 기반 폴링 제어, gradient ID 고유성, 모바일 최적화
+- **성능 최적화**: R4 적응형 폴링 도입 → R8 useSocket state 분리 → R11 PerformanceTabs lazy loading + BacktestForm 클라이언트 검증 → R12 useBacktest visibility API + addToast deps 수정 + DrawdownChart useId() + SignalFeed mobile 2줄 + SymbolRegimeTable 접기(기본 접힘) → R14 PerformanceTabs stale-while-revalidate(60s) + useAdaptivePolling 이중 리스너 통합(fetchFnRef). 현재 상태: SWR 패턴 도입, 리스너 중복 제거
+- **접근성 진화 (R14 추가)**: R6 aria-disabled → R8 포커스 트랩 → R9 toggle button → R10 th scope → R11 DisableModeDialog → R14 CustomStrategyBuilder focus trap + ESC + aria-modal + RiskStatusPanel aria-valuetext + ConditionRow aria-label. 현재 상태: 전 모달/미터/토글 접근성 패턴 완비
+- **입력 검증 (R14)**: StrategyConfigPanel에 클라이언트 사이드 validation(min/max/integer/numeric) — validationErrors useMemo + hasValidationErrors → disabled save. inline 에러 표시
+- **UX 개선 (R14)**: Quick Stats Bar regime slice(0,2) + overflow +N tooltip + flex-shrink-0. StrategyExplainer grid-cols-2→md:grid-cols-3 반응형. ConditionRow 전환 버튼 123/f(x) 색상 구분
 
 ## Knowledge Management Rules
 1. 새 정보를 받으면 이 인덱스의 기존 항목과 비교

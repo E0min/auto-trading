@@ -212,6 +212,36 @@ async function bootstrap() {
   // Custom strategy store (file-based)
   const customStrategyStore = new CustomStrategyStore();
 
+  // R14-9 (AD-14-5): Auto-register saved custom strategies into the registry at startup
+  // This enables backtest and bot enableStrategy for custom strategies after server restart
+  {
+    const CustomRuleStrategy = require('./strategies/custom/CustomRuleStrategy');
+    const strategyRegistry = require('./strategies');
+    const savedCustomStrategies = customStrategyStore.list();
+    for (const def of savedCustomStrategies) {
+      const strategyName = `Custom_${def.id}`;
+      try {
+        if (!strategyRegistry.has(strategyName)) {
+          const metadata = CustomRuleStrategy._buildMetadata(def);
+          const StrategyClass = class extends CustomRuleStrategy {
+            static metadata = metadata;
+            constructor(config = {}) { super(def, config); }
+          };
+          strategyRegistry.register(strategyName, StrategyClass);
+          log.info('Auto-registered custom strategy', { strategyName });
+        }
+      } catch (err) {
+        log.error('Failed to auto-register custom strategy (skipping)', {
+          strategyName,
+          error: err.message,
+        });
+      }
+    }
+    if (savedCustomStrategies.length > 0) {
+      log.info(`Auto-registered ${savedCustomStrategies.length} custom strategies at startup`);
+    }
+  }
+
   // Determine which position manager the rest of the system should use
   const activePositionManager = PAPER_TRADING ? paperPositionManager : positionManager;
 

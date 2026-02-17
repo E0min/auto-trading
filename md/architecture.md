@@ -25,7 +25,9 @@
 16. paperEngine                 ← { marketData } (페이퍼 모드 시)
 17. paperPositionManager        ← (페이퍼 모드 시)
 18. paperAccountManager         ← { paperEngine } (토너먼트 모드 시)
-19. botService (오케스트레이터) ← { 위 모든 서비스 }
+19. customStrategyStore          ← (독립, 파일 기반)
+    → 저장된 커스텀 전략을 strategyRegistry에 자동 등록 (Sprint R14, AD-14-5)
+20. botService (오케스트레이터) ← { 위 모든 서비스 }
 ```
 
 ### API 라우트 팩토리

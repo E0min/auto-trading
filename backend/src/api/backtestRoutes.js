@@ -59,25 +59,51 @@ function createBacktestRoutes({ dataFetcher, backtestStore, botService }) {
         leverage = '1',
       } = req.body;
 
-      // Validation
+      // R14-11: Input validation with proper HTTP status codes (400 instead of 200)
       if (!strategyName || !symbol || !interval || !startTime || !endTime) {
-        return res.json({
+        return res.status(400).json({
           success: false,
           error: 'strategyName, symbol, interval, startTime, endTime 필수',
         });
       }
 
       if (!registry.has(strategyName)) {
-        return res.json({
+        return res.status(400).json({
           success: false,
           error: `알 수 없는 전략: "${strategyName}"`,
+        });
+      }
+
+      // R14-11: Validate time range
+      const startTs = Number(startTime);
+      const endTs = Number(endTime);
+      if (isNaN(startTs) || isNaN(endTs) || startTs >= endTs) {
+        return res.status(400).json({
+          success: false,
+          error: 'startTime은 endTime보다 이전이어야 합니다.',
+        });
+      }
+      const MAX_RANGE_MS = 365 * 24 * 60 * 60 * 1000; // 1 year
+      if (endTs - startTs > MAX_RANGE_MS) {
+        return res.status(400).json({
+          success: false,
+          error: '백테스트 기간은 최대 1년입니다.',
+        });
+      }
+
+      // R14-11: Validate initialCapital range
+      const capNum = parseFloat(String(initialCapital));
+      if (isNaN(capNum) || capNum < 100 || capNum > 10000000) {
+        return res.status(400).json({
+          success: false,
+          error: '초기 자본은 100 ~ 10,000,000 범위여야 합니다.',
         });
       }
 
       // Validate leverage (P12-3 AD-70)
       const leverageNum = parseInt(leverage, 10);
       if (isNaN(leverageNum) || leverageNum < 1 || leverageNum > 20 || String(leverageNum) !== String(parseInt(leverage, 10))) {
-        return res.json({
+        return res.status(400).json({
           success: false,
           error: '레버리지는 1~20 사이의 정수여야 합니다',
         });
@@ -196,7 +222,7 @@ function createBacktestRoutes({ dataFetcher, backtestStore, botService }) {
       });
     } catch (err) {
       log.error('POST /run error', { error: err.message });
-      res.json({ success: false, error: err.message });
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 
@@ -209,7 +235,7 @@ function createBacktestRoutes({ dataFetcher, backtestStore, botService }) {
       res.json({ success: true, data: list });
     } catch (err) {
       log.error('GET / error', { error: err.message });
-      res.json({ success: false, error: err.message });
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 
@@ -222,7 +248,7 @@ function createBacktestRoutes({ dataFetcher, backtestStore, botService }) {
       res.json({ success: true, data: strategies });
     } catch (err) {
       log.error('GET /strategies error', { error: err.message });
-      res.json({ success: false, error: err.message });
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 
@@ -233,12 +259,12 @@ function createBacktestRoutes({ dataFetcher, backtestStore, botService }) {
     try {
       const result = backtestStore.get(req.params.id);
       if (!result) {
-        return res.json({ success: false, error: '백테스트를 찾을 수 없습니다' });
+        return res.status(404).json({ success: false, error: '백테스트를 찾을 수 없습니다' });
       }
       res.json({ success: true, data: result });
     } catch (err) {
       log.error('GET /:id error', { error: err.message });
-      res.json({ success: false, error: err.message });
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 
@@ -249,7 +275,7 @@ function createBacktestRoutes({ dataFetcher, backtestStore, botService }) {
     try {
       const result = backtestStore.get(req.params.id);
       if (!result) {
-        return res.json({ success: false, error: '백테스트를 찾을 수 없습니다' });
+        return res.status(404).json({ success: false, error: '백테스트를 찾을 수 없습니다' });
       }
 
       let curve = result.equityCurve || [];
@@ -263,7 +289,7 @@ function createBacktestRoutes({ dataFetcher, backtestStore, botService }) {
       res.json({ success: true, data: curve });
     } catch (err) {
       log.error('GET /:id/equity-curve error', { error: err.message });
-      res.json({ success: false, error: err.message });
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 
@@ -274,7 +300,7 @@ function createBacktestRoutes({ dataFetcher, backtestStore, botService }) {
     try {
       const result = backtestStore.get(req.params.id);
       if (!result) {
-        return res.json({ success: false, error: '백테스트를 찾을 수 없습니다' });
+        return res.status(404).json({ success: false, error: '백테스트를 찾을 수 없습니다' });
       }
 
       const trades = result.trades || [];
@@ -285,7 +311,7 @@ function createBacktestRoutes({ dataFetcher, backtestStore, botService }) {
       res.json({ success: true, data: page });
     } catch (err) {
       log.error('GET /:id/trades error', { error: err.message });
-      res.json({ success: false, error: err.message });
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 
@@ -296,12 +322,12 @@ function createBacktestRoutes({ dataFetcher, backtestStore, botService }) {
     try {
       const deleted = backtestStore.delete(req.params.id);
       if (!deleted) {
-        return res.json({ success: false, error: '백테스트를 찾을 수 없습니다' });
+        return res.status(404).json({ success: false, error: '백테스트를 찾을 수 없습니다' });
       }
       res.json({ success: true, data: { message: '삭제 완료' } });
     } catch (err) {
       log.error('DELETE /:id error', { error: err.message });
-      res.json({ success: false, error: err.message });
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 

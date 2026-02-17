@@ -390,11 +390,13 @@ class PaperEngine extends EventEmitter {
   /**
    * Clean up stale pending limit orders older than 30 minutes.
    * Also enforces a max size of 50 orders (FIFO eviction).
+   * R14-12: Also cleans up stale SL/TP orders older than 2 hours.
    * @private
    */
   _cleanupStaleOrders() {
     const now = Date.now();
     const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+    const SL_TP_STALE_THRESHOLD_MS = 2 * 60 * 60 * 1000; // R14-12: 2 hours for SL/TP
 
     // Remove stale orders (>30min)
     for (const [clientOid, order] of this._pendingOrders) {
@@ -403,6 +405,34 @@ class PaperEngine extends EventEmitter {
         this._pendingOrders.delete(clientOid);
         log.info('_cleanupStaleOrders — stale order removed', { clientOid, symbol: order.symbol, ageMs: now - createdAt });
         this.emit('paper:orderCancelled', { clientOid, symbol: order.symbol, reason: 'stale_timeout' });
+      }
+    }
+
+    // R14-12: Remove stale SL orders (>2h) — position likely already closed or orphaned
+    for (const [key, sl] of this._pendingSLOrders) {
+      const createdAt = sl.createdAt instanceof Date ? sl.createdAt.getTime() : now;
+      if (now - createdAt > SL_TP_STALE_THRESHOLD_MS) {
+        this._pendingSLOrders.delete(key);
+        log.warn('_cleanupStaleOrders — stale SL trigger removed', {
+          key,
+          symbol: sl.symbol,
+          posSide: sl.posSide,
+          ageMs: now - createdAt,
+        });
+      }
+    }
+
+    // R14-12: Remove stale TP orders (>2h)
+    for (const [key, tp] of this._pendingTPOrders) {
+      const createdAt = tp.createdAt instanceof Date ? tp.createdAt.getTime() : now;
+      if (now - createdAt > SL_TP_STALE_THRESHOLD_MS) {
+        this._pendingTPOrders.delete(key);
+        log.warn('_cleanupStaleOrders — stale TP trigger removed', {
+          key,
+          symbol: tp.symbol,
+          posSide: tp.posSide,
+          ageMs: now - createdAt,
+        });
       }
     }
 

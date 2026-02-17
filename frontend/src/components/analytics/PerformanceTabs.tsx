@@ -39,9 +39,11 @@ export default function PerformanceTabs({
 }: PerformanceTabsProps) {
   const [activeTab, setActiveTab] = useState<TabKey>('equity');
 
-  // Lazy loading: track which tabs have been loaded
+  // R14-19: Stale-while-revalidate pattern — track both loading and staleness
   const [loadedTabs] = useState<Set<TabKey>>(() => new Set<TabKey>(['equity']));
   const [tabLoading, setTabLoading] = useState(false);
+  const tabFetchTimestamps = useRef<Record<string, number>>({});
+  const STALE_MS = 60_000; // 1 minute staleness threshold
 
   // Per-tab cached data
   const [byStrategy, setByStrategy] = useState<Record<string, StrategyPerformanceEntry> | null>(null);
@@ -59,6 +61,7 @@ export default function PerformanceTabs({
       setDaily(null);
       loadedTabs.clear();
       loadedTabs.add('equity');
+      tabFetchTimestamps.current = {};
     }
   }, [sessionId, loadedTabs]);
 
@@ -86,6 +89,7 @@ export default function PerformanceTabs({
         default:
           break;
       }
+      tabFetchTimestamps.current[tab] = Date.now();
     } catch (err) {
       console.error(`탭 데이터 조회 실패 (${tab}):`, err);
     } finally {
@@ -93,20 +97,36 @@ export default function PerformanceTabs({
     }
   }, []);
 
-  // Handle tab selection — fetch on first select only
+  // R14-19: Handle tab selection — stale-while-revalidate
+  // Show cached data immediately, then refresh in background if stale
   const handleTabClick = useCallback((tab: TabKey) => {
     setActiveTab(tab);
 
-    if (tab !== 'equity' && !loadedTabs.has(tab) && sessionIdRef.current) {
+    if (tab === 'equity') return;
+    if (!sessionIdRef.current) return;
+
+    const lastFetchTime = tabFetchTimestamps.current[tab] || 0;
+    const isStale = Date.now() - lastFetchTime > STALE_MS;
+    const hasData = loadedTabs.has(tab);
+
+    if (!hasData) {
+      // First load — show spinner
       loadedTabs.add(tab);
+      fetchTabData(tab);
+    } else if (isStale) {
+      // Stale data — refresh in background (no spinner, show stale data)
       fetchTabData(tab);
     }
   }, [loadedTabs, fetchTabData]);
 
   // Determine loading state for analytics tabs
+  // R14-19: Only show loading spinner on first load, not on stale revalidation
   const isTabLoading = (tab: TabKey): boolean => {
     if (tab === 'equity') return analyticsLoading;
-    return tabLoading && activeTab === tab;
+    const hasData = (tab === 'strategy' && byStrategy !== null) ||
+                    (tab === 'symbol' && bySymbol !== null) ||
+                    (tab === 'daily' && daily !== null);
+    return tabLoading && activeTab === tab && !hasData;
   };
 
   return (

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 
 type BotState = 'idle' | 'running' | 'paused' | 'stopping' | 'error' | string;
 
@@ -27,13 +27,23 @@ export function useAdaptivePolling(
 ) {
   const config = POLLING_CONFIGS[configKey];
   const [isVisible, setIsVisible] = useState(true);
+  const fetchFnRef = useRef(fetchFn);
+  fetchFnRef.current = fetchFn;
 
-  // Track page visibility
-  useEffect(() => {
-    const handler = () => setIsVisible(!document.hidden);
-    document.addEventListener('visibilitychange', handler);
-    return () => document.removeEventListener('visibilitychange', handler);
+  // R14-20: Single consolidated visibilitychange listener
+  // Handles both visibility state tracking and tab-return fetch
+  const handleVisibility = useCallback(() => {
+    const visible = !document.hidden;
+    setIsVisible(visible);
+    if (visible) {
+      fetchFnRef.current();
+    }
   }, []);
+
+  useEffect(() => {
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [handleVisibility]);
 
   // Calculate target interval
   const targetInterval = useMemo(() => {
@@ -43,27 +53,16 @@ export function useAdaptivePolling(
     return config.idle;
   }, [isVisible, riskHalted, botState, config]);
 
-  // Fetch on tab return
-  useEffect(() => {
-    const handler = () => {
-      if (!document.hidden) {
-        fetchFn();
-      }
-    };
-    document.addEventListener('visibilitychange', handler);
-    return () => document.removeEventListener('visibilitychange', handler);
-  }, [fetchFn]);
-
   // Main polling effect — React's cleanup pattern clears the old interval
   // when targetInterval changes, so no additional debounce is needed
   useEffect(() => {
-    const id = setInterval(fetchFn, targetInterval);
+    const id = setInterval(() => fetchFnRef.current(), targetInterval);
     return () => clearInterval(id);
-  }, [fetchFn, targetInterval]);
+  }, [targetInterval]);
 
   // Initial fetch
   useEffect(() => {
-    fetchFn();
+    fetchFnRef.current();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 }

@@ -81,7 +81,7 @@ export default function RiskStatusPanel({ riskStatus, onResetDrawdown, resetLoad
               {formatPercent(drawdownMonitor.currentDrawdown)}
             </span>
           </div>
-          <div className="w-full bg-[var(--bg-surface)] rounded-full h-[2px]" role="meter" aria-label="드로다운" aria-valuenow={drawdownPct} aria-valuemin={0} aria-valuemax={10}>
+          <div className="w-full bg-[var(--bg-surface)] rounded-full h-[2px]" role="meter" aria-label="드로다운" aria-valuenow={drawdownPct} aria-valuemin={0} aria-valuemax={10} aria-valuetext={`현재 드로다운 ${drawdownPct.toFixed(2)}%, 최대 허용 ${formatPercent(drawdownMonitor.maxDrawdown)}`}>
             <div
               className={`h-[2px] rounded-full transition-all ${getRiskBarColor(drawdownPct * 10)}`}
               style={{ width: `${Math.min(drawdownPct * 10, 100)}%` }}
@@ -101,7 +101,7 @@ export default function RiskStatusPanel({ riskStatus, onResetDrawdown, resetLoad
               {formatPercent(exposureGuard.utilizationPercent)}
             </span>
           </div>
-          <div className="w-full bg-[var(--bg-surface)] rounded-full h-[2px]" role="meter" aria-label="노출도" aria-valuenow={exposurePct} aria-valuemin={0} aria-valuemax={100}>
+          <div className="w-full bg-[var(--bg-surface)] rounded-full h-[2px]" role="meter" aria-label="노출도" aria-valuenow={exposurePct} aria-valuemin={0} aria-valuemax={100} aria-valuetext={`현재 노출도 ${exposurePct.toFixed(1)}%, 한도 $${formatCurrency(exposureGuard.maxExposure)}`}>
             <div
               className={`h-[2px] rounded-full transition-all ${getRiskBarColor(exposurePct)}`}
               style={{ width: `${Math.min(exposurePct, 100)}%` }}

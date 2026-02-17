@@ -149,26 +149,31 @@ export default function StrategyCard({
                 {translateStrategyCategory(category)}
               </span>
             </div>
-            {/* Quick Stats Bar — regime tags + key metrics */}
-            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-              {regimes.slice(0, 3).map((r) => (
+            {/* R14-21: Quick Stats Bar — regime tags + key metrics (overcrowding fix) */}
+            <div className="flex items-center gap-1.5 mt-1.5 overflow-hidden max-w-full">
+              {regimes.slice(0, 2).map((r) => (
                 <span
                   key={r}
-                  className={cn('inline-flex items-center gap-1 text-[10px]', getRegimeColor(r))}
+                  className={cn('inline-flex items-center gap-1 text-[10px] flex-shrink-0', getRegimeColor(r))}
                 >
                   <span className={cn('w-1 h-1 rounded-full', getRegimeDotColor(r))} />
                   {translateRegime(r)}
                 </span>
               ))}
+              {regimes.length > 2 && (
+                <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0" title={regimes.slice(2).map(translateRegime).join(', ')}>
+                  +{regimes.length - 2}
+                </span>
+              )}
               {regimes.length > 0 && strategy.docs && (
-                <span className="text-[var(--border-muted)] text-[10px]">|</span>
+                <span className="text-[var(--border-muted)] text-[10px] flex-shrink-0">|</span>
               )}
               {strategy.docs && (
                 <>
-                  <span className={cn('text-[10px]', getDifficultyColor(strategy.docs.difficulty))}>
+                  <span className={cn('text-[10px] flex-shrink-0', getDifficultyColor(strategy.docs.difficulty))}>
                     {translateDifficulty(strategy.docs.difficulty)}
                   </span>
-                  <span className="text-[10px] text-[var(--text-muted)]">
+                  <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0 truncate">
                     {strategy.docs.indicators.length}개 지표
                   </span>
                 </>

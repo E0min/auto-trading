@@ -115,7 +115,7 @@
 | `useTrades` | `hooks/useTrades.ts` | 적응형 (10~60초) | 거래 내역 + 미체결 주문 |
 | `useAnalytics` | `hooks/useAnalytics.ts` | 적응형 (Sprint R8) | 자산 곡선 + 세션 통계 |
 | `useHealthCheck` | `hooks/useHealthCheck.ts` | 적응형 (30~120초) | API 지연, 서비스 상태 |
-| `useAdaptivePolling` | `hooks/useAdaptivePolling.ts` | 봇 상태별 동적 | 적응형 폴링 코어 (Sprint R4) |
+| `useAdaptivePolling` | `hooks/useAdaptivePolling.ts` | 봇 상태별 동적 | 적응형 폴링 코어 (Sprint R4). Sprint R14: 이중 visibilitychange 리스너를 단일 통합, fetchFnRef로 stale closure 방지 |
 | `useBacktest` | `hooks/useBacktest.ts` | 1초 (실행 중) | 백테스트 CRUD + 결과 폴링. Sprint R12: Visibility API(백그라운드 탭 시 폴링 중지, 포그라운드 복귀 시 재개) |
 | `useTournament` | `hooks/useTournament.ts` | 적응형 (Sprint R8) | 토너먼트 정보 + 순위표 |
 | `useRiskEvents` | `hooks/useRiskEvents.ts` | 이벤트 기반 | 리스크 이벤트 조회/확인 처리 |
@@ -181,7 +181,7 @@ getSocket()      // 현재 소켓 인스턴스 조회 (없으면 null)
 | `TradingModeToggle` | 라이브/페이퍼 모드 전환. Sprint R12: 에러 메시지 표시 (5초 자동 해제) |
 | ~~`StrategyPanel`~~ | 삭제됨 (Sprint R10, 데드 코드) |
 | `AccountOverview` | 자산, 잔고, 미실현 PnL. Sprint R12: value flash 효과 (0.1% 이상 변동 시 green/red 배경 500ms) |
-| `RiskStatusPanel` | 서킷 브레이커, 노출, 낙폭 지표 + 복합 리스크 점수 (Sprint R4: DD 40% + Exp 30% + CB 30%, 색상 코딩) |
+| `RiskStatusPanel` | 서킷 브레이커, 노출, 낙폭 지표 + 복합 리스크 점수 (Sprint R4: DD 40% + Exp 30% + CB 30%, 색상 코딩). Sprint R14: 드로다운/노출 미터에 `aria-valuetext` 추가 (접근성) |
 | ~~`MarketRegimeIndicator`~~ | 삭제됨 (Sprint R11) |
 | `SymbolRegimeTable` | 심볼별 레짐 분류 테이블. Sprint R12: 접기/펼치기 토글 (기본 접힘), Card 대신 자체 컨테이너 |
 | `RegimeStrategyRecommendation` | 현재 레짐에 맞는 전략 추천 |
@@ -201,12 +201,12 @@ getSocket()      // 현재 소켓 인스턴스 조회 (없으면 null)
 | 컴포넌트 | 설명 |
 |----------|------|
 | `StrategyHub` | 전략 관리 패널 (카테고리/레짐 필터, 커스텀 전략 빌더 진입) |
-| `StrategyCard` | 전략 카드 (토글, 확장, Quick Stats Bar). Sprint R13: Quick Stats Bar에 난이도/지표 수 표시. 확장 시 3탭: 개요/상세/설정 |
+| `StrategyCard` | 전략 카드 (토글, 확장, Quick Stats Bar). Sprint R13: Quick Stats Bar에 난이도/지표 수 표시. 확장 시 3탭: 개요/상세/설정. Sprint R14: regime 태그 slice(0,2) + `+N` overflow 표시 (과밀 해소), `flex-shrink-0`/`overflow-hidden` |
 | `StrategyDetail` | 전략 상세 (포지션, 거래내역, 시그널 탭) |
-| `StrategyConfigPanel` | 파라미터 튜닝 UI (paramMeta 기반 자동 폼 생성, 슬라이더+숫자 입력) |
-| `StrategyExplainer` | 전략 설명 패널 (Sprint R13). `docs` 메타데이터 기반 — 요약, 진입/청산 조건, 사용 지표, 강점/약점, 적합 장세, 주의사항, 난이도 |
-| `CustomStrategyBuilder` | 커스텀 전략 빌더 (지표 정의, 조건 편집, 리스크 설정) |
-| `ConditionRow` | 커스텀 전략 조건 행 편집기 |
+| `StrategyConfigPanel` | 파라미터 튜닝 UI (paramMeta 기반 자동 폼 생성, 슬라이더+숫자 입력). Sprint R14: 클라이언트 사이드 validation (min/max/integer/numeric), inline 에러 표시, 검증 실패 시 저장 버튼 비활성화 |
+| `StrategyExplainer` | 전략 설명 패널 (Sprint R13). `docs` 메타데이터 기반 — 요약, 진입/청산 조건, 사용 지표, 강점/약점, 적합 장세, 주의사항, 난이도. Sprint R14: 반응형 grid — 청산 조건 `grid-cols-2 md:grid-cols-3`, 강점/약점 `grid-cols-1 md:grid-cols-2` |
+| `CustomStrategyBuilder` | 커스텀 전략 빌더 (지표 정의, 조건 편집, 리스크 설정). Sprint R14: ESC 키 닫기, focus trap (Tab/Shift+Tab 순환), `role="dialog" aria-modal="true"`, 마운트 시 자동 포커스 |
+| `ConditionRow` | 커스텀 전략 조건 행 편집기. Sprint R14: 전환 버튼 `123`/`f(x)` 색상 구분 (accent=numeric, amber=indicator), `aria-label` 추가 |
 
 ### 차트 공통 컴포넌트 (`components/charts/`) (Sprint R10)
 
@@ -218,7 +218,7 @@ getSocket()      // 현재 소켓 인스턴스 조회 (없으면 null)
 
 | 컴포넌트 | 설명 |
 |----------|------|
-| `PerformanceTabs` | 4탭 통합 분석 뷰 (에쿼티 커브, 전략별, 심볼별, 일별). Sprint R11: 탭별 lazy loading 적용 |
+| `PerformanceTabs` | 4탭 통합 분석 뷰 (에쿼티 커브, 전략별, 심볼별, 일별). Sprint R11: 탭별 lazy loading 적용. Sprint R14: stale-while-revalidate (60초) — 캐시 데이터 즉시 표시 후 백그라운드 갱신, 첫 로드만 스피너 |
 | `StrategyPerformance` | 전략별 PnL 가로 막대 차트 + 테이블 (승률, PnL, 거래 수) |
 | `SymbolPerformance` | 심볼별 PnL 가로 막대 차트 + 테이블 |
 | `DailyPerformance` | 일별 PnL 세로 막대 차트 + 요약 카드 (수익일, 손실일, 평균) |

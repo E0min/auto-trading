@@ -1,54 +1,58 @@
-# Checkpoint — 2026-02-17 02:30 KST
+# Checkpoint — 2026-02-18 09:00 KST
 
 ## Git State
 - Branch: master
-- Last commit: 4d6cd29 에이전트 Knowledge Index 최신화 + /improve 스킬 추가
-- Modified files: 42개 (BE 14 + FE 12 + agents 16)
+- Last commit: 3cf6301 feat: CoinGecko 시가총액 기반 코인 선정으로 전환
+- Modified files: ~30개 (BE 16 + FE 8 + agents 6+)
 - Worktrees: 없음 (master 단일)
 
 ## Sprint Progress
 
-### Tier 0 (Safety-Critical)
-- 완료: 20/21 (95%)
-- deferred: R8-T0-5 (PositionManager 전략 매핑 — 멀티심볼과 함께 다음 라운드)
+### Overall
+- R14 실행 완료: 24/24건 (100%)
+- R14 보류: 15건 (R15)
+- 아키텍처 결정: 5건 (AD-14-1 ~ AD-14-5)
 
-### Tier 1 (Reliability)
-- 완료: 30/31 (97%)
-- deferred: R8-T1-1 (InstrumentCache lot step — T0-5와 연계)
-
-### Tier 2 (Quality)
-- 완료: 30/30 (100%) (R8-T2-7 포함)
-
-### Tier R7 (Regime Stabilization)
-- 완료: 17/17 (100%)
-
-### Tier 3 (Enhancement)
-- 완료: 8/16 (50%)
-- deferred: T3-4, T3-9, T3-11, T3-12, T3-13, T3-14, T3-15
-- agreed (→R8-T1-1): T3-10
-
-### Tier R8 T2 (remaining)
-- agreed: R8-T2-1~6, R8-T2-8~12 (11건)
-
-### Tier R8 T3
-- agreed: R8-T3-1~8 (8건)
-
-### Overall: 105/135 done (78%), 9 deferred, 21 agreed (미구현)
+### Tier R14 (코드베이스 재분석 Round 4)
+- Backend T0 (7건): R14-1~R14-6, R14-8 — 전부 done
+- Backend T1 (7건): R14-7, R14-9~R14-14 — 전부 done
+- Backend T2 (2건): R14-15~R14-16 — 전부 done
+- Frontend T1 (4건): R14-17~R14-20 — 전부 done
+- Frontend T2 (4건): R14-21~R14-24 — 전부 done
 
 ## In-Progress Details
-- Sprint Round 8: Phase 4 완료, Phase 5 진행 중
-
-## Blocked Tasks
-- R8-T1-1 (InstrumentCache lot step): R8-T0-5 (PositionManager 전략 매핑)에 연계
+- Sprint Round 14: Phase 4 완료, Phase 5 진행 중 (KNOWLEDGE_INDEX 업데이트 완료)
 
 ## Next Available Actions
-- Phase 5 완료 후 Phase 6 (Docs 최신화) → Phase 7 (Commit & Push) 진행
-- R8-T2, R8-T3 항목은 다음 스프린트에서 구현
+- Phase 6 (Docs 최신화) → Phase 7 (Commit & Push) 진행
 
-## R8 Phase 4 구현 요약
-- Backend 16건: Router singleton, BacktestStore FIFO, RiskEngine reduceOnly, SignalFilter CLOSE bypass, resume() StrategyRouter, getStatus/getSignal try-catch, Snapshot 60s, BotSession stats, OrphanOrderCleanup unref, TickerAggregator unref, _lastTickerEmit cleanup, parseFloat 제거, TournamentRoutes 캡슐화, express.json limit, PositionManager unref
-- Frontend 9건: EmergencyStopDialog 접근성, ErrorToast severity, 봇정지 확인, useSocket state 분리, named handler, 적응형 폴링 x3, SignalFeed 번역, aria-expanded
-- 검증: Frontend build 성공, Backend 51/51 tests passed
+## R14 Phase 4 구현 요약
+
+### Backend (16건)
+- CustomRuleStrategy: onFill()(AD-14-1), mathUtils 전환, CLOSE suggestedQty '100' (R14-1,2,8)
+- QuietRangeScalpStrategy: leverage 필드 추가 (R14-3)
+- CustomStrategyStore: randomUUID + _sanitize() (AD-14-2) (R14-4)
+- botRoutes: needsReactivation(AD-14-3) + POST 입력 방어 (R14-5,10)
+- botService: _handleStrategySignal .catch() (R14-6)
+- strategyConfigValidator: Custom_ config 검증(AD-14-4) (R14-7)
+- app.js: 커스텀 전략 자동 등록(AD-14-5) (R14-9)
+- backtestRoutes: 입력 검증 + HTTP 상태 코드 (R14-11)
+- paperEngine: SL/TP stale cleanup (R14-12)
+- signalFilter: _recentSignals 500개 cap (R14-13)
+- drawdownMonitor: 경고 디바운싱 5분 (R14-14)
+- positionManager: utcHour dead code 제거 (R14-15)
+- orderManager: destroy() locks/cache clear (R14-16)
+
+### Frontend (8건)
+- StrategyConfigPanel: 입력 유효성 검증 (R14-17)
+- CustomStrategyBuilder: ESC + focus trap + aria-modal (R14-18)
+- PerformanceTabs: stale-while-revalidate 60s (R14-19)
+- useAdaptivePolling: 이중 리스너 통합 (R14-20)
+- StrategyCard: Quick Stats regime slice(0,2) + overflow (R14-21)
+- StrategyExplainer: grid-cols-2 md:grid-cols-3 반응형 (R14-22)
+- RiskStatusPanel: aria-valuetext (R14-23)
+- ConditionRow: 123/f(x) 전환 버튼 UX (R14-24)
 
 ## Notes
-- R8-T0-5 (PositionManager 전략 매핑)과 R8-T1-1 (InstrumentCache lot step)은 다음 라운드의 멀티심볼 라우팅과 함께 구현이 효율적
+- R14-D1~D15 (15건) deferred to R15
+- R13 items (R13-D1~D9) still deferred

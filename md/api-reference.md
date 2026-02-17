@@ -226,6 +226,7 @@ Sprint R13: 서버측 config 검증이 추가되었습니다. `strategyConfigVal
 
 > **leverage** (Sprint R12, AD-70): 1~20 정수. 기본값 `"1"`. margin = cash * pct, positionValue = margin * leverage. 강제 청산은 미시뮬레이션.
 > **동시 실행 제한** (Sprint R12): 봇 RUNNING 시 최대 1건, 정지 시 최대 2건. 초과 요청 시 429 응답.
+> **입력 검증** (Sprint R14): `startTime < endTime` (400), 최대 1년 범위, `initialCapital` 100~10,000,000 범위 검증. 에러 응답은 적절한 HTTP 상태 코드 반환 (400 입력 오류, 404 미존재, 500 서버 오류).
 
 #### GET /api/backtest/:id 응답
 

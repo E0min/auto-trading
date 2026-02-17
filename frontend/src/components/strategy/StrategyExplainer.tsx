@@ -45,8 +45,9 @@ export default function StrategyExplainer({ docs, strategyName }: StrategyExplai
       </Section>
 
       {/* Exit conditions */}
+      {/* R14-22: Responsive grid — 2 cols on mobile, 3 cols on md+ */}
       <Section title="청산 조건">
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
           <MiniStat label="익절 (TP)" value={docs.exit.tp} color="text-[var(--profit)]" />
           <MiniStat label="손절 (SL)" value={docs.exit.sl} color="text-[var(--loss)]" />
           <MiniStat label="트레일링" value={docs.exit.trailing} />
@@ -78,7 +79,8 @@ export default function StrategyExplainer({ docs, strategyName }: StrategyExplai
       </Section>
 
       {/* Strengths & Weaknesses */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* R14-22: Responsive — stack on mobile, side by side on md+ */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <Section title="강점">
           <ul className="space-y-1">
             {docs.strengths.map((s, i) => (

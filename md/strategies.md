@@ -513,6 +513,35 @@ BollingerReversion, Supertrend, FundingRate, MaTrend 전략에서 시그널 emit
 - 새 캔들 도착 시 캐시 무효화 후 재계산
 - 캐시 키: `indicator|param1=val1,param2=val2` (결정적)
 
+### 커스텀 전략 시스템 (Sprint R13~R14)
+
+JSON 규칙 기반의 사용자 정의 전략을 지원합니다.
+
+**CustomRuleStrategy** (`strategies/indicator-heavy/CustomRuleStrategy.js`):
+- JSON 규칙 정의(지표, 조건 그룹)를 기반으로 시그널 생성
+- Sprint R14 (AD-14-1): `onFill()` 콜백 추가 — positionSide/entryPrice를 시그널 emit 시점이 아닌 실제 체결 시 설정 (AD-37 준수)
+- Sprint R14: `parseFloat` 직접 사용 → `mathUtils` 전환 (부동소수점 정밀도 보장)
+- Sprint R14: CLOSE 시그널 `suggestedQty`를 `'100'` (String) 으로 정정
+
+**CustomStrategyStore** (`services/customStrategyStore.js`):
+- 파일 기반 영속 저장 (`data/custom_strategies.json`), atomic writes (tmp+rename)
+- Sprint R14 (AD-14-2): ID 생성을 `Date.now()` → `crypto.randomUUID()`로 변경 (collision 방지)
+- Sprint R14: `_sanitize()` 재귀 메서드로 `__proto__`, `constructor`, `prototype` 키 제거 (프로토타입 오염 방어)
+
+**서버 시작 시 자동 등록** (Sprint R14, AD-14-5):
+- `app.js` bootstrap 시 `customStrategyStore.list()`로 저장된 커스텀 전략을 순회
+- 각 전략을 `Custom_${id}` 이름으로 `strategyRegistry`에 자동 등록
+- 개별 등록 실패는 무시하고 나머지 계속 처리
+
+**Config 검증** (Sprint R14, AD-14-4):
+- `strategyConfigValidator`에 `Custom_` prefix 전용 검증 추가
+- 공통 필드만 검증: `positionSizePercent`(1~20), `leverage`(1~20), `tpPercent`(0.5~50), `slPercent`(0.5~20)
+- 커스텀 전략의 임의 파라미터는 통과 허용
+
+**입력 방어** (Sprint R14):
+- POST: 이름 100자, 지표 10개, 조건 그룹당 20개, JSON 50KB 제한
+- PUT: `needsReactivation` 플래그 반환 — 봇 실행 중 활성 전략 수정 시 재활성화 필요 알림 (AD-14-3)
+
 ### RSI Wilder Smoothing (Sprint R4)
 
 RSI 계산에 Wilder smoothing이 기본 적용됩니다:

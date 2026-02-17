@@ -112,7 +112,7 @@ export default function ConditionRow({
         </select>
       )}
 
-      {/* Toggle right type */}
+      {/* R14-24: Toggle right type — improved UX with clearer labels */}
       <button
         type="button"
         onClick={() => {
@@ -122,10 +122,15 @@ export default function ConditionRow({
             onChange({ ...condition, right: 0 });
           }
         }}
-        title={isRightNumeric ? '지표로 전환' : '숫자로 전환'}
-        className="px-1 py-0.5 text-[9px] text-[var(--text-muted)] border border-[var(--border-subtle)] rounded hover:text-[var(--text-secondary)] hover:border-[var(--border-muted)] transition-colors"
+        title={isRightNumeric ? '우측 값을 지표로 전환' : '우측 값을 숫자로 전환'}
+        aria-label={isRightNumeric ? '우측 값을 지표로 전환' : '우측 값을 숫자로 전환'}
+        className={`px-1.5 py-0.5 text-[9px] font-medium rounded border transition-colors ${
+          isRightNumeric
+            ? 'text-[var(--accent)] border-[var(--accent)]/30 bg-[var(--accent-subtle)] hover:bg-[var(--accent)]/10'
+            : 'text-amber-400 border-amber-400/30 bg-amber-400/5 hover:bg-amber-400/10'
+        }`}
       >
-        {isRightNumeric ? '#→f' : 'f→#'}
+        {isRightNumeric ? '123' : 'f(x)'}
       </button>
 
       {/* Remove button */}

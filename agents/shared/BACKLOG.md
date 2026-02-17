@@ -396,6 +396,79 @@
 
 ---
 
+## Tier R14 — 코드베이스 재분석 Round 4 (Round 14)
+
+### Backend T0 (즉시)
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R14-1 | T0 | Backend | CustomRuleStrategy onFill() 추가 — positionSide/entryPrice 이동 (AD-14-1) | T:P14-1/T1, E:R14-BE-15 | R14 | done |
+| R14-2 | T0 | Backend | CustomRuleStrategy parseFloat → mathUtils 전환 | T:P14-4, E:R14-BE-04 | R14 | done |
+| R14-3 | T0 | Backend | QuietRangeScalp entry leverage 필드 추가 | T:P14-7 | R14 | done |
+| R14-4 | T0 | Backend | CustomStrategyStore ID crypto.randomUUID + 입력 검증 (AD-14-2) | E:R14-BE-01 | R14 | done |
+| R14-5 | T0 | Backend | Custom Strategy 업데이트 시 needsReactivation 응답 (AD-14-3) | E:R14-BE-02, T:P14-T4 | R14 | done |
+| R14-6 | T0 | Backend | _handleStrategySignal 비동기 에러 .catch() 추가 | E:R14-BE-05, T:P14-T7 | R14 | done |
+| R14-8 | T0 | Backend | CLOSE 시그널 suggestedQty '100' 수정 | T:P14-T9 | R14 | done |
+
+### Backend T1 (1주 내)
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R14-7 | T1 | Backend | Custom Strategy config 공통 검증 (AD-14-4) | E:R14-BE-03 | R14 | done |
+| R14-9 | T1 | Backend | 커스텀 전략 서버 시작 시 레지스트리 자동 등록 (AD-14-5) | T:P14-T3 | R14 | done |
+| R14-10 | T1 | Backend | Custom Strategy POST 입력 방어 (깊이/크기 제한) | E:R14-BE-09 | R14 | done |
+| R14-11 | T1 | Backend | Backtest 라우트 입력 검증 + HTTP 상태 코드 수정 | E:R14-BE-08, R14-BE-14 | R14 | done |
+| R14-12 | T1 | Backend | PaperEngine SL/TP stale cleanup | E:R14-BE-10 | R14 | done |
+| R14-13 | T1 | Backend | SignalFilter _recentSignals 크기 제한 (500개) | E:R14-BE-12 | R14 | done |
+| R14-14 | T1 | Backend | DrawdownMonitor 경고 디바운싱 (5분 간격) | E:R14-BE-16, T:P14-T12 | R14 | done |
+
+### Backend T2 (품질)
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R14-15 | T2 | Backend | PositionManager utcHour dead code 제거 | E:R14-BE-11 | R14 | done |
+| R14-16 | T2 | Backend | OrderManager _symbolLocks.clear() on stop | E:R14-BE-07, T:P14-T11 | R14 | done |
+
+### Frontend T1
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R14-17 | T1 | Frontend | StrategyConfigPanel 입력 유효성 검증 | UI:R14-1 | R14 | done |
+| R14-18 | T1 | Frontend | CustomStrategyBuilder 모달 접근성 (ESC, focus trap) | UI:R14-2 | R14 | done |
+| R14-19 | T1 | Frontend | PerformanceTabs stale-while-revalidate | UI:R14-3 | R14 | done |
+| R14-20 | T1 | Frontend | useAdaptivePolling 이중 리스너 통합 | UI:R14-8 | R14 | done |
+
+### Frontend T2
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R14-21 | T2 | Frontend | Quick Stats Bar 과밀 해소 | UI:R14-12 | R14 | done |
+| R14-22 | T2 | Frontend | StrategyExplainer 반응형 grid-cols-3 | UI:R14-4 | R14 | done |
+| R14-23 | T2 | Frontend | RiskStatusPanel aria-valuetext 추가 | UI:R14-13 | R14 | done |
+| R14-24 | T2 | Frontend | ConditionRow 전환 버튼 UX 개선 | UI:R14-9 | R14 | done |
+
+### 보류 (R15)
+
+| ID | 우선도 | 담당 | 제목 | 제안자 | 라운드 | 상태 |
+|----|--------|------|------|--------|--------|------|
+| R14-D1 | T0 | Backend | 10개 전략 AD-37 위반 일괄 수정 (positionSide→onFill) | T:P14-1 | R14 | deferred |
+| R14-D2 | T1 | Backend | ATR 자체 계산 중복 제거 6개 전략 | T:P14-2 | R14 | deferred |
+| R14-D3 | T1 | Backend | onFill 패턴 통일 fill.action 기반 | T:P14-3 | R14 | deferred |
+| R14-D4 | T2 | Backend | GridStrategy 동시 entry/exit 시그널 분리 | T:P14-5 | R14 | deferred |
+| R14-D5 | T2 | Backend | FundingRate Kelly 승률 동적화 | T:P14-6 | R14 | deferred |
+| R14-D6 | T1 | Backend | ExposureGuard 레버리지 인지 | T/E R12-D4 격상 | R14 | deferred |
+| R14-D7 | T1 | Backend | maxHoldTime 강제 청산 | T R11-D3 격상 | R14 | deferred |
+| R14-D8 | T1 | Backend | CustomRuleStrategy confidence 동적 산출 | T:P14-T5 | R14 | deferred |
+| R14-D9 | T1 | Backend | CustomRuleStrategy 레짐 타겟 기본값 보수화 | T:P14-T8 | R14 | deferred |
+| R14-D10 | T1 | Frontend | Tabs ARIA 완전 준수 | UI:R14-6 | R14 | deferred |
+| R14-D11 | T2 | Frontend | TradesTable 컬럼 정렬 | UI:R14-10 | R14 | deferred |
+| R14-D12 | T2 | Frontend | 전략 비교 뷰 (90분 신규) | UI:R14-15 | R14 | deferred |
+| R14-D13 | T2 | Frontend | Dashboard page.tsx 분할 | UI:R14-5 | R14 | deferred |
+| R14-D14 | T2 | Frontend | 전략 프리셋 시스템 UI | R13-D1 | R14 | deferred |
+| R14-D15 | T1 | Frontend | 모듈별 설정 아코디언 재구성 | R13-D5 | R14 | deferred |
+
+---
+
 ## 아키텍처 결정 참조
 → `decisions/round_1.md` — AD-1~AD-6 참조
 → `decisions/round_2.md` — AD-7~AD-12 참조 (T0-1~T0-9 구현 세부사항)
@@ -410,3 +483,4 @@
 → `decisions/round_11.md` — AD-63~AD-68 참조 (R11 코드베이스 재분석 Round 2)
 → `decisions/round_12.md` — AD-69~AD-73 참조 (R12 코드베이스 재분석 Round 3)
 → `decisions/round_13.md` — AD-13-1~AD-13-7 참조 (R13 전략 모듈화 + 파라미터 튜닝 + UX)
+→ `decisions/round_14.md` — AD-14-1~AD-14-5 참조 (R14 코드베이스 재분석 Round 4)

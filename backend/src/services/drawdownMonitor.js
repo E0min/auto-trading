@@ -47,6 +47,10 @@ class DrawdownMonitor extends EventEmitter {
     this.isHalted = false;
     this.haltReason = null;
 
+    // R14-14: Debounce warning emissions (5 min minimum interval)
+    this._lastWarningTime = 0;
+    this._warningDebounceMs = 5 * 60 * 1000; // 5 minutes
+
     log.info('DrawdownMonitor initialised', { params: this.params });
   }
 
@@ -111,18 +115,23 @@ class DrawdownMonitor extends EventEmitter {
     }
 
     // ---- Drawdown warning (50 % of max threshold) ----
+    // R14-14: Debounce warnings to at most once per 5 minutes
     const warningThreshold = divide(this.params.maxDrawdownPercent, '2');
     if (
       isGreaterThan('0', drawdownPercent) &&
       isGreaterThan(absDrawdown, warningThreshold)
     ) {
-      const payload = {
-        drawdownPercent,
-        warningThreshold,
-        maxDrawdownPercent: this.params.maxDrawdownPercent,
-      };
-      log.warn('Drawdown warning', payload);
-      this.emit(RISK_EVENTS.DRAWDOWN_WARNING, payload);
+      const now = Date.now();
+      if (now - this._lastWarningTime >= this._warningDebounceMs) {
+        this._lastWarningTime = now;
+        const payload = {
+          drawdownPercent,
+          warningThreshold,
+          maxDrawdownPercent: this.params.maxDrawdownPercent,
+        };
+        log.warn('Drawdown warning', payload);
+        this.emit(RISK_EVENTS.DRAWDOWN_WARNING, payload);
+      }
     }
   }
 

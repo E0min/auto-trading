@@ -1117,12 +1117,16 @@ class OrderManager extends EventEmitter {
   // =========================================================================
 
   /**
-   * Remove WS event listeners. Call when shutting down the OrderManager.
+   * Remove WS event listeners and clear locks.
+   * Call when shutting down the OrderManager.
+   * R14-16: Also clear _symbolLocks to prevent stale lock references.
    */
   destroy() {
     this.exchangeClient.removeListener('ws:order', this._handleWsOrderUpdate);
     this.exchangeClient.removeListener('ws:fill', this._handleWsFillUpdate);
-    log.info('OrderManager destroyed — WS listeners removed');
+    this._symbolLocks.clear(); // R14-16
+    this._leverageCache.clear();
+    log.info('OrderManager destroyed — WS listeners + locks cleared');
   }
 }
 

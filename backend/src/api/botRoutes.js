@@ -323,6 +323,7 @@ module.exports = function createBotRoutes({ botService, riskEngine, customStrate
   });
 
   // POST /api/bot/custom-strategies — create a new custom strategy
+  // R14-10: Input defense — depth/size limits for indicators and conditions
   router.post('/custom-strategies', (req, res) => {
     try {
       if (!customStrategyStore) {
@@ -333,11 +334,46 @@ module.exports = function createBotRoutes({ botService, riskEngine, customStrate
       if (!def || !def.name) {
         return res.status(400).json({ success: false, error: '전략 이름은 필수입니다.' });
       }
+      if (typeof def.name !== 'string' || def.name.length > 100) {
+        return res.status(400).json({ success: false, error: '전략 이름은 100자 이하의 문자열이어야 합니다.' });
+      }
       if (!def.indicators || !Array.isArray(def.indicators)) {
         return res.status(400).json({ success: false, error: '지표 정의가 필요합니다.' });
       }
       if (!def.rules || typeof def.rules !== 'object') {
         return res.status(400).json({ success: false, error: '규칙 정의가 필요합니다.' });
+      }
+
+      // R14-10: Size limits to prevent server overload
+      const MAX_INDICATORS = 10;
+      const MAX_CONDITIONS_PER_GROUP = 20;
+
+      if (def.indicators.length > MAX_INDICATORS) {
+        return res.status(400).json({
+          success: false,
+          error: `지표는 최대 ${MAX_INDICATORS}개까지 설정할 수 있습니다. (현재: ${def.indicators.length}개)`,
+        });
+      }
+
+      // Validate conditions count in each rule group
+      for (const [ruleKey, ruleGroup] of Object.entries(def.rules)) {
+        if (ruleGroup && Array.isArray(ruleGroup.conditions)) {
+          if (ruleGroup.conditions.length > MAX_CONDITIONS_PER_GROUP) {
+            return res.status(400).json({
+              success: false,
+              error: `규칙 "${ruleKey}"의 조건은 최대 ${MAX_CONDITIONS_PER_GROUP}개까지 설정할 수 있습니다. (현재: ${ruleGroup.conditions.length}개)`,
+            });
+          }
+        }
+      }
+
+      // R14-10: JSON depth limit — stringify check (prevent deeply nested payloads)
+      const jsonStr = JSON.stringify(def);
+      if (jsonStr.length > 50000) {
+        return res.status(400).json({
+          success: false,
+          error: '전략 정의가 너무 큽니다. (최대 50KB)',
+        });
       }
 
       const saved = customStrategyStore.save(def);
@@ -361,6 +397,7 @@ module.exports = function createBotRoutes({ botService, riskEngine, customStrate
   });
 
   // PUT /api/bot/custom-strategies/:id — update an existing custom strategy
+  // R14-5 (AD-14-3): Include needsReactivation flag when bot is running
   router.put('/custom-strategies/:id', (req, res) => {
     try {
       if (!customStrategyStore) {
@@ -375,7 +412,14 @@ module.exports = function createBotRoutes({ botService, riskEngine, customStrate
       }
 
       const updated = customStrategyStore.update(id, def);
-      res.json({ success: true, data: updated });
+
+      // R14-5 (AD-14-3): Check if the custom strategy is currently active in a running bot
+      const strategyName = `Custom_${id}`;
+      const isRunning = botService && botService._running;
+      const isActive = isRunning && botService.strategies.some((s) => s.name === strategyName);
+      const needsReactivation = isActive;
+
+      res.json({ success: true, data: updated, needsReactivation });
     } catch (err) {
       log.error('PUT /custom-strategies/:id — error', { error: err });
       res.status(err.message.includes('찾을 수 없') ? 404 : 500).json({ success: false, error: err.message });

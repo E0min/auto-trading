@@ -66,6 +66,13 @@ PaperEngine에 거래소 사이드 TP 시뮬레이션이 추가되었습니다:
 - **30분 TTL**: 30분 이상 경과한 미체결 대기 주문은 자동 삭제
 - **50건 상한**: 대기 주문이 50건을 초과하면 FIFO 방식으로 가장 오래된 주문부터 삭제
 
+#### SL/TP Stale Cleanup (Sprint R14)
+
+`_cleanupStaleOrders()` 메서드가 SL/TP 대기 주문도 정리합니다:
+- **2시간 TTL**: 등록 후 2시간 이상 경과한 SL/TP 주문은 자동 삭제
+- 대상: `_pendingSLOrders` Map + `_pendingTPOrders` Map
+- 포지션 없이 남아있는 고아 SL/TP 주문 방지
+
 #### reset() (Sprint R6)
 
 `paperEngine.reset()`으로 대기 주문(`_pendingOrders`, `_pendingSLOrders`)과 가격 캐시(`_lastPrices`)를 초기화합니다. `botService.stop()` 시 자동 호출됩니다.

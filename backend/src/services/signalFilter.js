@@ -400,12 +400,19 @@ class SignalFilter extends EventEmitter {
 
   /**
    * Clean up stale entries.
+   * R14-13: Also enforce max size limit of 500 on _recentSignals.
    * @private
    */
   _cleanup(now) {
     // Prune recentSignals older than duplicate window
     const cutoff = now - DUPLICATE_WINDOW_MS * 2;
     this._recentSignals = this._recentSignals.filter((entry) => entry.ts > cutoff);
+
+    // R14-13: Hard cap at 500 entries to prevent unbounded memory growth
+    const MAX_RECENT_SIGNALS = 500;
+    if (this._recentSignals.length > MAX_RECENT_SIGNALS) {
+      this._recentSignals = this._recentSignals.slice(-MAX_RECENT_SIGNALS);
+    }
 
     // Prune stale activeSignals older than MAX_ACTIVE_SIGNAL_AGE_MS
     for (const [tsKey, ts] of this._activeSignalTimestamps) {

@@ -361,7 +361,7 @@ class PositionManager extends EventEmitter {
    */
   _checkDailyReset() {
     const now = new Date();
-    const utcHour = now.getUTCHours();
+    // R14-15: Removed unused utcHour variable (dead code)
     const todayDate = now.toISOString().slice(0, 10); // YYYY-MM-DD
 
     if (this._lastResetDate !== todayDate) {

@@ -10,6 +10,7 @@
 const fs = require('fs');
 const { writeFile, rename, mkdir } = require('fs/promises');
 const path = require('path');
+const crypto = require('crypto');
 const { createLogger } = require('../utils/logger');
 
 const log = createLogger('CustomStrategyStore');
@@ -58,9 +59,14 @@ class CustomStrategyStore {
       throw new Error(`최대 ${MAX_STRATEGIES}개의 커스텀 전략만 저장할 수 있습니다.`);
     }
 
-    const id = def.id || `custom_${Date.now()}`;
+    // R14-4 (AD-14-2): Server-generated UUID — ignore client-provided def.id
+    const id = `custom_${crypto.randomUUID()}`;
+
+    // R14-4: Sanitize — strip __proto__, constructor, prototype keys to prevent prototype pollution
+    const sanitized = this._sanitize(def);
+
     const entry = {
-      ...def,
+      ...sanitized,
       id,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -84,9 +90,12 @@ class CustomStrategyStore {
     }
 
     const existing = this._strategies.get(id);
+    // R14-4: Sanitize input
+    const sanitized = this._sanitize(def);
+
     const updated = {
       ...existing,
-      ...def,
+      ...sanitized,
       id, // keep original id
       createdAt: existing.createdAt,
       updatedAt: new Date().toISOString(),
@@ -112,6 +121,29 @@ class CustomStrategyStore {
     this._persistQueued();
     log.info('Custom strategy deleted', { id });
     return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Internal — input sanitization (R14-4)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Recursively strip dangerous keys (__proto__, constructor, prototype)
+   * to prevent prototype pollution attacks.
+   * @param {*} obj
+   * @returns {*}
+   */
+  _sanitize(obj) {
+    if (obj === null || typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map((item) => this._sanitize(item));
+
+    const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+    const result = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (DANGEROUS_KEYS.has(key)) continue;
+      result[key] = this._sanitize(value);
+    }
+    return result;
   }
 
   // ---------------------------------------------------------------------------

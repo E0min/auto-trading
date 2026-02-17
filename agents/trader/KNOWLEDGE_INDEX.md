@@ -44,6 +44,9 @@
 | `proposals/round_12.md` | 코드베이스 재분석 Round 3: 9건 (trailing stop dead code 8전략, reduceOnly 14전략, 레버리지 백테스트, Calmar 연율화, 절대 비용 필터) | Round 12 | active |
 | `proposals/round_12_review.md` | Round 12 교차 리뷰 (Engineer+UI 제안 검토) — trailing dead code 정정, reduceOnly 동의, 레버리지 마진 기반 | Round 12 | active |
 | `../shared/decisions/round_12.md` | Round 12 합의 결정문서 (31건, AD-69~AD-73) — trailing metadata 정리, reduceOnly 일괄, 레버리지 백테스트, Calmar 연율화, WS deep check, fill reconciliation — **구현 완료** | Round 12 | active |
+| `proposals/round_14.md` | 코드베이스 재분석 Round 4: 12건 (CustomRuleStrategy onFill/mathUtils, leverage 누락, CLOSE suggestedQty, DrawdownMonitor 디바운싱) | Round 14 | active |
+| `proposals/round_14_review.md` | Round 14 교차 리뷰 (Engineer+UI 제안 검토) | Round 14 | active |
+| `../shared/decisions/round_14.md` | Round 14 합의 결정문서 (24건, AD-14-1~AD-14-5) — CustomRuleStrategy onFill, randomUUID, needsReactivation, config 검증, 자동 등록 — **구현 완료** | Round 14 | active |
 
 ## Round 1 Key Findings Summary
 - **C1**: multi-symbol 라우팅 버그 — `_symbol` 단일 값이라 마지막 심볼만 유효
@@ -104,6 +107,13 @@
 - **Calmar Ratio 연율화 (7일 guard)**: 기존 raw return/maxDD → annualizedReturn/maxDD. 7일 미만 백테스트는 raw ratio 유지
 - **CoinSelector 절대 비용 필터 (P12-9)**: spread + taker commission > 0.15% 심볼 제외 — 스프레드 넓은 저유동성 심볼 방지
 
+## Round 14 Key Findings Summary
+- **CustomRuleStrategy onFill() (AD-14-1)**: positionSide/entryPrice를 시그널 emit 시점이 아닌 onFill() 콜백에서 설정. AD-37 준수, 미체결 시 상태 오염 방지
+- **CustomRuleStrategy mathUtils 전환**: parseFloat 직접 사용 → mathUtils.compare/multiply/add로 교체. 부동소수점 정밀도 보장
+- **QuietRangeScalp leverage 누락**: entry 시그널에 `leverage: this.config.leverage` 필드 미포함 → 사용자 설정 레버리지가 주문에 반영되지 않던 문제 수정
+- **CLOSE suggestedQty '100' 수정**: CustomRuleStrategy의 close 시그널 suggestedQty가 하드코딩 100 → '100'(String) 정정, 전체 포지션 청산 의도 명확화
+- **DrawdownMonitor 경고 디바운싱**: 5분 간격으로 경고 이벤트 제한 — 고빈도 반복 경고 방지
+
 ## Accumulated Insights
 - **전략 품질 진화**: R1 14/18 전략 IndicatorCache 미제공 크래시 → R2 백테스트 수정 → R5 exchange-side SL 제안 → R7 유예기간으로 전략 활성 시간 보장 → R8 reduceOnly bypass로 SL/TP 실행 보장 → R11 SignalFilter close bypass 수정 + entryPrice onFill 이동 + Bollinger super.onFill 추가 → R12 trailing metadata enabled=false(8전략 dead code 정리) + close 시그널 reduceOnly:true(14전략 일괄). 현재 상태: 전략 시그널 경로 완비, trailing dead code 제거, close 시그널 안전 경로 확보
 - **리스크 관리 체계**: R1 ExposureGuard qty 10,000x 오류 → R2 수정 → R4 포지션 사이징 파이프라인 정비 → R7 유예기간으로 고아 포지션 방지 → R8 RiskEngine reduceOnly bypass + SignalFilter CLOSE bypass → R11 SignalFilter close startsWith 수정으로 실제 청산 바이패스 작동. 현재 상태: 리스크+시그널 필터 청산 경로 완전 검증
@@ -111,7 +121,8 @@
 - **수익성 인프라**: R1 Sharpe ~10x 과대평가 → R3 보정 → R5 성과 귀인 → R6 실거래 준비도 → R8 Snapshot 60초 주기 → R9 펀딩비 PnL 추적 → R10 Sortino+Calmar Ratio 추가 → R11 백테스트 equity에 미실현 PnL 포함 + 펀딩비 cash 반영 → R12 Calmar 연율화(7일 guard) + 백테스트 레버리지(margin 기반 사이징 AD-70) + equityCurve 샘플링(max 10K). 현재 상태: Calmar 연율화 정확, 레버리지 백테스트 지원, 메모리 효율화
 - **포지션 관리 진화**: R1 단일 심볼 → R8 PositionManager 전략 매핑 → R9 멀티심볼 라우팅 Phase 1 + InstrumentCache → R10 백테스트 멀티포지션(FIFO). 현재 상태: 전략별 독립 심볼+포지션 관리 체계, 백테스트 멀티포지션 지원
 - **Trailing Stop 도입**: R5 exchange-side SL(presetStopLossPrice) → R10 StrategyBase trailing stop opt-in(6개 추세/모멘텀 전략) → R11 strategyBase.onTick() 자동 호출 활성화 + Breakout/AdaptiveRegime trailingStop metadata 추가. 현재 상태: 6전략 trailing stop 실제 작동, MaTrend/Turtle 자체 구현 통합은 R12 예정
-- **PaperEngine 완성도**: R1 PaperEngine 리스너 누적 → R3 수정 → R11 TP 트리거 시뮬레이션 추가 + 미결 주문 30분 TTL/50건 cap. 현재 상태: SL+TP 양방향 트리거 시뮬레이션, 자원 관리 완비
+- **PaperEngine 완성도**: R1 PaperEngine 리스너 누적 → R3 수정 → R11 TP 트리거 시뮬레이션 추가 + 미결 주문 30분 TTL/50건 cap → R14 SL/TP stale cleanup(2시간 초과 제거). 현재 상태: SL+TP 양방향 트리거 시뮬레이션, 자원 관리 완비
+- **커스텀 전략 체계 (R14)**: CustomRuleStrategy에 onFill() 추가(AD-14-1) + mathUtils 전환 + CLOSE suggestedQty 수정. CustomStrategyStore에 randomUUID + 프로토타입 오염 방어(AD-14-2). 서버 시작 시 자동 레지스트리 등록(AD-14-5). config 공통 검증(AD-14-4). POST 입력 방어(깊이/크기 제한). PUT 응답에 needsReactivation 플래그(AD-14-3). 현재 상태: 커스텀 전략 생성→저장→등록→검증→업데이트 전체 파이프라인 안전
 
 ## Knowledge Management Rules
 1. 새 정보를 받으면 이 인덱스의 기존 항목과 비교

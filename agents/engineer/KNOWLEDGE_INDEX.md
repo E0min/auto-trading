@@ -43,6 +43,9 @@
 | `proposals/round_12.md` | 코드베이스 재분석 Round 3: 16건 (MarketDataCache sweep, CoinSelector 재진입, TickerAggregator stale, rate limit cooldown, WS fill reconciliation, marginMode 삼항, Logger 크기 제한, Backtest 동시 실행, InstrumentCache staleness) | Round 12 | active |
 | `proposals/round_12_review.md` | Round 12 교차 리뷰 (Trader+UI 제안 검토) — E12-4 이미 구현 확인, WS deep check T0 상향, BE+FE strategy merge 발견 | Round 12 | active |
 | `../shared/decisions/round_12.md` | Round 12 합의 결정문서 (31건, AD-69~AD-73) — cache sweep, 재진입 가드, stale cleanup, rate limit, WS deep check, fill reconciliation, start() rollback, Logger 크기, Backtest 제한 — **구현 완료** | Round 12 | active |
+| `proposals/round_14.md` | 코드베이스 재분석 Round 4: 16건 (CustomStrategyStore 보안, _handleStrategySignal .catch, config 검증, backtestRoutes HTTP 코드, PaperEngine SL/TP stale, SignalFilter 크기, DrawdownMonitor 디바운싱, dead code 제거) | Round 14 | active |
+| `proposals/round_14_review.md` | Round 14 교차 리뷰 (Trader+UI 제안 검토) | Round 14 | active |
+| `../shared/decisions/round_14.md` | Round 14 합의 결정문서 (24건, AD-14-1~AD-14-5) — randomUUID, 프로토타입 오염 방어, needsReactivation, config 검증, 자동 등록, backtestRoutes 검증 — **구현 완료** | Round 14 | active |
 
 ## Round 1 Key Findings Summary
 - **C-1**: unhandledRejection/uncaughtException 핸들러 누락 — 프로세스 즉시 종료 위험
@@ -108,8 +111,10 @@
 - **동시성 제어**: R1 orderManager 동시성 미제어 → R2 mutex 도입 → R7 grace Map 원자적 조작 → R12 CoinSelector selectCoins() 재진입 가드 + Backtest 동시 실행 제한(MAX 2, 봇 시 1) + ExchangeClient rate limit 전역 cooldown(5초). 현재 상태: 전 비동기 경로에 재진입/동시성 보호 완비
 - **캡슐화 준수**: R8 TournamentRoutes 캡슐화 수정 → R9 InstrumentCache 서비스 분리 + StateRecovery 활성화 → R11 StrategyBase onTick() concrete 전환(trailing stop 자동 호출). 현재 상태: 서비스 경계 깨끗, base 클래스 인프라 확장
 - **상태 영속성 패턴**: R8 BotSession 실시간 통계 → R10 DrawdownMonitor loadState()/getState() → R11 peakEquity 복원 쿼리 수정(idle/stopped 양쪽 매칭). 패턴: MongoDB에 주기적 저장 → 재시작 시 복원 → updateEquity()로 자동 halt 감지. 현재 상태: 쿼리 정확성 검증 완료
-- **백테스트 진화**: R1 단일 포지션 → R3 IndicatorCache 주입 → R9 펀딩비 PnL → R10 Map 기반 멀티포지션(FIFO, incrementalId) → R11 getEquity에 미실현 PnL 포함 + 펀딩 비용 cash 실제 차감 → R12 레버리지 반영(margin 기반 사이징 AD-70) + Calmar 연율화(7일 guard) + equityCurve 샘플링(max 10K) + 동시 실행 제한. 현재 상태: 레버리지 시뮬레이션 지원, 메트릭 정확성 개선, 리소스 관리 완비
+- **백테스트 진화**: R1 단일 포지션 → R3 IndicatorCache 주입 → R9 펀딩비 PnL → R10 Map 기반 멀티포지션(FIFO, incrementalId) → R11 getEquity에 미실현 PnL 포함 + 펀딩 비용 cash 실제 차감 → R12 레버리지 반영(margin 기반 사이징 AD-70) + Calmar 연율화(7일 guard) + equityCurve 샘플링(max 10K) + 동시 실행 제한 → R14 backtestRoutes 입력 검증(시간범위/자본) + HTTP 상태 코드 정규화(400/404/500). 현재 상태: 레버리지 시뮬레이션 지원, 입력 검증 완비, HTTP 의미론 준수
 - **데이터 모델 최적화**: R11 Signal 모델 복합 인덱스 3개 추가 — 쿼리 성능 개선. PositionManager 일일 리셋 날짜 변경 감지 방식 전환. 현재 상태: MongoDB 쿼리 최적화 착수
+- **보안 강화 (R14)**: CustomStrategyStore ID collision 방지(Date.now→randomUUID, AD-14-2) + 프로토타입 오염 방어(_sanitize 재귀) + POST 입력 방어(이름 100자, 지표 10개, 조건 20개, JSON 50KB) + _handleStrategySignal .catch() 추가(비동기 에러 누수 방지). 현재 상태: 커스텀 전략 입력 경로 보안 완비
+- **리소스 관리 확장 (R14)**: SignalFilter _recentSignals 500개 hard cap + PaperEngine SL/TP stale 2시간 cleanup + DrawdownMonitor 경고 5분 디바운싱 + OrderManager destroy() locks/cache clear + PositionManager utcHour dead code 제거. 현재 상태: 전 서비스 메모리/이벤트 관리 완비
 
 ## Knowledge Management Rules
 1. 새 정보를 받으면 이 인덱스의 기존 항목과 비교

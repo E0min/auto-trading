@@ -14,6 +14,13 @@
 const StrategyBase = require('../../services/strategyBase');
 const { SIGNAL_ACTIONS } = require('../../utils/constants');
 const { createLogger } = require('../../utils/logger');
+const {
+  pctChange,
+  isGreaterThanOrEqual,
+  isLessThanOrEqual,
+  isGreaterThan,
+  isLessThan,
+} = require('../../utils/mathUtils');
 
 class CustomRuleStrategy extends StrategyBase {
   /**
@@ -91,25 +98,23 @@ class CustomRuleStrategy extends StrategyBase {
 
     if (!s.entryPrice || !s.positionSide) return;
 
-    const { tpPercent, slPercent, positionSizePercent } = this.config;
+    const { tpPercent, slPercent } = this.config;
 
-    // TP/SL check
-    const entry = parseFloat(s.entryPrice);
-    const cur = parseFloat(price);
-    if (!entry || !cur) return;
-
-    const pctChange = ((cur - entry) / entry) * 100;
+    // TP/SL check using mathUtils (R14-2: parseFloat→mathUtils)
+    if (!s.entryPrice || s.entryPrice === '0') return;
+    const changePct = pctChange(s.entryPrice, price); // returns String
     const isLong = s.positionSide === 'long';
 
-    const effectivePct = isLong ? pctChange : -pctChange;
+    // For short positions, negate the percent change
+    const effectivePct = isLong ? changePct : String(-parseFloat(changePct));
 
-    if (effectivePct >= parseFloat(tpPercent)) {
+    if (isGreaterThanOrEqual(effectivePct, String(tpPercent))) {
       const action = isLong ? SIGNAL_ACTIONS.CLOSE_LONG : SIGNAL_ACTIONS.CLOSE_SHORT;
       this.emitSignal({
         action,
         symbol: sym,
         category: this._category,
-        suggestedQty: positionSizePercent,
+        suggestedQty: '100', // R14-8: full position close
         suggestedPrice: price,
         reduceOnly: true,
         confidence: '0.9500',
@@ -119,13 +124,15 @@ class CustomRuleStrategy extends StrategyBase {
       return;
     }
 
-    if (effectivePct <= -parseFloat(slPercent)) {
+    // SL: effectivePct <= -slPercent
+    const negSl = String(-parseFloat(String(slPercent)));
+    if (isLessThanOrEqual(effectivePct, negSl)) {
       const action = isLong ? SIGNAL_ACTIONS.CLOSE_LONG : SIGNAL_ACTIONS.CLOSE_SHORT;
       this.emitSignal({
         action,
         symbol: sym,
         category: this._category,
-        suggestedQty: positionSizePercent,
+        suggestedQty: '100', // R14-8: full position close
         suggestedPrice: price,
         reduceOnly: true,
         confidence: '0.9500',
@@ -182,7 +189,7 @@ class CustomRuleStrategy extends StrategyBase {
             action: SIGNAL_ACTIONS.CLOSE_LONG,
             symbol: sym,
             category: this._category,
-            suggestedQty: positionSizePercent,
+            suggestedQty: '100', // R14-8: full position close
             suggestedPrice: close,
             reduceOnly: true,
             confidence: '0.8500',
@@ -196,7 +203,7 @@ class CustomRuleStrategy extends StrategyBase {
             action: SIGNAL_ACTIONS.CLOSE_SHORT,
             symbol: sym,
             category: this._category,
-            suggestedQty: positionSizePercent,
+            suggestedQty: '100', // R14-8: full position close
             suggestedPrice: close,
             reduceOnly: true,
             confidence: '0.8500',
@@ -208,28 +215,27 @@ class CustomRuleStrategy extends StrategyBase {
     }
 
     // 3. Check entry rules if no position
+    // R14-1 (AD-14-1): Do NOT set entryPrice/positionSide here; defer to onFill()
     if (!s.entryPrice && !s.positionSide) {
       if (this._rules.entryLong && this._evaluateRuleGroup(this._rules.entryLong, values, prevValues)) {
-        s.entryPrice = close;
-        s.positionSide = 'long';
         this.emitSignal({
           action: SIGNAL_ACTIONS.OPEN_LONG,
           symbol: sym,
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: close,
+          leverage: this.config.leverage,
           confidence: '0.8000',
           marketContext: { reason: 'rule_entry', rule: 'entryLong' },
         });
       } else if (this._rules.entryShort && this._evaluateRuleGroup(this._rules.entryShort, values, prevValues)) {
-        s.entryPrice = close;
-        s.positionSide = 'short';
         this.emitSignal({
           action: SIGNAL_ACTIONS.OPEN_SHORT,
           symbol: sym,
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: close,
+          leverage: this.config.leverage,
           confidence: '0.8000',
           marketContext: { reason: 'rule_entry', rule: 'entryShort' },
         });
@@ -238,6 +244,36 @@ class CustomRuleStrategy extends StrategyBase {
 
     // 4. Save current values as prevValues for next kline
     s.prevValues = { ...values };
+  }
+
+  /**
+   * R14-1 (AD-14-1): Set entryPrice/positionSide only on confirmed fill.
+   * Prevents ghost position state when orders are rejected.
+   * @param {object} fill
+   */
+  onFill(fill) {
+    super.onFill(fill);
+
+    if (!fill) return;
+    const action = fill.action || (fill.signal && fill.signal.action);
+    if (!action) return;
+
+    const s = this._s();
+
+    if (action === SIGNAL_ACTIONS.OPEN_LONG || action === SIGNAL_ACTIONS.OPEN_SHORT) {
+      const entryPrice = fill.price !== undefined ? String(fill.price) : null;
+      if (entryPrice) {
+        s.entryPrice = entryPrice;
+        s.positionSide = action === SIGNAL_ACTIONS.OPEN_LONG ? 'long' : 'short';
+        this._log.info('Position confirmed via onFill', {
+          side: s.positionSide,
+          entryPrice,
+          symbol: fill.symbol,
+        });
+      }
+    } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
+      this._resetPos();
+    }
   }
 
   getSignal() {
@@ -275,6 +311,9 @@ class CustomRuleStrategy extends StrategyBase {
    * @param {object} prevValues
    * @returns {boolean}
    */
+  /**
+   * R14-2: Use mathUtils for all comparisons (no parseFloat for monetary values).
+   */
   _evaluateCondition(cond, values, prevValues) {
     const leftVal = this._resolveValue(cond.left, values);
     const rightVal = this._resolveValue(cond.right, values);
@@ -283,33 +322,34 @@ class CustomRuleStrategy extends StrategyBase {
       return false;
     }
 
-    const l = parseFloat(String(leftVal));
-    const r = parseFloat(String(rightVal));
+    const l = String(leftVal);
+    const r = String(rightVal);
 
-    if (isNaN(l) || isNaN(r)) return false;
+    // Validate they are parsable numbers
+    if (isNaN(Number(l)) || isNaN(Number(r))) return false;
 
     switch (cond.comparison) {
-      case '>':  return l > r;
-      case '<':  return l < r;
-      case '>=': return l >= r;
-      case '<=': return l <= r;
+      case '>':  return isGreaterThan(l, r);
+      case '<':  return isLessThan(l, r);
+      case '>=': return isGreaterThanOrEqual(l, r);
+      case '<=': return isLessThanOrEqual(l, r);
       case 'crosses_above': {
         const prevL = this._resolveValue(cond.left, prevValues);
         const prevR = this._resolveValue(cond.right, prevValues);
         if (prevL === null || prevL === undefined || prevR === null || prevR === undefined) return false;
-        const pl = parseFloat(String(prevL));
-        const pr = parseFloat(String(prevR));
-        if (isNaN(pl) || isNaN(pr)) return false;
-        return pl <= pr && l > r;
+        const pl = String(prevL);
+        const pr = String(prevR);
+        if (isNaN(Number(pl)) || isNaN(Number(pr))) return false;
+        return isLessThanOrEqual(pl, pr) && isGreaterThan(l, r);
       }
       case 'crosses_below': {
         const prevL = this._resolveValue(cond.left, prevValues);
         const prevR = this._resolveValue(cond.right, prevValues);
         if (prevL === null || prevL === undefined || prevR === null || prevR === undefined) return false;
-        const pl = parseFloat(String(prevL));
-        const pr = parseFloat(String(prevR));
-        if (isNaN(pl) || isNaN(pr)) return false;
-        return pl >= pr && l < r;
+        const pl = String(prevL);
+        const pr = String(prevR);
+        if (isNaN(Number(pl)) || isNaN(Number(pr))) return false;
+        return isGreaterThanOrEqual(pl, pr) && isLessThan(l, r);
       }
       default:
         return false;

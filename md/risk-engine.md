@@ -104,6 +104,15 @@
   └─ 일일 손실 ≥ maxDailyLossPercent (3%) → 당일 신규 주문 차단
 ```
 
+### 경고 디바운싱 (Sprint R14)
+
+DrawdownMonitor의 `DRAWDOWN_WARNING` 이벤트가 5분 간격으로 제한됩니다. 고빈도 equity 변동 시 동일한 경고가 반복 발생하는 것을 방지합니다.
+
+```javascript
+// 5분 이내 이전 경고가 있으면 emit 건너뜀
+if (Date.now() - this._lastWarningTime < this._warningDebounceMs) return;
+```
+
 ### 상태
 
 ```javascript

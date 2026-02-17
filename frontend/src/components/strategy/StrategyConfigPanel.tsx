@@ -66,8 +66,40 @@ export default function StrategyConfigPanel({
     setError(null);
   }, [paramMeta, defaultConfig]);
 
+  // R14-17: Client-side validation before save
+  const validationErrors = useMemo(() => {
+    const errs: Record<string, string> = {};
+    for (const meta of paramMeta) {
+      const v = values[meta.field];
+      if (meta.type === 'boolean') continue;
+
+      const numVal = parseFloat(String(v));
+      if (v !== '' && isNaN(numVal)) {
+        errs[meta.field] = '숫자를 입력하세요';
+        continue;
+      }
+      if (meta.type === 'integer' && !Number.isInteger(numVal) && v !== '') {
+        errs[meta.field] = '정수를 입력하세요';
+        continue;
+      }
+      if (meta.min !== undefined && numVal < meta.min) {
+        errs[meta.field] = `최솟값: ${meta.min}`;
+      }
+      if (meta.max !== undefined && numVal > meta.max) {
+        errs[meta.field] = `최댓값: ${meta.max}`;
+      }
+    }
+    return errs;
+  }, [values, paramMeta]);
+
+  const hasValidationErrors = Object.keys(validationErrors).length > 0;
+
   const handleSave = useCallback(async () => {
     if (!botRunning) return;
+    if (hasValidationErrors) {
+      setError('입력값이 유효하지 않습니다. 오류를 확인하세요.');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -90,7 +122,7 @@ export default function StrategyConfigPanel({
     } finally {
       setSaving(false);
     }
-  }, [botRunning, paramMeta, values, strategyName, onConfigSaved]);
+  }, [botRunning, hasValidationErrors, paramMeta, values, strategyName, onConfigSaved]);
 
   if (!paramMeta || paramMeta.length === 0) {
     return (
@@ -123,7 +155,7 @@ export default function StrategyConfigPanel({
           <button
             type="button"
             onClick={handleSave}
-            disabled={!hasChanges || !botRunning || saving}
+            disabled={!hasChanges || !botRunning || saving || hasValidationErrors}
             className="px-2.5 py-1 text-[10px] rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-[var(--accent)] bg-[var(--accent-subtle)] border border-[var(--accent)]/20 hover:bg-[var(--accent)]/10"
           >
             {saving ? '저장 중...' : '저장'}
@@ -142,6 +174,7 @@ export default function StrategyConfigPanel({
             meta={meta}
             value={values[meta.field]}
             onChange={(v) => handleChange(meta.field, v)}
+            error={validationErrors[meta.field]}
           />
         ))}
       </div>
@@ -155,9 +188,10 @@ interface ParamInputProps {
   meta: ParamMeta;
   value: string | number | boolean;
   onChange: (value: string | number | boolean) => void;
+  error?: string; // R14-17
 }
 
-function ParamInput({ meta, value, onChange }: ParamInputProps) {
+function ParamInput({ meta, value, onChange, error }: ParamInputProps) {
   if (meta.type === 'boolean') {
     return (
       <div className="flex items-center justify-between py-1">
@@ -217,10 +251,15 @@ function ParamInput({ meta, value, onChange }: ParamInputProps) {
             : e.target.value;
           onChange(isNaN(v as number) ? e.target.value : v);
         }}
-        className="w-16 px-1.5 py-0.5 text-[11px] text-right font-mono text-[var(--text-primary)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded focus:border-[var(--accent)]/50 focus:outline-none"
+        className={`w-16 px-1.5 py-0.5 text-[11px] text-right font-mono text-[var(--text-primary)] bg-[var(--bg-surface)] border rounded focus:outline-none ${
+          error ? 'border-[var(--loss)] focus:border-[var(--loss)]' : 'border-[var(--border-subtle)] focus:border-[var(--accent)]/50'
+        }`}
       />
       {meta.type === 'percent' && (
         <span className="text-[10px] text-[var(--text-muted)]">%</span>
+      )}
+      {error && (
+        <span className="text-[9px] text-[var(--loss)] whitespace-nowrap">{error}</span>
       )}
     </div>
   );
