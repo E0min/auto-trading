@@ -237,8 +237,6 @@ export interface StrategyListItem {
   graceState?: GraceState;
   graceExpiresAt?: string | null;
   paramMeta?: ParamMeta[];
-  customId?: string;
-  customDef?: CustomStrategyDef;
   // R13-7: additional metadata
   docs?: StrategyDocs | null;
   maxConcurrentPositions?: number;
@@ -247,46 +245,6 @@ export interface StrategyListItem {
   volatilityPreference?: 'high' | 'low' | 'neutral';
   maxSymbolsPerStrategy?: number;
   runtime?: StrategyRuntime;
-}
-
-// Custom strategy types
-export interface CustomCondition {
-  left: string;
-  comparison: '>' | '<' | '>=' | '<=' | 'crosses_above' | 'crosses_below';
-  right: string | number;
-}
-
-export interface CustomRuleGroup {
-  operator: 'AND' | 'OR';
-  conditions: CustomCondition[];
-}
-
-export interface CustomIndicatorDef {
-  id: string;
-  type: 'rsi' | 'ema' | 'sma' | 'macd' | 'bb' | 'atr' | 'adx' | 'stochastic' | 'vwap' | 'keltner';
-  params: Record<string, number>;
-}
-
-export interface CustomStrategyDef {
-  id: string;
-  name: string;
-  description: string;
-  indicators: CustomIndicatorDef[];
-  rules: {
-    entryLong: CustomRuleGroup;
-    entryShort: CustomRuleGroup;
-    exitLong: CustomRuleGroup;
-    exitShort: CustomRuleGroup;
-  };
-  config: {
-    positionSizePercent: string;
-    leverage: string;
-    tpPercent: string;
-    slPercent: string;
-  };
-  targetRegimes: string[];
-  createdAt?: string;
-  updatedAt?: string;
 }
 
 // Tournament types

@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Card from '@/components/ui/Card';
 import Spinner from '@/components/ui/Spinner';
 import StrategyCard from '@/components/strategy/StrategyCard';
-import CustomStrategyBuilder from '@/components/strategy/CustomStrategyBuilder';
 import { botApi } from '@/lib/api-client';
 import {
   translateRegime,
@@ -64,9 +63,6 @@ export default function StrategyHub({
 
   // Disable mode dialog
   const [disableTarget, setDisableTarget] = useState<string | null>(null);
-
-  // Custom strategy builder
-  const [showBuilder, setShowBuilder] = useState(false);
 
   // ── Data fetching ────────────────────────────────────────────────────────
 
@@ -228,15 +224,6 @@ export default function StrategyHub({
             )}
           </span>
         </div>
-        {/* Custom strategy builder button */}
-        <button
-          type="button"
-          onClick={() => setShowBuilder(true)}
-          className="px-2.5 py-1 text-[10px] rounded-md text-[var(--accent)] bg-[var(--accent-subtle)] border border-[var(--accent)]/20 hover:bg-[var(--accent)]/10 transition-colors"
-        >
-          + 커스텀 전략
-        </button>
-
         {/* Current regime */}
         {currentRegime && (
           <span className={cn('inline-flex items-center gap-1.5 text-[11px] font-medium', getRegimeColor(currentRegime))}>
@@ -355,16 +342,6 @@ export default function StrategyHub({
         />
       )}
 
-      {/* Custom strategy builder */}
-      {showBuilder && (
-        <CustomStrategyBuilder
-          onClose={() => setShowBuilder(false)}
-          onSaved={() => {
-            setShowBuilder(false);
-            fetchStrategies();
-          }}
-        />
-      )}
     </Card>
   );
 }

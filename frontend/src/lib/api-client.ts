@@ -21,7 +21,6 @@ import type {
   RegimeHistoryEntry,
   CoinScoringData,
   StrategyRoutingData,
-  CustomStrategyDef,
 } from '@/types';
 import type {
   BacktestConfig,
@@ -116,13 +115,6 @@ export const botApi = {
       method: 'PUT',
       body: JSON.stringify(config),
     }),
-  listCustomStrategies: () => request<CustomStrategyDef[]>('/api/bot/custom-strategies'),
-  createCustomStrategy: (def: Omit<CustomStrategyDef, 'id'> & { id?: string }) =>
-    request<CustomStrategyDef>('/api/bot/custom-strategies', { method: 'POST', body: JSON.stringify(def) }),
-  updateCustomStrategy: (id: string, def: Partial<CustomStrategyDef>) =>
-    request<CustomStrategyDef>(`/api/bot/custom-strategies/${id}`, { method: 'PUT', body: JSON.stringify(def) }),
-  deleteCustomStrategy: (id: string) =>
-    request<{ id: string; deleted: boolean }>(`/api/bot/custom-strategies/${id}`, { method: 'DELETE' }),
 };
 
 // Trades
