@@ -60,6 +60,7 @@ class CandlePatternStrategy extends StrategyBase {
     gracePeriodMs: 600000,
     warmupCandles: 5,
     volatilityPreference: 'neutral',
+    maxSymbolsPerStrategy: 3,
     description: '캔들 패턴 가격행동 — Engulfing / Hammer / Star 패턴 + ATR 기반 TP/SL',
     defaultConfig: {
       atrPeriod: 14,                   // ATR 계산 기간
@@ -80,46 +81,42 @@ class CandlePatternStrategy extends StrategyBase {
     const merged = { ...CandlePatternStrategy.metadata.defaultConfig, ...config };
     super('CandlePatternStrategy', merged);
 
-    // ---- Internal state ----
-
-    /** @type {Array<{open:string, high:string, low:string, close:string}>} kline history */
-    this.klineHistory = [];
-
-    /** @type {string|null} latest ticker price */
-    this._latestPrice = null;
-
-    /** @type {object|null} most recently generated signal */
-    this._lastSignal = null;
-
-    /** @type {string|null} entry price */
-    this._entryPrice = null;
-
-    /** @type {'long'|'short'|null} current position direction */
-    this._positionSide = null;
-
-    /** @type {string|null} stop loss price */
-    this._stopPrice = null;
-
-    /** @type {string|null} take profit price */
-    this._tpPrice = null;
-
-    /** @type {boolean} trailing stop activated */
-    this._trailingActive = false;
-
-    /** @type {string|null} trailing stop price */
-    this._trailingStopPrice = null;
-
-    /** @type {string|null} highest price since entry (long) */
-    this._highestSinceEntry = null;
-
-    /** @type {string|null} lowest price since entry (short) */
-    this._lowestSinceEntry = null;
-
-    /** @type {string|null} latest ATR value */
-    this._latestAtr = null;
-
     /** @type {number} max data points to keep */
     this._maxHistory = 100;
+  }
+
+  /**
+   * Override: create per-symbol state with all position/indicator fields.
+   * @returns {object}
+   */
+  _createDefaultState() {
+    return {
+      ...super._createDefaultState(),
+
+      /** @type {Array<{open:string, high:string, low:string, close:string}>} kline history */
+      klineHistory: [],
+
+      /** @type {string|null} stop loss price */
+      stopPrice: null,
+
+      /** @type {string|null} take profit price */
+      tpPrice: null,
+
+      /** @type {boolean} trailing stop activated */
+      trailingActive: false,
+
+      /** @type {string|null} trailing stop price */
+      trailingStopPrice: null,
+
+      /** @type {string|null} highest price since entry (long) */
+      highestSinceEntry: null,
+
+      /** @type {string|null} lowest price since entry (short) */
+      lowestSinceEntry: null,
+
+      /** @type {string|null} latest ATR value */
+      latestAtr: null,
+    };
   }
 
   // --------------------------------------------------------------------------
@@ -192,15 +189,17 @@ class CandlePatternStrategy extends StrategyBase {
    * @returns {{ pattern: string, direction: 'long'|'short' }|null}
    */
   _detectPattern() {
-    const len = this.klineHistory.length;
+    const s = this._s();
+    const sym = this.getCurrentSymbol();
+    const len = s.klineHistory.length;
     if (len < 2) return null;
 
-    const curr = this.klineHistory[len - 1];
-    const prev = this.klineHistory[len - 2];
+    const curr = s.klineHistory[len - 1];
+    const prev = s.klineHistory[len - 2];
 
     // ---- 3-candle patterns (need at least 3 bars) ----
     if (len >= 3) {
-      const prev2 = this.klineHistory[len - 3];
+      const prev2 = s.klineHistory[len - 3];
 
       // Morning Star (3-candle bullish reversal)
       // 1st: 큰 음봉, 2nd: 작은 body (doji/spinning top), 3rd: 큰 양봉
@@ -223,7 +222,7 @@ class CandlePatternStrategy extends StrategyBase {
       const currBodyLow = curr.open;
 
       if (isGreaterThan(currBodyHigh, prevBodyHigh) && isLessThan(currBodyLow, prevBodyLow)) {
-        log.debug('Bullish Engulfing detected', { symbol: this._symbol });
+        log.debug('Bullish Engulfing detected', { symbol: sym });
         return { pattern: 'bullish_engulfing', direction: 'long' };
       }
     }
@@ -236,7 +235,7 @@ class CandlePatternStrategy extends StrategyBase {
       const currBodyLow = curr.close;
 
       if (isGreaterThan(currBodyHigh, prevBodyHigh) && isLessThan(currBodyLow, prevBodyLow)) {
-        log.debug('Bearish Engulfing detected', { symbol: this._symbol });
+        log.debug('Bearish Engulfing detected', { symbol: sym });
         return { pattern: 'bearish_engulfing', direction: 'short' };
       }
     }
@@ -281,7 +280,7 @@ class CandlePatternStrategy extends StrategyBase {
     // upper shadow < body (작은 윗꼬리)
     if (!isLessThan(upper, body)) return null;
 
-    log.debug('Hammer detected', { symbol: this._symbol });
+    log.debug('Hammer detected', { symbol: this.getCurrentSymbol() });
     return { pattern: 'hammer', direction: 'long' };
   }
 
@@ -311,7 +310,7 @@ class CandlePatternStrategy extends StrategyBase {
     // lower shadow < body (작은 아래꼬리)
     if (!isLessThan(lower, body)) return null;
 
-    log.debug('Shooting Star detected', { symbol: this._symbol });
+    log.debug('Shooting Star detected', { symbol: this.getCurrentSymbol() });
     return { pattern: 'shooting_star', direction: 'short' };
   }
 
@@ -350,7 +349,7 @@ class CandlePatternStrategy extends StrategyBase {
     // 3rd candle: body가 1st candle body의 50% 이상 (significant recovery)
     if (!isGreaterThan(thirdBody, halfFirstBody)) return null;
 
-    log.debug('Morning Star detected', { symbol: this._symbol });
+    log.debug('Morning Star detected', { symbol: this.getCurrentSymbol() });
     return { pattern: 'morning_star', direction: 'long' };
   }
 
@@ -389,7 +388,7 @@ class CandlePatternStrategy extends StrategyBase {
     // 3rd candle: body가 1st candle body의 50% 이상 (significant decline)
     if (!isGreaterThan(thirdBody, halfFirstBody)) return null;
 
-    log.debug('Evening Star detected', { symbol: this._symbol });
+    log.debug('Evening Star detected', { symbol: this.getCurrentSymbol() });
     return { pattern: 'evening_star', direction: 'short' };
   }
 
@@ -404,29 +403,31 @@ class CandlePatternStrategy extends StrategyBase {
   onTick(ticker) {
     if (!this._active) return;
 
+    const s = this._s();
+
     if (ticker && ticker.lastPrice !== undefined) {
-      this._latestPrice = String(ticker.lastPrice);
+      s.latestPrice = String(ticker.lastPrice);
     }
 
-    if (this._entryPrice === null || this._positionSide === null) return;
-    if (this._latestPrice === null) return;
+    if (s.entryPrice === null || s.positionSide === null) return;
+    if (s.latestPrice === null) return;
 
-    const price = this._latestPrice;
+    const price = s.latestPrice;
 
     // --- Hard stop loss ---
-    if (this._stopPrice !== null) {
-      if (this._positionSide === 'long' && isLessThan(price, this._stopPrice)) {
+    if (s.stopPrice !== null) {
+      if (s.positionSide === 'long' && isLessThan(price, s.stopPrice)) {
         this._emitCloseSignal('long', price, 'candle_stop_loss', {
-          entryPrice: this._entryPrice,
-          stopPrice: this._stopPrice,
+          entryPrice: s.entryPrice,
+          stopPrice: s.stopPrice,
         });
         this._resetPosition();
         return;
       }
-      if (this._positionSide === 'short' && isGreaterThan(price, this._stopPrice)) {
+      if (s.positionSide === 'short' && isGreaterThan(price, s.stopPrice)) {
         this._emitCloseSignal('short', price, 'candle_stop_loss', {
-          entryPrice: this._entryPrice,
-          stopPrice: this._stopPrice,
+          entryPrice: s.entryPrice,
+          stopPrice: s.stopPrice,
         });
         this._resetPosition();
         return;
@@ -434,19 +435,19 @@ class CandlePatternStrategy extends StrategyBase {
     }
 
     // --- Take profit ---
-    if (this._tpPrice !== null) {
-      if (this._positionSide === 'long' && isGreaterThan(price, this._tpPrice)) {
+    if (s.tpPrice !== null) {
+      if (s.positionSide === 'long' && isGreaterThan(price, s.tpPrice)) {
         this._emitCloseSignal('long', price, 'candle_take_profit', {
-          entryPrice: this._entryPrice,
-          tpPrice: this._tpPrice,
+          entryPrice: s.entryPrice,
+          tpPrice: s.tpPrice,
         });
         this._resetPosition();
         return;
       }
-      if (this._positionSide === 'short' && isLessThan(price, this._tpPrice)) {
+      if (s.positionSide === 'short' && isLessThan(price, s.tpPrice)) {
         this._emitCloseSignal('short', price, 'candle_take_profit', {
-          entryPrice: this._entryPrice,
-          tpPrice: this._tpPrice,
+          entryPrice: s.entryPrice,
+          tpPrice: s.tpPrice,
         });
         this._resetPosition();
         return;
@@ -454,29 +455,29 @@ class CandlePatternStrategy extends StrategyBase {
     }
 
     // --- Trailing stop check ---
-    if (this._trailingActive && this._trailingStopPrice !== null) {
-      if (this._positionSide === 'long') {
-        if (this._highestSinceEntry === null || isGreaterThan(price, this._highestSinceEntry)) {
-          this._highestSinceEntry = price;
+    if (s.trailingActive && s.trailingStopPrice !== null) {
+      if (s.positionSide === 'long') {
+        if (s.highestSinceEntry === null || isGreaterThan(price, s.highestSinceEntry)) {
+          s.highestSinceEntry = price;
           this._updateTrailingStop();
         }
-        if (isLessThan(price, this._trailingStopPrice)) {
+        if (isLessThan(price, s.trailingStopPrice)) {
           this._emitCloseSignal('long', price, 'trailing_stop', {
-            entryPrice: this._entryPrice,
-            trailingStopPrice: this._trailingStopPrice,
+            entryPrice: s.entryPrice,
+            trailingStopPrice: s.trailingStopPrice,
           });
           this._resetPosition();
           return;
         }
-      } else if (this._positionSide === 'short') {
-        if (this._lowestSinceEntry === null || isLessThan(price, this._lowestSinceEntry)) {
-          this._lowestSinceEntry = price;
+      } else if (s.positionSide === 'short') {
+        if (s.lowestSinceEntry === null || isLessThan(price, s.lowestSinceEntry)) {
+          s.lowestSinceEntry = price;
           this._updateTrailingStop();
         }
-        if (isGreaterThan(price, this._trailingStopPrice)) {
+        if (isGreaterThan(price, s.trailingStopPrice)) {
           this._emitCloseSignal('short', price, 'trailing_stop', {
-            entryPrice: this._entryPrice,
-            trailingStopPrice: this._trailingStopPrice,
+            entryPrice: s.entryPrice,
+            trailingStopPrice: s.trailingStopPrice,
           });
           this._resetPosition();
           return;
@@ -505,28 +506,31 @@ class CandlePatternStrategy extends StrategyBase {
     const high = kline && kline.high !== undefined ? String(kline.high) : close;
     const low = kline && kline.low !== undefined ? String(kline.low) : close;
 
+    const s = this._s();
+    const sym = this.getCurrentSymbol();
+
     // 1. Push data and trim
-    this.klineHistory.push({ open, high, low, close });
-    if (this.klineHistory.length > this._maxHistory) {
-      this.klineHistory = this.klineHistory.slice(-this._maxHistory);
+    s.klineHistory.push({ open, high, low, close });
+    if (s.klineHistory.length > this._maxHistory) {
+      s.klineHistory = s.klineHistory.slice(-this._maxHistory);
     }
 
     // 2. Need enough data for ATR + at least 3 candles for star patterns
     const { atrPeriod } = this.config;
     const minRequired = Math.max(atrPeriod + 1, 3);
-    if (this.klineHistory.length < minRequired) {
+    if (s.klineHistory.length < minRequired) {
       log.debug('Not enough data yet', {
-        have: this.klineHistory.length,
+        have: s.klineHistory.length,
         need: minRequired,
       });
       return;
     }
 
     // 3. Compute ATR — volatility confirmation
-    const currentAtr = atr(this.klineHistory, atrPeriod);
+    const currentAtr = atr(s.klineHistory, atrPeriod);
     if (currentAtr === null || !isGreaterThan(currentAtr, '0')) return;
 
-    this._latestAtr = currentAtr;
+    s.latestAtr = currentAtr;
     const price = close;
     const {
       tpMultiplier,
@@ -537,43 +541,43 @@ class CandlePatternStrategy extends StrategyBase {
     } = this.config;
 
     // 4. If position open: check trailing activation, update extremes, skip new entries
-    if (this._positionSide !== null && this._entryPrice !== null) {
+    if (s.positionSide !== null && s.entryPrice !== null) {
       // Update extreme prices from kline data
-      if (this._positionSide === 'long') {
-        if (this._highestSinceEntry === null || isGreaterThan(high, this._highestSinceEntry)) {
-          this._highestSinceEntry = high;
-          if (this._trailingActive) this._updateTrailingStop();
+      if (s.positionSide === 'long') {
+        if (s.highestSinceEntry === null || isGreaterThan(high, s.highestSinceEntry)) {
+          s.highestSinceEntry = high;
+          if (s.trailingActive) this._updateTrailingStop();
         }
       } else {
-        if (this._lowestSinceEntry === null || isLessThan(low, this._lowestSinceEntry)) {
-          this._lowestSinceEntry = low;
-          if (this._trailingActive) this._updateTrailingStop();
+        if (s.lowestSinceEntry === null || isLessThan(low, s.lowestSinceEntry)) {
+          s.lowestSinceEntry = low;
+          if (s.trailingActive) this._updateTrailingStop();
         }
       }
 
       // Trailing activation: after N×ATR profit
-      if (!this._trailingActive) {
+      if (!s.trailingActive) {
         const activationDist = multiply(trailingActivationAtr, currentAtr);
-        if (this._positionSide === 'long') {
-          const profit = subtract(price, this._entryPrice);
+        if (s.positionSide === 'long') {
+          const profit = subtract(price, s.entryPrice);
           if (isGreaterThan(profit, activationDist)) {
-            this._trailingActive = true;
-            this._highestSinceEntry = this._highestSinceEntry || price;
+            s.trailingActive = true;
+            s.highestSinceEntry = s.highestSinceEntry || price;
             this._updateTrailingStop();
             log.info('Trailing stop activated (long)', {
-              symbol: this._symbol,
-              trailingStopPrice: this._trailingStopPrice,
+              symbol: sym,
+              trailingStopPrice: s.trailingStopPrice,
             });
           }
-        } else if (this._positionSide === 'short') {
-          const profit = subtract(this._entryPrice, price);
+        } else if (s.positionSide === 'short') {
+          const profit = subtract(s.entryPrice, price);
           if (isGreaterThan(profit, activationDist)) {
-            this._trailingActive = true;
-            this._lowestSinceEntry = this._lowestSinceEntry || price;
+            s.trailingActive = true;
+            s.lowestSinceEntry = s.lowestSinceEntry || price;
             this._updateTrailingStop();
             log.info('Trailing stop activated (short)', {
-              symbol: this._symbol,
-              trailingStopPrice: this._trailingStopPrice,
+              symbol: sym,
+              trailingStopPrice: s.trailingStopPrice,
             });
           }
         }
@@ -608,7 +612,7 @@ class CandlePatternStrategy extends StrategyBase {
 
       const signal = {
         action: SIGNAL_ACTIONS.OPEN_LONG,
-        symbol: this._symbol,
+        symbol: sym,
         category: this._category,
         suggestedQty: positionSizePercent,
         suggestedPrice: price,
@@ -627,16 +631,16 @@ class CandlePatternStrategy extends StrategyBase {
         },
       };
 
-      this._entryPrice = price;
-      this._positionSide = 'long';
-      this._stopPrice = slPrice;
-      this._tpPrice = tpPrice;
-      this._highestSinceEntry = high;
-      this._lowestSinceEntry = null;
-      this._trailingActive = false;
-      this._trailingStopPrice = null;
+      s.entryPrice = price;
+      s.positionSide = 'long';
+      s.stopPrice = slPrice;
+      s.tpPrice = tpPrice;
+      s.highestSinceEntry = high;
+      s.lowestSinceEntry = null;
+      s.trailingActive = false;
+      s.trailingStopPrice = null;
 
-      this._lastSignal = signal;
+      s.lastSignal = signal;
       this.emitSignal(signal);
       return;
     }
@@ -647,7 +651,7 @@ class CandlePatternStrategy extends StrategyBase {
 
       const signal = {
         action: SIGNAL_ACTIONS.OPEN_SHORT,
-        symbol: this._symbol,
+        symbol: sym,
         category: this._category,
         suggestedQty: positionSizePercent,
         suggestedPrice: price,
@@ -666,16 +670,16 @@ class CandlePatternStrategy extends StrategyBase {
         },
       };
 
-      this._entryPrice = price;
-      this._positionSide = 'short';
-      this._stopPrice = slPrice;
-      this._tpPrice = tpPrice;
-      this._highestSinceEntry = null;
-      this._lowestSinceEntry = low;
-      this._trailingActive = false;
-      this._trailingStopPrice = null;
+      s.entryPrice = price;
+      s.positionSide = 'short';
+      s.stopPrice = slPrice;
+      s.tpPrice = tpPrice;
+      s.highestSinceEntry = null;
+      s.lowestSinceEntry = low;
+      s.trailingActive = false;
+      s.trailingStopPrice = null;
 
-      this._lastSignal = signal;
+      s.lastSignal = signal;
       this.emitSignal(signal);
       return;
     }
@@ -689,16 +693,19 @@ class CandlePatternStrategy extends StrategyBase {
     if (!fill) return;
     const action = fill.action || (fill.signal && fill.signal.action);
 
+    const s = this._s();
+    const sym = this.getCurrentSymbol();
+
     if (action === SIGNAL_ACTIONS.OPEN_LONG) {
-      this._positionSide = 'long';
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      s.positionSide = 'long';
+      if (fill.price !== undefined) s.entryPrice = String(fill.price);
+      log.trade('Long fill recorded', { entry: s.entryPrice, symbol: sym });
     } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
-      this._positionSide = 'short';
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      s.positionSide = 'short';
+      if (fill.price !== undefined) s.entryPrice = String(fill.price);
+      log.trade('Short fill recorded', { entry: s.entryPrice, symbol: sym });
     } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
-      log.trade('Position closed via fill', { side: this._positionSide, symbol: this._symbol });
+      log.trade('Position closed via fill', { side: s.positionSide, symbol: sym });
       this._resetPosition();
     }
   }
@@ -708,7 +715,7 @@ class CandlePatternStrategy extends StrategyBase {
   // --------------------------------------------------------------------------
 
   getSignal() {
-    return this._lastSignal;
+    return this._s().lastSignal;
   }
 
   // --------------------------------------------------------------------------
@@ -723,10 +730,12 @@ class CandlePatternStrategy extends StrategyBase {
    * @param {object} context
    */
   _emitCloseSignal(side, price, reason, context) {
+    const s = this._s();
+    const sym = this.getCurrentSymbol();
     const action = side === 'long' ? SIGNAL_ACTIONS.CLOSE_LONG : SIGNAL_ACTIONS.CLOSE_SHORT;
     const signal = {
       action,
-      symbol: this._symbol,
+      symbol: sym,
       category: this._category,
       suggestedQty: this.config.positionSizePercent,
       suggestedPrice: price,
@@ -736,10 +745,10 @@ class CandlePatternStrategy extends StrategyBase {
       marketContext: {
         ...context,
         currentPrice: price,
-        atr: this._latestAtr,
+        atr: s.latestAtr,
       },
     };
-    this._lastSignal = signal;
+    s.lastSignal = signal;
     this.emitSignal(signal);
   }
 
@@ -749,20 +758,21 @@ class CandlePatternStrategy extends StrategyBase {
    * Stop은 유리한 방향으로만 이동 (long: 위로만, short: 아래로만).
    */
   _updateTrailingStop() {
-    if (this._latestAtr === null) return;
-    const trailDist = multiply(this.config.trailingDistanceAtr, this._latestAtr);
+    const s = this._s();
+    if (s.latestAtr === null) return;
+    const trailDist = multiply(this.config.trailingDistanceAtr, s.latestAtr);
 
-    if (this._positionSide === 'long' && this._highestSinceEntry !== null) {
-      const newStop = subtract(this._highestSinceEntry, trailDist);
+    if (s.positionSide === 'long' && s.highestSinceEntry !== null) {
+      const newStop = subtract(s.highestSinceEntry, trailDist);
       // Only move stop up, never down
-      if (this._trailingStopPrice === null || isGreaterThan(newStop, this._trailingStopPrice)) {
-        this._trailingStopPrice = newStop;
+      if (s.trailingStopPrice === null || isGreaterThan(newStop, s.trailingStopPrice)) {
+        s.trailingStopPrice = newStop;
       }
-    } else if (this._positionSide === 'short' && this._lowestSinceEntry !== null) {
-      const newStop = add(this._lowestSinceEntry, trailDist);
+    } else if (s.positionSide === 'short' && s.lowestSinceEntry !== null) {
+      const newStop = add(s.lowestSinceEntry, trailDist);
       // Only move stop down, never up
-      if (this._trailingStopPrice === null || isLessThan(newStop, this._trailingStopPrice)) {
-        this._trailingStopPrice = newStop;
+      if (s.trailingStopPrice === null || isLessThan(newStop, s.trailingStopPrice)) {
+        s.trailingStopPrice = newStop;
       }
     }
   }
@@ -812,14 +822,15 @@ class CandlePatternStrategy extends StrategyBase {
    * 포지션 청산 후 모든 내부 상태를 초기화한다.
    */
   _resetPosition() {
-    this._entryPrice = null;
-    this._positionSide = null;
-    this._stopPrice = null;
-    this._tpPrice = null;
-    this._trailingActive = false;
-    this._trailingStopPrice = null;
-    this._highestSinceEntry = null;
-    this._lowestSinceEntry = null;
+    const s = this._s();
+    s.entryPrice = null;
+    s.positionSide = null;
+    s.stopPrice = null;
+    s.tpPrice = null;
+    s.trailingActive = false;
+    s.trailingStopPrice = null;
+    s.highestSinceEntry = null;
+    s.lowestSinceEntry = null;
   }
 }
 

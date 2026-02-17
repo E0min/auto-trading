@@ -35,6 +35,7 @@ class MaTrendStrategy extends StrategyBase {
     targetRegimes: ['trending_up', 'trending_down'],
     riskLevel: 'medium',
     maxConcurrentPositions: 1,
+    maxSymbolsPerStrategy: 3,
     cooldownMs: 300000,
     gracePeriodMs: 300000,
     warmupCandles: 60,
@@ -76,39 +77,48 @@ class MaTrendStrategy extends StrategyBase {
     this._tpPercent = merged.tpPercent;
     this._slPercent = merged.slPercent;
 
-    // Price / volume buffers (1h candles)
-    this._h1Closes = [];   // String[]
-    this._h1Volumes = [];  // String[]
-
-    // Aggregated higher-timeframe closes
-    this._h4Closes = [];   // String[] — built from every 4 h1 candles
-    this._dailyCloses = []; // String[] — built from every 24 h1 candles
-
-    // Aggregation counter (how many h1 candles received since start)
-    this._h1Count = 0;
-
-    // Latest EMA values (String | null)
-    this._h1Ema9 = null;
-    this._h1Ema21 = null;
-    this._h4Ema20 = null;
-    this._h4Ema50 = null;
-    this._dailyEma20 = null;
-    this._dailyEma60 = null;
-
-    // Signal state
-    this._lastSignal = null;
-    this._latestPrice = null;
-    this._entryPrice = null;
-
-    // Trailing stop tracking
-    this._highestSinceEntry = null; // String — tracks highest price since long entry
-    this._lowestSinceEntry = null;  // String — tracks lowest price since short entry
-
     // Maximum history to keep in buffers
     this._maxHistory = 500;
+  }
 
-    // Last kline data for bounce/drop candle detection
-    this._lastKline = null;
+  // ---------------------------------------------------------------------------
+  // Per-symbol state (SymbolState pattern)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Override to add strategy-specific per-symbol fields.
+   * @returns {object}
+   */
+  _createDefaultState() {
+    return {
+      ...super._createDefaultState(),
+
+      // Price / volume buffers (1h candles)
+      h1Closes: [],    // String[]
+      h1Volumes: [],   // String[]
+
+      // Aggregated higher-timeframe closes
+      h4Closes: [],    // String[] — built from every 4 h1 candles
+      dailyCloses: [], // String[] — built from every 24 h1 candles
+
+      // Aggregation counter (how many h1 candles received since start)
+      h1Count: 0,
+
+      // Latest EMA values (String | null)
+      h1Ema9: null,
+      h1Ema21: null,
+      h4Ema20: null,
+      h4Ema50: null,
+      dailyEma20: null,
+      dailyEma60: null,
+
+      // Trailing stop tracking
+      highestSinceEntry: null,
+      lowestSinceEntry: null,
+
+      // Last kline data for bounce/drop candle detection
+      lastKline: null,
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -127,12 +137,13 @@ class MaTrendStrategy extends StrategyBase {
     const price = String(ticker.lastPrice || ticker.last || ticker.price);
     if (!price || price === 'undefined' || price === 'null') return;
 
-    this._latestPrice = price;
+    const s = this._s();
+    s.latestPrice = price;
 
     // No position open — nothing to check on tick
-    if (!this._entryPrice) return;
+    if (!s.entryPrice) return;
 
-    const action = this._lastSignal ? this._lastSignal.action : null;
+    const action = s.lastSignal ? s.lastSignal.action : null;
     const isLong = action === SIGNAL_ACTIONS.OPEN_LONG;
     const isShort = action === SIGNAL_ACTIONS.OPEN_SHORT;
 
@@ -140,36 +151,36 @@ class MaTrendStrategy extends StrategyBase {
 
     // Update trailing stop tracking
     if (isLong) {
-      this._highestSinceEntry = this._highestSinceEntry
-        ? max(this._highestSinceEntry, price)
+      s.highestSinceEntry = s.highestSinceEntry
+        ? max(s.highestSinceEntry, price)
         : price;
     } else {
-      this._lowestSinceEntry = this._lowestSinceEntry
-        ? min(this._lowestSinceEntry, price)
+      s.lowestSinceEntry = s.lowestSinceEntry
+        ? min(s.lowestSinceEntry, price)
         : price;
     }
 
     // --- Check trailing stop ---
-    if (isLong && this._highestSinceEntry) {
+    if (isLong && s.highestSinceEntry) {
       // trailingStop = highestSinceEntry * (1 - trailingStopPercent / 100)
       const trailFactor = subtract('1', divide(this._trailingStopPercent, '100'));
-      const trailingStop = multiply(this._highestSinceEntry, trailFactor);
+      const trailingStop = multiply(s.highestSinceEntry, trailFactor);
       if (isLessThanOrEqual(price, trailingStop)) {
         log.trade('Trailing stop hit (long)', {
-          price, highest: this._highestSinceEntry, trailingStop,
+          price, highest: s.highestSinceEntry, trailingStop,
         });
         this._emitExit(SIGNAL_ACTIONS.CLOSE_LONG, price, 'trailing_stop');
         return;
       }
     }
 
-    if (isShort && this._lowestSinceEntry) {
+    if (isShort && s.lowestSinceEntry) {
       // trailingStop = lowestSinceEntry * (1 + trailingStopPercent / 100)
       const trailFactor = add('1', divide(this._trailingStopPercent, '100'));
-      const trailingStop = multiply(this._lowestSinceEntry, trailFactor);
+      const trailingStop = multiply(s.lowestSinceEntry, trailFactor);
       if (isGreaterThanOrEqual(price, trailingStop)) {
         log.trade('Trailing stop hit (short)', {
-          price, lowest: this._lowestSinceEntry, trailingStop,
+          price, lowest: s.lowestSinceEntry, trailingStop,
         });
         this._emitExit(SIGNAL_ACTIONS.CLOSE_SHORT, price, 'trailing_stop');
         return;
@@ -179,7 +190,7 @@ class MaTrendStrategy extends StrategyBase {
     // --- Check TP / SL ---
     if (isLong) {
       // TP: price >= entryPrice * (1 + tpPercent / 100)
-      const tpPrice = multiply(this._entryPrice, add('1', divide(this._tpPercent, '100')));
+      const tpPrice = multiply(s.entryPrice, add('1', divide(this._tpPercent, '100')));
       if (isGreaterThanOrEqual(price, tpPrice)) {
         log.trade('Take profit hit (long)', { price, tp: tpPrice });
         this._emitExit(SIGNAL_ACTIONS.CLOSE_LONG, price, 'take_profit');
@@ -187,7 +198,7 @@ class MaTrendStrategy extends StrategyBase {
       }
 
       // SL: price <= entryPrice * (1 - slPercent / 100)
-      const slPrice = multiply(this._entryPrice, subtract('1', divide(this._slPercent, '100')));
+      const slPrice = multiply(s.entryPrice, subtract('1', divide(this._slPercent, '100')));
       if (isLessThanOrEqual(price, slPrice)) {
         log.trade('Stop loss hit (long)', { price, sl: slPrice });
         this._emitExit(SIGNAL_ACTIONS.CLOSE_LONG, price, 'stop_loss');
@@ -197,7 +208,7 @@ class MaTrendStrategy extends StrategyBase {
 
     if (isShort) {
       // TP: price <= entryPrice * (1 - tpPercent / 100)
-      const tpPrice = multiply(this._entryPrice, subtract('1', divide(this._tpPercent, '100')));
+      const tpPrice = multiply(s.entryPrice, subtract('1', divide(this._tpPercent, '100')));
       if (isLessThanOrEqual(price, tpPrice)) {
         log.trade('Take profit hit (short)', { price, tp: tpPrice });
         this._emitExit(SIGNAL_ACTIONS.CLOSE_SHORT, price, 'take_profit');
@@ -205,7 +216,7 @@ class MaTrendStrategy extends StrategyBase {
       }
 
       // SL: price >= entryPrice * (1 + slPercent / 100)
-      const slPrice = multiply(this._entryPrice, add('1', divide(this._slPercent, '100')));
+      const slPrice = multiply(s.entryPrice, add('1', divide(this._slPercent, '100')));
       if (isGreaterThanOrEqual(price, slPrice)) {
         log.trade('Stop loss hit (short)', { price, sl: slPrice });
         this._emitExit(SIGNAL_ACTIONS.CLOSE_SHORT, price, 'stop_loss');
@@ -232,82 +243,84 @@ class MaTrendStrategy extends StrategyBase {
     const high = String(kline.high);
     const low = String(kline.low);
     const open = kline.open !== undefined ? String(kline.open) : close;
+    const sym = this.getCurrentSymbol();
+    const s = this._s();
 
     // ------ 1) Push to 1h buffers and trim ------
-    this._h1Closes.push(close);
-    this._h1Volumes.push(volume);
+    s.h1Closes.push(close);
+    s.h1Volumes.push(volume);
 
-    if (this._h1Closes.length > this._maxHistory) {
-      this._h1Closes.splice(0, this._h1Closes.length - this._maxHistory);
+    if (s.h1Closes.length > this._maxHistory) {
+      s.h1Closes.splice(0, s.h1Closes.length - this._maxHistory);
     }
-    if (this._h1Volumes.length > this._maxHistory) {
-      this._h1Volumes.splice(0, this._h1Volumes.length - this._maxHistory);
+    if (s.h1Volumes.length > this._maxHistory) {
+      s.h1Volumes.splice(0, s.h1Volumes.length - this._maxHistory);
     }
 
     // ------ 2) Increment aggregation counter (wrap to avoid overflow) ------
-    this._h1Count = (this._h1Count + 1) % 24;
+    s.h1Count = (s.h1Count + 1) % 24;
 
     // Aggregate to 4h (every 4 candles)
     let newH4 = false;
-    if (this._h1Count % 4 === 0) {
-      this._h4Closes.push(close);
-      if (this._h4Closes.length > this._maxHistory) {
-        this._h4Closes.splice(0, this._h4Closes.length - this._maxHistory);
+    if (s.h1Count % 4 === 0) {
+      s.h4Closes.push(close);
+      if (s.h4Closes.length > this._maxHistory) {
+        s.h4Closes.splice(0, s.h4Closes.length - this._maxHistory);
       }
       newH4 = true;
     }
 
     // Aggregate to daily (every 24 candles — when counter wraps to 0)
     let newDaily = false;
-    if (this._h1Count === 0) {
-      this._dailyCloses.push(close);
-      if (this._dailyCloses.length > this._maxHistory) {
-        this._dailyCloses.splice(0, this._dailyCloses.length - this._maxHistory);
+    if (s.h1Count === 0) {
+      s.dailyCloses.push(close);
+      if (s.dailyCloses.length > this._maxHistory) {
+        s.dailyCloses.splice(0, s.dailyCloses.length - this._maxHistory);
       }
       newDaily = true;
     }
 
     // ------ 3) Calculate EMAs (only update each TF when new candle added) ------
-    this._updateEmas(newH4, newDaily);
+    this._updateEmas(s, newH4, newDaily);
 
     // Store kline for bounce/drop detection
-    this._lastKline = { close, volume, high, low, open };
+    s.lastKline = { close, volume, high, low, open };
 
     // ------ 4) Check exit conditions on kline (EMA crossover + 4h trend break) ------
-    if (this._entryPrice) {
-      const exitSignal = this._checkKlineExit(close);
+    if (s.entryPrice) {
+      const exitSignal = this._checkKlineExit(s, close);
       if (exitSignal) return;
     }
 
     // ------ 5) Check entry conditions ------
-    if (this._entryPrice) return; // Already in position — skip entry logic
+    if (s.entryPrice) return; // Already in position — skip entry logic
 
     // Need all EMAs calculated to evaluate entry
-    if (!this._h1Ema9 || !this._h1Ema21 ||
-        !this._h4Ema20 || !this._h4Ema50 ||
-        !this._dailyEma20 || !this._dailyEma60) {
+    if (!s.h1Ema9 || !s.h1Ema21 ||
+        !s.h4Ema20 || !s.h4Ema50 ||
+        !s.dailyEma20 || !s.dailyEma60) {
       log.debug('Waiting for sufficient data to compute all EMAs');
       return;
     }
 
     // --- Pullback condition: price within EMA21 +/- 1.0% ---
-    const ema21Upper = multiply(this._h1Ema21, '1.01');
-    const ema21Lower = multiply(this._h1Ema21, '0.99');
+    const ema21Upper = multiply(s.h1Ema21, '1.01');
+    const ema21Lower = multiply(s.h1Ema21, '0.99');
 
     // --- Volume confirmation: current volume > 20-period average ---
-    const volumeConfirm = this._checkVolumeConfirmation(volume);
+    const volumeConfirm = this._checkVolumeConfirmation(s, volume);
 
     // --- Daily trend ---
-    const dailyUptrend = isGreaterThan(this._dailyEma20, this._dailyEma60);
-    const dailyDowntrend = isLessThan(this._dailyEma20, this._dailyEma60);
+    const dailyUptrend = isGreaterThan(s.dailyEma20, s.dailyEma60);
+    const dailyDowntrend = isLessThan(s.dailyEma20, s.dailyEma60);
 
     // --- 4h trend ---
-    const h4Uptrend = isGreaterThan(this._h4Ema20, this._h4Ema50);
-    const h4Downtrend = isLessThan(this._h4Ema20, this._h4Ema50);
+    const h4Uptrend = isGreaterThan(s.h4Ema20, s.h4Ema50);
+    const h4Downtrend = isLessThan(s.h4Ema20, s.h4Ema50);
 
     // --- 1h short-term trend ---
-    const h1Uptrend = isGreaterThan(this._h1Ema9, this._h1Ema21);
-    const h1Downtrend = isLessThan(this._h1Ema9, this._h1Ema21);
+    const h1Uptrend = isGreaterThan(s.h1Ema9, s.h1Ema21);
+    const h1Downtrend = isLessThan(s.h1Ema9, s.h1Ema21);
 
     // --- Long entry check ---
     // Pullback: h1 low touches EMA21 +/- 0.5%
@@ -319,15 +332,15 @@ class MaTrendStrategy extends StrategyBase {
         longPullback && bounceCandle && volumeConfirm &&
         (this.getEffectiveRegime() === null || this.getEffectiveRegime() === MARKET_REGIMES.TRENDING_UP)) {
       log.trade('Long entry signal — multi-TF uptrend + pullback bounce', {
-        symbol: this._symbol,
+        symbol: sym,
         close,
-        h1Ema9: this._h1Ema9,
-        h1Ema21: this._h1Ema21,
+        h1Ema9: s.h1Ema9,
+        h1Ema21: s.h1Ema21,
       });
 
       const signal = {
         action: SIGNAL_ACTIONS.OPEN_LONG,
-        symbol: this._symbol,
+        symbol: sym,
         category: this._category,
         suggestedPrice: close,
         stopLossPrice: multiply(close, subtract('1', divide(this._slPercent, '100'))),
@@ -339,18 +352,18 @@ class MaTrendStrategy extends StrategyBase {
           dailyTrend: 'up',
           h4Trend: 'up',
           h1Trend: 'up',
-          h1Ema9: this._h1Ema9,
-          h1Ema21: this._h1Ema21,
-          h4Ema20: this._h4Ema20,
-          h4Ema50: this._h4Ema50,
-          dailyEma20: this._dailyEma20,
-          dailyEma60: this._dailyEma60,
+          h1Ema9: s.h1Ema9,
+          h1Ema21: s.h1Ema21,
+          h4Ema20: s.h4Ema20,
+          h4Ema50: s.h4Ema50,
+          dailyEma20: s.dailyEma20,
+          dailyEma60: s.dailyEma60,
           tp: multiply(close, add('1', divide(this._tpPercent, '100'))),
           sl: multiply(close, subtract('1', divide(this._slPercent, '100'))),
         },
       };
 
-      this._lastSignal = signal;
+      s.lastSignal = signal;
       this.emitSignal(signal);
       return;
     }
@@ -365,15 +378,15 @@ class MaTrendStrategy extends StrategyBase {
         shortRally && dropCandle && volumeConfirm &&
         (this.getEffectiveRegime() === null || this.getEffectiveRegime() === MARKET_REGIMES.TRENDING_DOWN)) {
       log.trade('Short entry signal — multi-TF downtrend + rally drop', {
-        symbol: this._symbol,
+        symbol: sym,
         close,
-        h1Ema9: this._h1Ema9,
-        h1Ema21: this._h1Ema21,
+        h1Ema9: s.h1Ema9,
+        h1Ema21: s.h1Ema21,
       });
 
       const signal = {
         action: SIGNAL_ACTIONS.OPEN_SHORT,
-        symbol: this._symbol,
+        symbol: sym,
         category: this._category,
         suggestedPrice: close,
         stopLossPrice: multiply(close, add('1', divide(this._slPercent, '100'))),
@@ -385,18 +398,18 @@ class MaTrendStrategy extends StrategyBase {
           dailyTrend: 'down',
           h4Trend: 'down',
           h1Trend: 'down',
-          h1Ema9: this._h1Ema9,
-          h1Ema21: this._h1Ema21,
-          h4Ema20: this._h4Ema20,
-          h4Ema50: this._h4Ema50,
-          dailyEma20: this._dailyEma20,
-          dailyEma60: this._dailyEma60,
+          h1Ema9: s.h1Ema9,
+          h1Ema21: s.h1Ema21,
+          h4Ema20: s.h4Ema20,
+          h4Ema50: s.h4Ema50,
+          dailyEma20: s.dailyEma20,
+          dailyEma60: s.dailyEma60,
           tp: multiply(close, subtract('1', divide(this._tpPercent, '100'))),
           sl: multiply(close, add('1', divide(this._slPercent, '100'))),
         },
       };
 
-      this._lastSignal = signal;
+      s.lastSignal = signal;
       this.emitSignal(signal);
       return;
     }
@@ -411,7 +424,7 @@ class MaTrendStrategy extends StrategyBase {
    * @returns {object|null}
    */
   getSignal() {
-    return this._lastSignal;
+    return this._s().lastSignal;
   }
 
   // ---------------------------------------------------------------------------
@@ -429,20 +442,22 @@ class MaTrendStrategy extends StrategyBase {
     if (!this._active) return;
     if (!fill) return;
     const action = fill.action || (fill.signal && fill.signal.action);
+    const sym = fill.symbol || this.getCurrentSymbol();
+    const s = this._s(sym);
 
     if (action === SIGNAL_ACTIONS.OPEN_LONG) {
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      this._highestSinceEntry = this._entryPrice;
-      this._lowestSinceEntry = null;
-      log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      if (fill.price !== undefined) s.entryPrice = String(fill.price);
+      s.highestSinceEntry = s.entryPrice;
+      s.lowestSinceEntry = null;
+      log.trade('Long fill recorded', { entry: s.entryPrice, symbol: sym });
     } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      this._lowestSinceEntry = this._entryPrice;
-      this._highestSinceEntry = null;
-      log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      if (fill.price !== undefined) s.entryPrice = String(fill.price);
+      s.lowestSinceEntry = s.entryPrice;
+      s.highestSinceEntry = null;
+      log.trade('Short fill recorded', { entry: s.entryPrice, symbol: sym });
     } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
-      log.trade('Position closed via fill', { symbol: this._symbol });
-      this._resetPosition();
+      log.trade('Position closed via fill', { symbol: sym });
+      this._resetPosition(sym);
     }
   }
 
@@ -505,76 +520,76 @@ class MaTrendStrategy extends StrategyBase {
    * @param {boolean} newDaily — true when a new daily candle was just added
    * @private
    */
-  _updateEmas(newH4, newDaily) {
-    const h1Len = this._h1Closes.length;
+  _updateEmas(s, newH4, newDaily) {
+    const h1Len = s.h1Closes.length;
 
     // --- 1h EMAs (update every kline) ---
     if (h1Len >= this._h1FastPeriod) {
-      if (this._h1Ema9 !== null) {
-        this._h1Ema9 = this._calculateEma(
-          this._h1Ema9, this._h1Closes[h1Len - 1], this._h1FastPeriod,
+      if (s.h1Ema9 !== null) {
+        s.h1Ema9 = this._calculateEma(
+          s.h1Ema9, s.h1Closes[h1Len - 1], this._h1FastPeriod,
         );
       } else {
-        this._h1Ema9 = this._calculateEmaFromArray(this._h1Closes, this._h1FastPeriod);
+        s.h1Ema9 = this._calculateEmaFromArray(s.h1Closes, this._h1FastPeriod);
       }
     }
 
     if (h1Len >= this._h1SlowPeriod) {
-      if (this._h1Ema21 !== null) {
-        this._h1Ema21 = this._calculateEma(
-          this._h1Ema21, this._h1Closes[h1Len - 1], this._h1SlowPeriod,
+      if (s.h1Ema21 !== null) {
+        s.h1Ema21 = this._calculateEma(
+          s.h1Ema21, s.h1Closes[h1Len - 1], this._h1SlowPeriod,
         );
       } else {
-        this._h1Ema21 = this._calculateEmaFromArray(this._h1Closes, this._h1SlowPeriod);
+        s.h1Ema21 = this._calculateEmaFromArray(s.h1Closes, this._h1SlowPeriod);
       }
     }
 
     // --- 4h EMAs (only when new 4h candle added) ---
     if (newH4) {
-      const h4Len = this._h4Closes.length;
+      const h4Len = s.h4Closes.length;
 
       if (h4Len >= this._h4FastPeriod) {
-        if (this._h4Ema20 !== null) {
-          this._h4Ema20 = this._calculateEma(
-            this._h4Ema20, this._h4Closes[h4Len - 1], this._h4FastPeriod,
+        if (s.h4Ema20 !== null) {
+          s.h4Ema20 = this._calculateEma(
+            s.h4Ema20, s.h4Closes[h4Len - 1], this._h4FastPeriod,
           );
         } else {
-          this._h4Ema20 = this._calculateEmaFromArray(this._h4Closes, this._h4FastPeriod);
+          s.h4Ema20 = this._calculateEmaFromArray(s.h4Closes, this._h4FastPeriod);
         }
       }
 
       if (h4Len >= this._h4SlowPeriod) {
-        if (this._h4Ema50 !== null) {
-          this._h4Ema50 = this._calculateEma(
-            this._h4Ema50, this._h4Closes[h4Len - 1], this._h4SlowPeriod,
+        if (s.h4Ema50 !== null) {
+          s.h4Ema50 = this._calculateEma(
+            s.h4Ema50, s.h4Closes[h4Len - 1], this._h4SlowPeriod,
           );
         } else {
-          this._h4Ema50 = this._calculateEmaFromArray(this._h4Closes, this._h4SlowPeriod);
+          s.h4Ema50 = this._calculateEmaFromArray(s.h4Closes, this._h4SlowPeriod);
         }
       }
     }
 
     // --- Daily EMAs (only when new daily candle added) ---
     if (newDaily) {
-      const dLen = this._dailyCloses.length;
+      const dLen = s.dailyCloses.length;
 
       if (dLen >= this._dailyFastPeriod) {
-        if (this._dailyEma20 !== null) {
-          this._dailyEma20 = this._calculateEma(
-            this._dailyEma20, this._dailyCloses[dLen - 1], this._dailyFastPeriod,
+        if (s.dailyEma20 !== null) {
+          s.dailyEma20 = this._calculateEma(
+            s.dailyEma20, s.dailyCloses[dLen - 1], this._dailyFastPeriod,
           );
         } else {
-          this._dailyEma20 = this._calculateEmaFromArray(this._dailyCloses, this._dailyFastPeriod);
+          s.dailyEma20 = this._calculateEmaFromArray(s.dailyCloses, this._dailyFastPeriod);
         }
       }
 
       if (dLen >= this._dailySlowPeriod) {
-        if (this._dailyEma60 !== null) {
-          this._dailyEma60 = this._calculateEma(
-            this._dailyEma60, this._dailyCloses[dLen - 1], this._dailySlowPeriod,
+        if (s.dailyEma60 !== null) {
+          s.dailyEma60 = this._calculateEma(
+            s.dailyEma60, s.dailyCloses[dLen - 1], this._dailySlowPeriod,
           );
         } else {
-          this._dailyEma60 = this._calculateEmaFromArray(this._dailyCloses, this._dailySlowPeriod);
+          s.dailyEma60 = this._calculateEmaFromArray(s.dailyCloses, this._dailySlowPeriod);
         }
       }
     }
@@ -587,16 +602,16 @@ class MaTrendStrategy extends StrategyBase {
    * @returns {boolean}
    * @private
    */
-  _checkVolumeConfirmation(currentVolume) {
+  _checkVolumeConfirmation(s, currentVolume) {
     const lookback = 20;
-    if (this._h1Volumes.length < 10) return true;  // Pass during warmup
-    if (this._h1Volumes.length < lookback) return false;
+    if (s.h1Volumes.length < 10) return true;  // Pass during warmup
+    if (s.h1Volumes.length < lookback) return false;
 
     // Calculate simple moving average of the last 20 volumes
     let sum = '0';
-    const start = this._h1Volumes.length - lookback;
-    for (let i = start; i < this._h1Volumes.length; i++) {
-      sum = add(sum, this._h1Volumes[i]);
+    const start = s.h1Volumes.length - lookback;
+    for (let i = start; i < s.h1Volumes.length; i++) {
+      sum = add(sum, s.h1Volumes[i]);
     }
     const avgVolume = divide(sum, String(lookback));
 
@@ -610,43 +625,43 @@ class MaTrendStrategy extends StrategyBase {
    * @returns {boolean} — true if an exit signal was emitted
    * @private
    */
-  _checkKlineExit(close) {
-    if (!this._h1Ema9 || !this._h1Ema21) return false;
+  _checkKlineExit(s, close) {
+    if (!s.h1Ema9 || !s.h1Ema21) return false;
 
-    const action = this._lastSignal ? this._lastSignal.action : null;
+    const action = s.lastSignal ? s.lastSignal.action : null;
     const isLong = action === SIGNAL_ACTIONS.OPEN_LONG;
     const isShort = action === SIGNAL_ACTIONS.OPEN_SHORT;
 
     // 1h EMA crossover reversal
-    if (isLong && isLessThan(this._h1Ema9, this._h1Ema21)) {
+    if (isLong && isLessThan(s.h1Ema9, s.h1Ema21)) {
       log.trade('EMA crossover reversal — closing long', {
-        h1Ema9: this._h1Ema9, h1Ema21: this._h1Ema21,
+        h1Ema9: s.h1Ema9, h1Ema21: s.h1Ema21,
       });
       this._emitExit(SIGNAL_ACTIONS.CLOSE_LONG, close, 'ema_crossover');
       return true;
     }
 
-    if (isShort && isGreaterThan(this._h1Ema9, this._h1Ema21)) {
+    if (isShort && isGreaterThan(s.h1Ema9, s.h1Ema21)) {
       log.trade('EMA crossover reversal — closing short', {
-        h1Ema9: this._h1Ema9, h1Ema21: this._h1Ema21,
+        h1Ema9: s.h1Ema9, h1Ema21: s.h1Ema21,
       });
       this._emitExit(SIGNAL_ACTIONS.CLOSE_SHORT, close, 'ema_crossover');
       return true;
     }
 
     // 4h trend break
-    if (this._h4Ema20 && this._h4Ema50) {
-      if (isLong && isLessThan(this._h4Ema20, this._h4Ema50)) {
+    if (s.h4Ema20 && s.h4Ema50) {
+      if (isLong && isLessThan(s.h4Ema20, s.h4Ema50)) {
         log.trade('4h trend break — closing long', {
-          h4Ema20: this._h4Ema20, h4Ema50: this._h4Ema50,
+          h4Ema20: s.h4Ema20, h4Ema50: s.h4Ema50,
         });
         this._emitExit(SIGNAL_ACTIONS.CLOSE_LONG, close, 'h4_trend_break');
         return true;
       }
 
-      if (isShort && isGreaterThan(this._h4Ema20, this._h4Ema50)) {
+      if (isShort && isGreaterThan(s.h4Ema20, s.h4Ema50)) {
         log.trade('4h trend break — closing short', {
-          h4Ema20: this._h4Ema20, h4Ema50: this._h4Ema50,
+          h4Ema20: s.h4Ema20, h4Ema50: s.h4Ema50,
         });
         this._emitExit(SIGNAL_ACTIONS.CLOSE_SHORT, close, 'h4_trend_break');
         return true;
@@ -665,9 +680,11 @@ class MaTrendStrategy extends StrategyBase {
    * @private
    */
   _emitExit(action, price, reason) {
+    const sym = this.getCurrentSymbol();
+    const s = this._s();
     const signal = {
       action,
-      symbol: this._symbol,
+      symbol: sym,
       category: this._category,
       suggestedPrice: price,
       confidence: '1.00',
@@ -675,14 +692,14 @@ class MaTrendStrategy extends StrategyBase {
       reduceOnly: true,
       marketContext: {
         regime: this.getEffectiveRegime(),
-        entryPrice: this._entryPrice,
+        entryPrice: s.entryPrice,
         exitPrice: price,
-        highestSinceEntry: this._highestSinceEntry,
-        lowestSinceEntry: this._lowestSinceEntry,
+        highestSinceEntry: s.highestSinceEntry,
+        lowestSinceEntry: s.lowestSinceEntry,
       },
     };
 
-    this._lastSignal = signal;
+    s.lastSignal = signal;
     this.emitSignal(signal);
     this._resetPosition();
   }
@@ -691,10 +708,11 @@ class MaTrendStrategy extends StrategyBase {
    * Reset all position-related state.
    * @private
    */
-  _resetPosition() {
-    this._entryPrice = null;
-    this._highestSinceEntry = null;
-    this._lowestSinceEntry = null;
+  _resetPosition(symbol) {
+    const s = this._s(symbol);
+    s.entryPrice = null;
+    s.highestSinceEntry = null;
+    s.lowestSinceEntry = null;
   }
 }
 

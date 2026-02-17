@@ -58,6 +58,7 @@ class BollingerReversionStrategy extends StrategyBase {
     targetRegimes: ['ranging', 'volatile'],
     riskLevel: 'medium',
     maxConcurrentPositions: 2,
+    maxSymbolsPerStrategy: 3,
     cooldownMs: 60000,
     gracePeriodMs: 300000,
     warmupCandles: 22,
@@ -93,30 +94,26 @@ class BollingerReversionStrategy extends StrategyBase {
     super('BollingerReversionStrategy', merged);
 
     this._log = createLogger('BollingerReversionStrategy');
+  }
 
-    // Internal state ----------------------------------------------------------
+  // --------------------------------------------------------------------------
+  // Per-symbol state (SymbolState pattern)
+  // --------------------------------------------------------------------------
 
-    /** @type {string|null} previous candle close */
-    this._prevClose = null;
-    /** @type {string|null} previous RSI value */
-    this._prevRsi = null;
-    /** @type {string|null} previous Stochastic %K */
-    this._prevStochK = null;
-    /** @type {string|null} previous Stochastic %D */
-    this._prevStochD = null;
-
-    /** @type {object|null} most recently generated signal */
-    this._lastSignal = null;
-    /** @type {string|null} latest ticker price */
-    this._latestPrice = null;
-    /** @type {string|null} average entry price for current position */
-    this._entryPrice = null;
-    /** @type {number} number of entries made into current position (0-3) */
-    this._entryCount = 0;
-    /** @type {'long'|'short'|null} current position direction */
-    this._positionSide = null;
-    /** @type {boolean} whether half profit has been taken */
-    this._halfProfitTaken = false;
+  /**
+   * @override
+   * @returns {object} default per-symbol state
+   */
+  _createDefaultState() {
+    return {
+      ...super._createDefaultState(),
+      prevClose: null,
+      prevRsi: null,
+      prevStochK: null,
+      prevStochD: null,
+      entryCount: 0,
+      halfProfitTaken: false,
+    };
   }
 
   // --------------------------------------------------------------------------
@@ -130,24 +127,24 @@ class BollingerReversionStrategy extends StrategyBase {
     if (!this._active) return;
 
     if (ticker && ticker.lastPrice !== undefined) {
-      this._latestPrice = String(ticker.lastPrice);
+      this._s().latestPrice = String(ticker.lastPrice);
     }
 
     // Check TP/SL only when we have a position
-    if (this._entryPrice === null || this._positionSide === null) return;
-    if (this._latestPrice === null) return;
+    if (this._s().entryPrice === null || this._s().positionSide === null) return;
+    if (this._s().latestPrice === null) return;
 
     const { slPercent, positionSizePercent } = this.config;
-    const price = this._latestPrice;
-    const entry = this._entryPrice;
+    const price = this._s().latestPrice;
+    const entry = this._s().entryPrice;
 
     // --- Stop Loss check (-4% from average entry) ---
-    if (this._positionSide === 'long') {
+    if (this._s().positionSide === 'long') {
       const slPrice = subtract(entry, multiply(entry, divide(slPercent, '100')));
       if (isLessThan(price, slPrice)) {
         const signal = {
           action: SIGNAL_ACTIONS.CLOSE_LONG,
-          symbol: this._symbol,
+          symbol: this.getCurrentSymbol(),
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: price,
@@ -156,17 +153,17 @@ class BollingerReversionStrategy extends StrategyBase {
           reason: 'stop_loss',
           marketContext: { entryPrice: entry, currentPrice: price, slPrice },
         };
-        this._lastSignal = signal;
+        this._s().lastSignal = signal;
         this.emitSignal(signal);
         this._resetPosition();
         return;
       }
-    } else if (this._positionSide === 'short') {
+    } else if (this._s().positionSide === 'short') {
       const slPrice = add(entry, multiply(entry, divide(slPercent, '100')));
       if (isGreaterThan(price, slPrice)) {
         const signal = {
           action: SIGNAL_ACTIONS.CLOSE_SHORT,
-          symbol: this._symbol,
+          symbol: this.getCurrentSymbol(),
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: price,
@@ -175,7 +172,7 @@ class BollingerReversionStrategy extends StrategyBase {
           reason: 'stop_loss',
           marketContext: { entryPrice: entry, currentPrice: price, slPrice },
         };
-        this._lastSignal = signal;
+        this._s().lastSignal = signal;
         this.emitSignal(signal);
         this._resetPosition();
         return;
@@ -208,7 +205,7 @@ class BollingerReversionStrategy extends StrategyBase {
 
     // 1. Get history from IndicatorCache for data sufficiency & prevClose
     const c = this._indicatorCache;
-    const hist = c.getHistory(this._symbol);
+    const hist = c.getHistory(this.getCurrentSymbol());
     const minRequired = Math.max(bbPeriod, rsiPeriod + 1, stochPeriod + stochSmooth);
 
     if (!hist || hist.closes.length < minRequired) {
@@ -222,9 +219,9 @@ class BollingerReversionStrategy extends StrategyBase {
     const prevClose = hist.closes.length > 1 ? hist.closes[hist.closes.length - 2] : null;
 
     // 2. Calculate indicators via IndicatorCache
-    const bb = c.get(this._symbol, 'bb', { period: bbPeriod, stdDev: bbStdDev });
-    const rsi = c.get(this._symbol, 'rsi', { period: rsiPeriod });
-    const stoch = c.get(this._symbol, 'stochastic', { period: stochPeriod, smooth: stochSmooth });
+    const bb = c.get(this.getCurrentSymbol(), 'bb', { period: bbPeriod, stdDev: bbStdDev });
+    const rsi = c.get(this.getCurrentSymbol(), 'rsi', { period: rsiPeriod });
+    const stoch = c.get(this.getCurrentSymbol(), 'stochastic', { period: stochPeriod, smooth: stochSmooth });
 
     // Null checks — cache returns null if insufficient data
     if (bb === null || rsi === null) return;
@@ -232,16 +229,16 @@ class BollingerReversionStrategy extends StrategyBase {
     const { upper, middle, lower, bandwidth } = bb;
 
     if (stoch === null) {
-      this._prevClose = prevClose;
-      this._prevRsi = rsi;
+      this._s().prevClose = prevClose;
+      this._s().prevRsi = rsi;
       return;
     }
     const { k: stochK, d: stochD } = stoch;
 
     // 5. Crossover detection --------------------------------------------------
-    const prevRsi = this._prevRsi;
-    const prevStochK = this._prevStochK;
-    const prevStochD = this._prevStochD;
+    const prevRsi = this._s().prevRsi;
+    const prevStochK = this._s().prevStochK;
+    const prevStochD = this._s().prevStochD;
 
     const regime = this.getEffectiveRegime();
     const price = close;
@@ -261,16 +258,16 @@ class BollingerReversionStrategy extends StrategyBase {
     let signal = null;
 
     // --- TP check for open position on kline (BB middle / BB opposite band) ---
-    if (this._entryPrice !== null && this._positionSide !== null) {
+    if (this._s().entryPrice !== null && this._s().positionSide !== null) {
       signal = this._checkTakeProfit(price, middle, upper, lower, positionSizePercent, marketContext);
       if (signal) {
-        this._lastSignal = signal;
+        this._s().lastSignal = signal;
         this.emitSignal(signal);
         // Update previous values before returning
-        this._prevClose = prevClose;
-        this._prevRsi = rsi;
-        this._prevStochK = stochK;
-        this._prevStochD = stochD;
+        this._s().prevClose = prevClose;
+        this._s().prevRsi = rsi;
+        this._s().prevStochK = stochK;
+        this._s().prevStochD = stochD;
         return;
       }
     }
@@ -278,10 +275,10 @@ class BollingerReversionStrategy extends StrategyBase {
     // --- Entry conditions ---
     // Need previous values for crossover detection
     if (prevClose === null || prevRsi === null || prevStochK === null || prevStochD === null) {
-      this._prevClose = prevClose;
-      this._prevRsi = rsi;
-      this._prevStochK = stochK;
-      this._prevStochD = stochD;
+      this._s().prevClose = prevClose;
+      this._s().prevRsi = rsi;
+      this._s().prevStochK = stochK;
+      this._s().prevStochD = stochD;
       return;
     }
 
@@ -304,16 +301,16 @@ class BollingerReversionStrategy extends StrategyBase {
       !isGreaterThan(prevStochK, '20') &&
       regime !== MARKET_REGIMES.TRENDING_DOWN &&
       (regime === null || regime === MARKET_REGIMES.RANGING || regime === MARKET_REGIMES.VOLATILE) &&
-      (this._positionSide === null || this._positionSide === 'long') &&
-      this._entryCount < maxEntries
+      (this._s().positionSide === null || this._s().positionSide === 'long') &&
+      this._s().entryCount < maxEntries
     ) {
-      const entryNumber = this._entryCount + 1;
+      const entryNumber = this._s().entryCount + 1;
       const sizePercent = this._getSplitSize(entryNumber, positionSizePercent);
       const confidence = this._calcConfidence(rsi, stochK, bandwidth);
 
       signal = {
         action: SIGNAL_ACTIONS.OPEN_LONG,
-        symbol: this._symbol,
+        symbol: this.getCurrentSymbol(),
         category: this._category,
         suggestedQty: sizePercent,
         suggestedPrice: price,
@@ -343,16 +340,16 @@ class BollingerReversionStrategy extends StrategyBase {
       !isLessThan(prevStochK, '80') &&
       regime !== MARKET_REGIMES.TRENDING_UP &&
       (regime === null || regime === MARKET_REGIMES.RANGING || regime === MARKET_REGIMES.VOLATILE) &&
-      (this._positionSide === null || this._positionSide === 'short') &&
-      this._entryCount < maxEntries
+      (this._s().positionSide === null || this._s().positionSide === 'short') &&
+      this._s().entryCount < maxEntries
     ) {
-      const entryNumber = this._entryCount + 1;
+      const entryNumber = this._s().entryCount + 1;
       const sizePercent = this._getSplitSize(entryNumber, positionSizePercent);
       const confidence = this._calcConfidence(rsi, stochK, bandwidth);
 
       signal = {
         action: SIGNAL_ACTIONS.OPEN_SHORT,
-        symbol: this._symbol,
+        symbol: this.getCurrentSymbol(),
         category: this._category,
         suggestedQty: sizePercent,
         suggestedPrice: price,
@@ -369,15 +366,15 @@ class BollingerReversionStrategy extends StrategyBase {
 
     // 6. Emit if we have a signal
     if (signal) {
-      this._lastSignal = signal;
+      this._s().lastSignal = signal;
       this.emitSignal(signal);
     }
 
     // 7. Update previous values for next candle
-    this._prevClose = prevClose;
-    this._prevRsi = rsi;
-    this._prevStochK = stochK;
-    this._prevStochD = stochD;
+    this._s().prevClose = prevClose;
+    this._s().prevRsi = rsi;
+    this._s().prevStochK = stochK;
+    this._s().prevStochD = stochD;
   }
 
   // --------------------------------------------------------------------------
@@ -397,17 +394,17 @@ class BollingerReversionStrategy extends StrategyBase {
     const action = fill.action || (fill.signal && fill.signal.action);
 
     if (action === SIGNAL_ACTIONS.OPEN_LONG) {
-      this._positionSide = 'long';
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      if (this._entryCount === 0) this._entryCount = 1;
-      this._log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      this._s().positionSide = 'long';
+      if (fill.price !== undefined) this._s().entryPrice = String(fill.price);
+      if (this._s().entryCount === 0) this._s().entryCount = 1;
+      this._log.trade('Long fill recorded', { entry: this._s().entryPrice, symbol: this.getCurrentSymbol() });
     } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
-      this._positionSide = 'short';
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      if (this._entryCount === 0) this._entryCount = 1;
-      this._log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      this._s().positionSide = 'short';
+      if (fill.price !== undefined) this._s().entryPrice = String(fill.price);
+      if (this._s().entryCount === 0) this._s().entryCount = 1;
+      this._log.trade('Short fill recorded', { entry: this._s().entryPrice, symbol: this.getCurrentSymbol() });
     } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
-      this._log.trade('Position closed via fill', { side: this._positionSide, symbol: this._symbol });
+      this._log.trade('Position closed via fill', { side: this._s().positionSide, symbol: this.getCurrentSymbol() });
       this._resetPosition();
     }
   }
@@ -420,7 +417,7 @@ class BollingerReversionStrategy extends StrategyBase {
    * @returns {object|null}
    */
   getSignal() {
-    return this._lastSignal;
+    return this._s().lastSignal;
   }
 
   // --------------------------------------------------------------------------
@@ -439,14 +436,14 @@ class BollingerReversionStrategy extends StrategyBase {
    * @returns {object|null} signal or null
    */
   _checkTakeProfit(price, middle, upper, lower, positionSizePercent, marketContext) {
-    if (this._positionSide === 'long') {
+    if (this._s().positionSide === 'long') {
       // Half profit at BB middle
-      if (!this._halfProfitTaken && isGreaterThan(price, middle)) {
-        this._halfProfitTaken = true;
+      if (!this._s().halfProfitTaken && isGreaterThan(price, middle)) {
+        this._s().halfProfitTaken = true;
         const halfQty = toFixed(divide(positionSizePercent, '2'), 4);
         return {
           action: SIGNAL_ACTIONS.CLOSE_LONG,
-          symbol: this._symbol,
+          symbol: this.getCurrentSymbol(),
           category: this._category,
           suggestedQty: halfQty,
           suggestedPrice: price,
@@ -457,10 +454,10 @@ class BollingerReversionStrategy extends StrategyBase {
         };
       }
       // Full profit at BB upper (opposite band)
-      if (this._halfProfitTaken && isGreaterThan(price, upper)) {
+      if (this._s().halfProfitTaken && isGreaterThan(price, upper)) {
         const signal = {
           action: SIGNAL_ACTIONS.CLOSE_LONG,
-          symbol: this._symbol,
+          symbol: this.getCurrentSymbol(),
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: price,
@@ -472,14 +469,14 @@ class BollingerReversionStrategy extends StrategyBase {
         this._resetPosition();
         return signal;
       }
-    } else if (this._positionSide === 'short') {
+    } else if (this._s().positionSide === 'short') {
       // Half profit at BB middle
-      if (!this._halfProfitTaken && isLessThan(price, middle)) {
-        this._halfProfitTaken = true;
+      if (!this._s().halfProfitTaken && isLessThan(price, middle)) {
+        this._s().halfProfitTaken = true;
         const halfQty = toFixed(divide(positionSizePercent, '2'), 4);
         return {
           action: SIGNAL_ACTIONS.CLOSE_SHORT,
-          symbol: this._symbol,
+          symbol: this.getCurrentSymbol(),
           category: this._category,
           suggestedQty: halfQty,
           suggestedPrice: price,
@@ -490,10 +487,10 @@ class BollingerReversionStrategy extends StrategyBase {
         };
       }
       // Full profit at BB lower (opposite band)
-      if (this._halfProfitTaken && isLessThan(price, lower)) {
+      if (this._s().halfProfitTaken && isLessThan(price, lower)) {
         const signal = {
           action: SIGNAL_ACTIONS.CLOSE_SHORT,
-          symbol: this._symbol,
+          symbol: this.getCurrentSymbol(),
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: price,
@@ -534,22 +531,22 @@ class BollingerReversionStrategy extends StrategyBase {
    * @param {'long'|'short'} side — position direction
    */
   _updateEntry(price, side) {
-    if (this._entryCount === 0) {
-      this._entryPrice = price;
-      this._positionSide = side;
-      this._halfProfitTaken = false;
+    if (this._s().entryCount === 0) {
+      this._s().entryPrice = price;
+      this._s().positionSide = side;
+      this._s().halfProfitTaken = false;
     } else {
       // Weighted average: existing entries' total weight vs new entry weight
-      const prevWeight = this._getSplitCumulativeWeight(this._entryCount);
-      const newWeight = this._getSplitWeight(this._entryCount + 1);
+      const prevWeight = this._getSplitCumulativeWeight(this._s().entryCount);
+      const newWeight = this._getSplitWeight(this._s().entryCount + 1);
       const totalWeight = add(prevWeight, newWeight);
 
       // avgEntry = (prevAvg * prevWeight + newPrice * newWeight) / totalWeight
-      const prevPart = multiply(this._entryPrice, prevWeight);
+      const prevPart = multiply(this._s().entryPrice, prevWeight);
       const newPart = multiply(price, newWeight);
-      this._entryPrice = divide(add(prevPart, newPart), totalWeight);
+      this._s().entryPrice = divide(add(prevPart, newPart), totalWeight);
     }
-    this._entryCount += 1;
+    this._s().entryCount += 1;
   }
 
   /**
@@ -580,10 +577,10 @@ class BollingerReversionStrategy extends StrategyBase {
    * Reset position tracking state after full exit.
    */
   _resetPosition() {
-    this._entryPrice = null;
-    this._entryCount = 0;
-    this._positionSide = null;
-    this._halfProfitTaken = false;
+    this._s().entryPrice = null;
+    this._s().entryCount = 0;
+    this._s().positionSide = null;
+    this._s().halfProfitTaken = false;
   }
 
   // --------------------------------------------------------------------------

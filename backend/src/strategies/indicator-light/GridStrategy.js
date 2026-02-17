@@ -11,6 +11,8 @@
  * Active ONLY when MarketRegime === RANGING.  Deactivates on
  * TRENDING_UP / TRENDING_DOWN, BTC 5 % sudden moves, or when
  * unrealised loss exceeds 3 % of equity.
+ *
+ * Per-symbol state via StrategyBase SymbolState pattern.
  */
 
 const StrategyBase = require('../../services/strategyBase');
@@ -64,6 +66,7 @@ class GridStrategy extends StrategyBase {
     gracePeriodMs: 180000,
     warmupCandles: 1,
     volatilityPreference: 'low',
+    maxSymbolsPerStrategy: 2,
     description: 'ATR 기반 그리드 트레이딩 (양방향 헤지)',
     defaultConfig: {
       atrPeriod: 14,
@@ -87,46 +90,30 @@ class GridStrategy extends StrategyBase {
     const merged = { ...GridStrategy.metadata.defaultConfig, ...config };
     super('GridStrategy', merged);
 
-    // --- Configuration --------------------------------------------------
+    // --- Configuration (shared across symbols) ---
     this._atrPeriod = merged.atrPeriod;
     this._gridSpacingMultiplier = merged.gridSpacingMultiplier;
     this._gridLevelCount = merged.gridLevels;
     this._totalBudgetPercent = merged.totalBudgetPercent;
     this._leverage = merged.leverage;
     this._maxDrawdownPercent = merged.maxDrawdownPercent;
+  }
 
-    // --- Internal state -------------------------------------------------
+  // -----------------------------------------------------------------------
+  // SymbolState — per-symbol state defaults
+  // -----------------------------------------------------------------------
 
-    /** Grid centre price (string | null). */
-    this._basePrice = null;
-
-    /** ATR × multiplier — distance between grid levels (string | null). */
-    this._gridSpacing = null;
-
-    /**
-     * Array of grid level objects.
-     * @type {{ price: string, side: 'long'|'short', level: number, triggered: boolean }[]}
-     */
-    this._gridLevels = [];
-
-    /** Latest computed ATR value as a string. */
-    this._atrValue = null;
-
-    /** Most recent signal payload (consumed by getSignal). */
-    this._lastSignal = null;
-
-    /** Latest ticker price as a string. */
-    this._latestPrice = null;
-
-    /** Timestamp of the most recent grid reset. */
-    this._lastResetTime = null;
-
-    /**
-     * Tracks when the price first moved outside the grid range.
-     * Used to decide whether to trigger a reset after sustained out-of-range.
-     * @type {Date|null}
-     */
-    this._outOfRangeStartTime = null;
+  /** @override */
+  _createDefaultState() {
+    return {
+      ...super._createDefaultState(),
+      basePrice: null,
+      gridSpacing: null,
+      gridLevels: [],
+      atrValue: null,
+      lastResetTime: null,
+      outOfRangeStartTime: null,
+    };
   }
 
   // -----------------------------------------------------------------------
@@ -149,10 +136,12 @@ class GridStrategy extends StrategyBase {
     const price = ticker.lastPrice || ticker.last || ticker.price;
     if (!price) return;
 
-    this._latestPrice = price;
+    const s = this._s();
+    const symbol = this.getCurrentSymbol();
+    s.latestPrice = price;
 
     // Nothing to check until grid is built
-    if (this._gridLevels.length === 0) return;
+    if (s.gridLevels.length === 0) return;
 
     // Only generate signals in RANGING regime (allow null for backtest)
     if (this.getEffectiveRegime() !== null && this.getEffectiveRegime() !== MARKET_REGIMES.RANGING) return;
@@ -164,8 +153,8 @@ class GridStrategy extends StrategyBase {
     if (this._checkGridDrawdownSL(price)) return;
 
     // Scan untriggered levels
-    for (let i = 0; i < this._gridLevels.length; i++) {
-      const lvl = this._gridLevels[i];
+    for (let i = 0; i < s.gridLevels.length; i++) {
+      const lvl = s.gridLevels[i];
       if (lvl.triggered) continue;
 
       const hit = this._isLevelHit(price, lvl);
@@ -176,7 +165,7 @@ class GridStrategy extends StrategyBase {
 
       // Build entry signal
       const entrySignal = this._buildEntrySignal(lvl);
-      this._lastSignal = entrySignal;
+      s.lastSignal = entrySignal;
       this.emitSignal(entrySignal);
 
       log.trade('Grid level hit', {
@@ -213,8 +202,10 @@ class GridStrategy extends StrategyBase {
   onKline(kline) {
     if (!this._active) return;
 
+    const s = this._s();
+    const symbol = this.getCurrentSymbol();
     const c = this._indicatorCache;
-    const hist = c.getHistory(this._symbol);
+    const hist = c.getHistory(symbol);
     if (!hist || hist.klines.length < this._atrPeriod + 1) {
       log.debug('Not enough kline data for ATR', {
         have: hist ? hist.klines.length : 0,
@@ -222,10 +213,10 @@ class GridStrategy extends StrategyBase {
       });
       return;
     }
-    this._atrValue = c.get(this._symbol, 'atr', { period: this._atrPeriod });
+    s.atrValue = c.get(symbol, 'atr', { period: this._atrPeriod });
 
     log.debug('ATR calculated', {
-      atr: this._atrValue,
+      atr: s.atrValue,
       period: this._atrPeriod,
     });
 
@@ -238,7 +229,7 @@ class GridStrategy extends StrategyBase {
     }
 
     // Initialise grid if it has never been built
-    if (this._gridLevels.length === 0) {
+    if (s.gridLevels.length === 0) {
       this._initGrid();
       return;
     }
@@ -255,8 +246,9 @@ class GridStrategy extends StrategyBase {
    * @returns {object|null}
    */
   getSignal() {
-    const signal = this._lastSignal;
-    this._lastSignal = null;
+    const s = this._s();
+    const signal = s.lastSignal;
+    s.lastSignal = null;
     return signal;
   }
 
@@ -271,10 +263,12 @@ class GridStrategy extends StrategyBase {
    * `_gridLevelCount` sell levels above it (20 levels total by default).
    */
   _initGrid() {
+    const s = this._s();
+    const symbol = this.getCurrentSymbol();
     const c = this._indicatorCache;
-    const hist = c ? c.getHistory(this._symbol) : null;
+    const hist = c ? c.getHistory(symbol) : null;
 
-    const price = this._latestPrice || (hist && hist.klines.length > 0
+    const price = s.latestPrice || (hist && hist.klines.length > 0
       ? hist.klines[hist.klines.length - 1].close
       : null);
 
@@ -283,35 +277,35 @@ class GridStrategy extends StrategyBase {
       return;
     }
 
-    if (!this._atrValue || isLessThan(this._atrValue, '0')) {
+    if (!s.atrValue || isLessThan(s.atrValue, '0')) {
       log.warn('Cannot init grid — ATR not available or invalid', {
-        atr: this._atrValue,
+        atr: s.atrValue,
       });
       return;
     }
 
-    this._basePrice = price;
-    this._gridSpacing = multiply(this._atrValue, this._gridSpacingMultiplier);
+    s.basePrice = price;
+    s.gridSpacing = multiply(s.atrValue, this._gridSpacingMultiplier);
 
     // Validate minimum grid spacing: at least 0.1% of base price to avoid
     // excessively dense grids where slippage/commissions would erode profits.
     const minSpacing = multiply(price, '0.001');
-    if (isLessThan(this._gridSpacing, minSpacing)) {
+    if (isLessThan(s.gridSpacing, minSpacing)) {
       log.warn('Grid spacing too dense — adjusting to min 0.1% of price', {
-        original: this._gridSpacing,
+        original: s.gridSpacing,
         minSpacing,
         basePrice: price,
       });
-      this._gridSpacing = minSpacing;
+      s.gridSpacing = minSpacing;
     }
 
-    this._gridLevels = [];
+    s.gridLevels = [];
 
     // Buy (OPEN_LONG) levels below base price
     for (let i = 1; i <= this._gridLevelCount; i++) {
-      const offset = multiply(this._gridSpacing, String(i));
-      const levelPrice = subtract(this._basePrice, offset);
-      this._gridLevels.push({
+      const offset = multiply(s.gridSpacing, String(i));
+      const levelPrice = subtract(s.basePrice, offset);
+      s.gridLevels.push({
         price: levelPrice,
         side: 'long',
         level: i,
@@ -321,9 +315,9 @@ class GridStrategy extends StrategyBase {
 
     // Sell (OPEN_SHORT) levels above base price
     for (let i = 1; i <= this._gridLevelCount; i++) {
-      const offset = multiply(this._gridSpacing, String(i));
-      const levelPrice = add(this._basePrice, offset);
-      this._gridLevels.push({
+      const offset = multiply(s.gridSpacing, String(i));
+      const levelPrice = add(s.basePrice, offset);
+      s.gridLevels.push({
         price: levelPrice,
         side: 'short',
         level: i,
@@ -331,14 +325,14 @@ class GridStrategy extends StrategyBase {
       });
     }
 
-    this._lastResetTime = new Date();
-    this._outOfRangeStartTime = null;
+    s.lastResetTime = new Date();
+    s.outOfRangeStartTime = null;
 
     log.info('Grid initialised', {
-      basePrice: this._basePrice,
-      gridSpacing: this._gridSpacing,
-      levels: this._gridLevels.length,
-      atr: this._atrValue,
+      basePrice: s.basePrice,
+      gridSpacing: s.gridSpacing,
+      levels: s.gridLevels.length,
+      atr: s.atrValue,
     });
   }
 
@@ -354,41 +348,42 @@ class GridStrategy extends StrategyBase {
    * @returns {boolean}
    */
   _shouldResetGrid() {
-    if (!this._latestPrice || !this._basePrice || !this._gridSpacing) {
+    const s = this._s();
+    if (!s.latestPrice || !s.basePrice || !s.gridSpacing) {
       return false;
     }
 
     // Enforce minimum interval between resets
-    if (this._lastResetTime) {
-      const elapsed = Date.now() - this._lastResetTime.getTime();
+    if (s.lastResetTime) {
+      const elapsed = Date.now() - s.lastResetTime.getTime();
       if (elapsed < MIN_RESET_INTERVAL_MS) {
         return false;
       }
     }
 
     // Calculate upper and lower bounds of the grid
-    const rangeOffset = multiply(this._gridSpacing, String(this._gridLevelCount));
-    const upperBound = add(this._basePrice, rangeOffset);
-    const lowerBound = subtract(this._basePrice, rangeOffset);
+    const rangeOffset = multiply(s.gridSpacing, String(this._gridLevelCount));
+    const upperBound = add(s.basePrice, rangeOffset);
+    const lowerBound = subtract(s.basePrice, rangeOffset);
 
     const isOutside =
-      isGreaterThan(this._latestPrice, upperBound) ||
-      isLessThan(this._latestPrice, lowerBound);
+      isGreaterThan(s.latestPrice, upperBound) ||
+      isLessThan(s.latestPrice, lowerBound);
 
     if (!isOutside) {
       // Price came back — clear timer
-      this._outOfRangeStartTime = null;
+      s.outOfRangeStartTime = null;
       return false;
     }
 
     // Price is outside; if this is the first observation, start the timer
-    if (!this._outOfRangeStartTime) {
-      this._outOfRangeStartTime = new Date();
+    if (!s.outOfRangeStartTime) {
+      s.outOfRangeStartTime = new Date();
       return false;
     }
 
     // Has the price been out of range long enough?
-    const outDuration = Date.now() - this._outOfRangeStartTime.getTime();
+    const outDuration = Date.now() - s.outOfRangeStartTime.getTime();
     return outDuration >= OUT_OF_RANGE_THRESHOLD_MS;
   }
 
@@ -422,6 +417,8 @@ class GridStrategy extends StrategyBase {
    * @returns {object} signal payload
    */
   _buildEntrySignal(lvl) {
+    const s = this._s();
+    const symbol = this.getCurrentSymbol();
     const action =
       lvl.side === 'long'
         ? SIGNAL_ACTIONS.OPEN_LONG
@@ -431,20 +428,20 @@ class GridStrategy extends StrategyBase {
 
     return {
       action,
-      symbol: this._symbol,
+      symbol,
       category: this._category,
       suggestedPrice: lvl.price,
       suggestedQty,
       confidence: '0.70',
       marketContext: {
         strategy: 'GridStrategy',
-        basePrice: this._basePrice,
-        gridSpacing: this._gridSpacing,
+        basePrice: s.basePrice,
+        gridSpacing: s.gridSpacing,
         gridLevel: lvl.level,
         side: lvl.side,
         leverage: this._leverage,
         orderType: 'limit',
-        atr: this._atrValue,
+        atr: s.atrValue,
         regime: this.getEffectiveRegime(),
       },
     };
@@ -460,22 +457,24 @@ class GridStrategy extends StrategyBase {
    * @returns {object} signal payload
    */
   _buildExitSignal(lvl) {
+    const s = this._s();
+    const symbol = this.getCurrentSymbol();
     let action;
     let exitPrice;
 
     if (lvl.side === 'long') {
       action = SIGNAL_ACTIONS.CLOSE_LONG;
-      exitPrice = add(lvl.price, this._gridSpacing);
+      exitPrice = add(lvl.price, s.gridSpacing);
     } else {
       action = SIGNAL_ACTIONS.CLOSE_SHORT;
-      exitPrice = subtract(lvl.price, this._gridSpacing);
+      exitPrice = subtract(lvl.price, s.gridSpacing);
     }
 
     const suggestedQty = this._calculatePerLevelQty(lvl.price);
 
     return {
       action,
-      symbol: this._symbol,
+      symbol,
       category: this._category,
       suggestedPrice: exitPrice,
       suggestedQty,
@@ -483,14 +482,14 @@ class GridStrategy extends StrategyBase {
       confidence: '0.70',
       marketContext: {
         strategy: 'GridStrategy',
-        basePrice: this._basePrice,
-        gridSpacing: this._gridSpacing,
+        basePrice: s.basePrice,
+        gridSpacing: s.gridSpacing,
         gridLevel: lvl.level,
         side: lvl.side === 'long' ? 'close_long' : 'close_short',
         leverage: this._leverage,
         orderType: 'limit',
         reduceOnly: true,
-        atr: this._atrValue,
+        atr: s.atrValue,
         regime: this.getEffectiveRegime(),
       },
     };
@@ -531,19 +530,20 @@ class GridStrategy extends StrategyBase {
    * @param {string} price — latest market price
    */
   _trackOutOfRange(price) {
-    if (!this._basePrice || !this._gridSpacing) return;
+    const s = this._s();
+    if (!s.basePrice || !s.gridSpacing) return;
 
-    const rangeOffset = multiply(this._gridSpacing, String(this._gridLevelCount));
-    const upperBound = add(this._basePrice, rangeOffset);
-    const lowerBound = subtract(this._basePrice, rangeOffset);
+    const rangeOffset = multiply(s.gridSpacing, String(this._gridLevelCount));
+    const upperBound = add(s.basePrice, rangeOffset);
+    const lowerBound = subtract(s.basePrice, rangeOffset);
 
     const isOutside =
       isGreaterThan(price, upperBound) || isLessThan(price, lowerBound);
 
-    if (isOutside && !this._outOfRangeStartTime) {
-      this._outOfRangeStartTime = new Date();
+    if (isOutside && !s.outOfRangeStartTime) {
+      s.outOfRangeStartTime = new Date();
     } else if (!isOutside) {
-      this._outOfRangeStartTime = null;
+      s.outOfRangeStartTime = null;
     }
   }
 
@@ -563,9 +563,11 @@ class GridStrategy extends StrategyBase {
    * @returns {boolean} true if SL was triggered and grid was cleared
    */
   _checkGridDrawdownSL(price) {
-    if (!this._basePrice || !this._maxDrawdownPercent) return false;
+    const s = this._s();
+    const symbol = this.getCurrentSymbol();
+    if (!s.basePrice || !this._maxDrawdownPercent) return false;
 
-    const triggered = this._gridLevels.filter(l => l.triggered);
+    const triggered = s.gridLevels.filter(l => l.triggered);
     if (triggered.length === 0) return false;
 
     // Sum up per-level PnL as a fraction of base price
@@ -581,7 +583,7 @@ class GridStrategy extends StrategyBase {
     }
 
     // Convert total PnL to percentage of base price
-    const pnlPercent = multiply(divide(totalPnl, this._basePrice), '100');
+    const pnlPercent = multiply(divide(totalPnl, s.basePrice), '100');
 
     // If loss exceeds threshold, close all positions
     const threshold = subtract('0', this._maxDrawdownPercent); // e.g. '-3'
@@ -600,7 +602,7 @@ class GridStrategy extends StrategyBase {
       if (hasLong) {
         const closeSignal = {
           action: SIGNAL_ACTIONS.CLOSE_LONG,
-          symbol: this._symbol,
+          symbol,
           category: this._category,
           suggestedPrice: price,
           confidence: '1.0000',
@@ -618,7 +620,7 @@ class GridStrategy extends StrategyBase {
       if (hasShort) {
         const closeSignal = {
           action: SIGNAL_ACTIONS.CLOSE_SHORT,
-          symbol: this._symbol,
+          symbol,
           category: this._category,
           suggestedPrice: price,
           confidence: '1.0000',
@@ -634,10 +636,10 @@ class GridStrategy extends StrategyBase {
       }
 
       // Reset grid entirely
-      this._gridLevels = [];
-      this._basePrice = null;
-      this._gridSpacing = null;
-      this._outOfRangeStartTime = null;
+      s.gridLevels = [];
+      s.basePrice = null;
+      s.gridSpacing = null;
+      s.outOfRangeStartTime = null;
 
       return true;
     }

@@ -327,13 +327,15 @@ export interface RegimeHistoryEntry {
 }
 
 export interface CoinFactorScores {
-  volume: number;
-  spreadInv: number;
-  openInterest: number;
-  fundingInv: number;
-  momentum: number;
-  volatility: number;
-  volMomentum: number;
+  volume?: number;
+  spreadInv?: number;
+  openInterest?: number;
+  fundingInv?: number;
+  momentum?: number;
+  volatility?: number;
+  volMomentum?: number;
+  marketCapRank?: number;
+  [key: string]: number | undefined;
 }
 
 export interface ScoredCoin {
@@ -347,11 +349,14 @@ export interface ScoredCoin {
   fundingRate?: string;
   volatility?: string;
   regime?: string;
+  marketCap?: string;
+  marketCapRank?: string;
   _factorScores: CoinFactorScores;
 }
 
 export interface WeightProfile {
   regime: string;
+  method?: string;
   weights: CoinFactorScores;
 }
 

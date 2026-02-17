@@ -47,6 +47,7 @@ class MacdDivergenceStrategy extends StrategyBase {
     targetRegimes: ['trending_up', 'trending_down', 'volatile', 'ranging'],
     riskLevel: 'medium',
     maxConcurrentPositions: 1,
+    maxSymbolsPerStrategy: 3,
     cooldownMs: 120000,
     gracePeriodMs: 300000,
     warmupCandles: 35,
@@ -83,41 +84,29 @@ class MacdDivergenceStrategy extends StrategyBase {
     super('MacdDivergenceStrategy', merged);
 
     this._log = createLogger('MacdDivergenceStrategy');
+  }
 
-    // Internal state --------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // Per-symbol state (SymbolState pattern)
+  // -------------------------------------------------------------------------
 
-    /** @type {object|null} most recently generated signal */
-    this._lastSignal = null;
-
-    /** @type {string|null} latest ticker price */
-    this._latestPrice = null;
-
-    /** @type {string|null} entry price of current position */
-    this._entryPrice = null;
-
-    /** @type {'long'|'short'|null} current position direction */
-    this._positionSide = null;
-
-    /** @type {string} previous MACD histogram value for crossover detection */
-    this._prevHistogram = '0';
-
-    /** @type {number} candles elapsed since entry */
-    this._candlesSinceEntry = 0;
-
-    /** @type {number} sign of histogram at entry: 1 = positive, -1 = negative */
-    this._entryHistogramSign = 0;
-
-    /** @type {boolean} whether trailing stop is active */
-    this._trailingActive = false;
-
-    /** @type {string|null} current trailing stop price */
-    this._trailingStopPrice = null;
-
-    /** @type {string|null} highest price since entry (for long trailing) */
-    this._highestSinceEntry = null;
-
-    /** @type {string|null} lowest price since entry (for short trailing) */
-    this._lowestSinceEntry = null;
+  /**
+   * @override
+   * @returns {object} default per-symbol state
+   */
+  _createDefaultState() {
+    return {
+      ...super._createDefaultState(),
+      prevHistogram: '0',
+      candlesSinceEntry: 0,
+      entryHistogramSign: 0,
+      trailingActive: false,
+      trailingStopPrice: null,
+      trailingDistance: null,
+      highestSinceEntry: null,
+      lowestSinceEntry: null,
+      slPrice: null,
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -135,51 +124,51 @@ class MacdDivergenceStrategy extends StrategyBase {
 
     if (!ticker || ticker.lastPrice === undefined) return;
 
-    this._latestPrice = String(ticker.lastPrice);
+    this._s().latestPrice = String(ticker.lastPrice);
 
     // No position open — nothing to check
-    if (this._entryPrice === null || this._positionSide === null) return;
+    if (this._s().entryPrice === null || this._s().positionSide === null) return;
 
-    const price = this._latestPrice;
+    const price = this._s().latestPrice;
 
     // Check hard SL
-    if (this._positionSide === 'long' && this._slPrice) {
-      if (isLessThan(price, this._slPrice)) {
+    if (this._s().positionSide === 'long' && this._s().slPrice) {
+      if (isLessThan(price, this._s().slPrice)) {
         this._emitClose(SIGNAL_ACTIONS.CLOSE_LONG, 'stop_loss', '0.9500');
         return;
       }
-    } else if (this._positionSide === 'short' && this._slPrice) {
-      if (isGreaterThan(price, this._slPrice)) {
+    } else if (this._s().positionSide === 'short' && this._s().slPrice) {
+      if (isGreaterThan(price, this._s().slPrice)) {
         this._emitClose(SIGNAL_ACTIONS.CLOSE_SHORT, 'stop_loss', '0.9500');
         return;
       }
     }
 
     // Check trailing stop
-    if (this._trailingActive && this._trailingStopPrice) {
-      if (this._positionSide === 'long') {
+    if (this._s().trailingActive && this._s().trailingStopPrice) {
+      if (this._s().positionSide === 'long') {
         // Update highest since entry
-        if (isGreaterThan(price, this._highestSinceEntry)) {
-          this._highestSinceEntry = price;
-          this._trailingStopPrice = subtract(
-            this._highestSinceEntry,
-            this._trailingDistance,
+        if (isGreaterThan(price, this._s().highestSinceEntry)) {
+          this._s().highestSinceEntry = price;
+          this._s().trailingStopPrice = subtract(
+            this._s().highestSinceEntry,
+            this._s().trailingDistance,
           );
         }
-        if (isLessThan(price, this._trailingStopPrice)) {
+        if (isLessThan(price, this._s().trailingStopPrice)) {
           this._emitClose(SIGNAL_ACTIONS.CLOSE_LONG, 'trailing_stop', '0.8500');
           return;
         }
-      } else if (this._positionSide === 'short') {
+      } else if (this._s().positionSide === 'short') {
         // Update lowest since entry
-        if (isLessThan(price, this._lowestSinceEntry)) {
-          this._lowestSinceEntry = price;
-          this._trailingStopPrice = add(
-            this._lowestSinceEntry,
-            this._trailingDistance,
+        if (isLessThan(price, this._s().lowestSinceEntry)) {
+          this._s().lowestSinceEntry = price;
+          this._s().trailingStopPrice = add(
+            this._s().lowestSinceEntry,
+            this._s().trailingDistance,
           );
         }
-        if (isGreaterThan(price, this._trailingStopPrice)) {
+        if (isGreaterThan(price, this._s().trailingStopPrice)) {
           this._emitClose(SIGNAL_ACTIONS.CLOSE_SHORT, 'trailing_stop', '0.8500');
           return;
         }
@@ -187,13 +176,13 @@ class MacdDivergenceStrategy extends StrategyBase {
     }
 
     // Update highest/lowest since entry
-    if (this._positionSide === 'long' && this._highestSinceEntry) {
-      if (isGreaterThan(price, this._highestSinceEntry)) {
-        this._highestSinceEntry = price;
+    if (this._s().positionSide === 'long' && this._s().highestSinceEntry) {
+      if (isGreaterThan(price, this._s().highestSinceEntry)) {
+        this._s().highestSinceEntry = price;
       }
-    } else if (this._positionSide === 'short' && this._lowestSinceEntry) {
-      if (isLessThan(price, this._lowestSinceEntry)) {
-        this._lowestSinceEntry = price;
+    } else if (this._s().positionSide === 'short' && this._s().lowestSinceEntry) {
+      if (isLessThan(price, this._s().lowestSinceEntry)) {
+        this._s().lowestSinceEntry = price;
       }
     }
   }
@@ -232,7 +221,7 @@ class MacdDivergenceStrategy extends StrategyBase {
     } = this.config;
 
     const c = this._indicatorCache;
-    const hist = c.getHistory(this._symbol);
+    const hist = c.getHistory(this.getCurrentSymbol());
     const minRequired = macdSlow + macdSignal + pivotLeftBars + pivotRightBars + 5;
     if (!hist || hist.closes.length < minRequired) {
       this._log.debug('Not enough data yet', {
@@ -243,31 +232,31 @@ class MacdDivergenceStrategy extends StrategyBase {
     }
 
     // 2. Compute indicators via cache ---------------------------------------
-    const histogramArray = c.get(this._symbol, 'macdHistogram', { fast: macdFast, slow: macdSlow, signal: macdSignal });
+    const histogramArray = c.get(this.getCurrentSymbol(), 'macdHistogram', { fast: macdFast, slow: macdSlow, signal: macdSignal });
     if (!histogramArray || histogramArray.length === 0) return;
 
     const currentHistogram = histogramArray[histogramArray.length - 1];
-    const rsiValue = c.get(this._symbol, 'rsi', { period: rsiPeriod });
-    const atrValue = c.get(this._symbol, 'atr', { period: atrPeriod });
-    const ema50 = c.get(this._symbol, 'ema', { period: emaTpPeriod });
+    const rsiValue = c.get(this.getCurrentSymbol(), 'rsi', { period: rsiPeriod });
+    const atrValue = c.get(this.getCurrentSymbol(), 'atr', { period: atrPeriod });
+    const ema50 = c.get(this.getCurrentSymbol(), 'ema', { period: emaTpPeriod });
 
     if (rsiValue === null || atrValue === null) return;
 
     // 3. If position is open ------------------------------------------------
-    if (this._entryPrice !== null && this._positionSide !== null) {
-      this._candlesSinceEntry += 1;
+    if (this._s().entryPrice !== null && this._s().positionSide !== null) {
+      this._s().candlesSinceEntry += 1;
 
       // 3a. Failure check: histogram reverses direction within N candles
-      if (this._candlesSinceEntry <= maxCandlesForFailure) {
+      if (this._s().candlesSinceEntry <= maxCandlesForFailure) {
         const currentSign = isGreaterThan(currentHistogram, '0') ? 1 : -1;
-        if (this._entryHistogramSign !== 0 && currentSign !== this._entryHistogramSign) {
+        if (this._s().entryHistogramSign !== 0 && currentSign !== this._s().entryHistogramSign) {
           this._log.trade('Failure exit — histogram reversed within maxCandlesForFailure', {
-            candlesSinceEntry: this._candlesSinceEntry,
-            entryHistogramSign: this._entryHistogramSign,
+            candlesSinceEntry: this._s().candlesSinceEntry,
+            entryHistogramSign: this._s().entryHistogramSign,
             currentHistogram,
           });
 
-          const closeAction = this._positionSide === 'long'
+          const closeAction = this._s().positionSide === 'long'
             ? SIGNAL_ACTIONS.CLOSE_LONG
             : SIGNAL_ACTIONS.CLOSE_SHORT;
           this._emitClose(closeAction, 'histogram_reversal_failure', '0.9000');
@@ -277,52 +266,52 @@ class MacdDivergenceStrategy extends StrategyBase {
 
       // 3b. Take-profit check: price reaches EMA(50)
       if (ema50 !== null) {
-        if (this._positionSide === 'long' && isGreaterThan(close, ema50)) {
+        if (this._s().positionSide === 'long' && isGreaterThan(close, ema50)) {
           this._emitClose(SIGNAL_ACTIONS.CLOSE_LONG, 'tp_ema50', '0.8000');
           return;
         }
-        if (this._positionSide === 'short' && isLessThan(close, ema50)) {
+        if (this._s().positionSide === 'short' && isLessThan(close, ema50)) {
           this._emitClose(SIGNAL_ACTIONS.CLOSE_SHORT, 'tp_ema50', '0.8000');
           return;
         }
       }
 
       // 3c. Activate trailing stop if profit > 1*ATR
-      if (!this._trailingActive && atrValue !== null) {
+      if (!this._s().trailingActive && atrValue !== null) {
         const activationDistance = multiply(trailingActivationAtr, atrValue);
-        this._trailingDistance = multiply(trailingDistanceAtr, atrValue);
+        this._s().trailingDistance = multiply(trailingDistanceAtr, atrValue);
 
-        if (this._positionSide === 'long') {
-          const profit = subtract(close, this._entryPrice);
+        if (this._s().positionSide === 'long') {
+          const profit = subtract(close, this._s().entryPrice);
           if (isGreaterThan(profit, activationDistance)) {
-            this._trailingActive = true;
-            this._highestSinceEntry = close;
-            this._trailingStopPrice = subtract(close, this._trailingDistance);
+            this._s().trailingActive = true;
+            this._s().highestSinceEntry = close;
+            this._s().trailingStopPrice = subtract(close, this._s().trailingDistance);
             this._log.trade('Trailing stop activated (long)', {
-              trailingStopPrice: this._trailingStopPrice,
+              trailingStopPrice: this._s().trailingStopPrice,
             });
           }
-        } else if (this._positionSide === 'short') {
-          const profit = subtract(this._entryPrice, close);
+        } else if (this._s().positionSide === 'short') {
+          const profit = subtract(this._s().entryPrice, close);
           if (isGreaterThan(profit, activationDistance)) {
-            this._trailingActive = true;
-            this._lowestSinceEntry = close;
-            this._trailingStopPrice = add(close, this._trailingDistance);
+            this._s().trailingActive = true;
+            this._s().lowestSinceEntry = close;
+            this._s().trailingStopPrice = add(close, this._s().trailingDistance);
             this._log.trade('Trailing stop activated (short)', {
-              trailingStopPrice: this._trailingStopPrice,
+              trailingStopPrice: this._s().trailingStopPrice,
             });
           }
         }
       }
 
       // Store previous histogram for next candle
-      this._prevHistogram = currentHistogram;
+      this._s().prevHistogram = currentHistogram;
       return;
     }
 
     // 4. No position — check for new entry signal ---------------------------
     const regime = this.getEffectiveRegime();
-    const prevHist = this._prevHistogram;
+    const prevHist = this._s().prevHistogram;
 
     // Build pivot data for divergence detection
     const pricePivots = findPivots(hist.closes, pivotLeftBars, pivotRightBars);
@@ -352,7 +341,7 @@ class MacdDivergenceStrategy extends StrategyBase {
 
       signal = {
         action: SIGNAL_ACTIONS.OPEN_LONG,
-        symbol: this._symbol,
+        symbol: this.getCurrentSymbol(),
         category: this._category,
         suggestedQty: positionSizePercent,
         suggestedPrice: close,
@@ -371,16 +360,16 @@ class MacdDivergenceStrategy extends StrategyBase {
         },
       };
 
-      this._entryPrice = close;
-      this._positionSide = 'long';
-      this._slPrice = slPrice;
-      this._candlesSinceEntry = 0;
-      this._entryHistogramSign = 1;
-      this._trailingActive = false;
-      this._trailingStopPrice = null;
-      this._highestSinceEntry = close;
-      this._lowestSinceEntry = close;
-      this._trailingDistance = multiply(trailingDistanceAtr, atrValue);
+      this._s().entryPrice = close;
+      this._s().positionSide = 'long';
+      this._s().slPrice = slPrice;
+      this._s().candlesSinceEntry = 0;
+      this._s().entryHistogramSign = 1;
+      this._s().trailingActive = false;
+      this._s().trailingStopPrice = null;
+      this._s().highestSinceEntry = close;
+      this._s().lowestSinceEntry = close;
+      this._s().trailingDistance = multiply(trailingDistanceAtr, atrValue);
 
       this._log.trade('Bullish divergence entry', {
         price: close,
@@ -413,7 +402,7 @@ class MacdDivergenceStrategy extends StrategyBase {
 
         signal = {
           action: SIGNAL_ACTIONS.OPEN_SHORT,
-          symbol: this._symbol,
+          symbol: this.getCurrentSymbol(),
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: close,
@@ -432,16 +421,16 @@ class MacdDivergenceStrategy extends StrategyBase {
           },
         };
 
-        this._entryPrice = close;
-        this._positionSide = 'short';
-        this._slPrice = slPrice;
-        this._candlesSinceEntry = 0;
-        this._entryHistogramSign = -1;
-        this._trailingActive = false;
-        this._trailingStopPrice = null;
-        this._highestSinceEntry = close;
-        this._lowestSinceEntry = close;
-        this._trailingDistance = multiply(trailingDistanceAtr, atrValue);
+        this._s().entryPrice = close;
+        this._s().positionSide = 'short';
+        this._s().slPrice = slPrice;
+        this._s().candlesSinceEntry = 0;
+        this._s().entryHistogramSign = -1;
+        this._s().trailingActive = false;
+        this._s().trailingStopPrice = null;
+        this._s().highestSinceEntry = close;
+        this._s().lowestSinceEntry = close;
+        this._s().trailingDistance = multiply(trailingDistanceAtr, atrValue);
 
         this._log.trade('Bearish divergence entry', {
           price: close,
@@ -454,12 +443,12 @@ class MacdDivergenceStrategy extends StrategyBase {
 
     // Emit signal if generated
     if (signal) {
-      this._lastSignal = signal;
+      this._s().lastSignal = signal;
       this.emitSignal(signal);
     }
 
     // Store previous histogram for next candle
-    this._prevHistogram = currentHistogram;
+    this._s().prevHistogram = currentHistogram;
   }
 
   // -------------------------------------------------------------------------
@@ -476,22 +465,22 @@ class MacdDivergenceStrategy extends StrategyBase {
     const price = fill.price !== undefined ? String(fill.price) : null;
     if (price === null) return;
 
-    if (fill.side === 'buy' && this._positionSide === 'long' && this._entryPrice !== null) {
-      this._entryPrice = price;
+    if (fill.side === 'buy' && this._s().positionSide === 'long' && this._s().entryPrice !== null) {
+      this._s().entryPrice = price;
       this._log.trade('Long entry fill recorded', { entryPrice: price });
-    } else if (fill.side === 'sell' && this._positionSide === 'short' && this._entryPrice !== null) {
-      this._entryPrice = price;
+    } else if (fill.side === 'sell' && this._s().positionSide === 'short' && this._s().entryPrice !== null) {
+      this._s().entryPrice = price;
       this._log.trade('Short entry fill recorded', { entryPrice: price });
     }
 
     // Position closed
     if (
-      (fill.side === 'sell' && this._positionSide === 'long') ||
-      (fill.side === 'buy' && this._positionSide === 'short')
+      (fill.side === 'sell' && this._s().positionSide === 'long') ||
+      (fill.side === 'buy' && this._s().positionSide === 'short')
     ) {
       this._log.trade('Position closed via fill', {
-        side: this._positionSide,
-        entryPrice: this._entryPrice,
+        side: this._s().positionSide,
+        entryPrice: this._s().entryPrice,
         exitPrice: price,
       });
       this._resetPosition();
@@ -506,7 +495,7 @@ class MacdDivergenceStrategy extends StrategyBase {
    * @returns {object|null}
    */
   getSignal() {
-    return this._lastSignal;
+    return this._s().lastSignal;
   }
 
   // -------------------------------------------------------------------------
@@ -520,9 +509,9 @@ class MacdDivergenceStrategy extends StrategyBase {
    * @returns {string} — swing low price
    */
   _findRecentSwingLow(lookback) {
-    const hist = this._indicatorCache.getHistory(this._symbol);
+    const hist = this._indicatorCache.getHistory(this.getCurrentSymbol());
     const lows = hist ? hist.lows : [];
-    if (lows.length === 0) return this._latestPrice || '0';
+    if (lows.length === 0) return this._s().latestPrice || '0';
 
     const start = Math.max(0, lows.length - lookback * 3);
     let lowest = lows[start];
@@ -541,9 +530,9 @@ class MacdDivergenceStrategy extends StrategyBase {
    * @returns {string} — swing high price
    */
   _findRecentSwingHigh(lookback) {
-    const hist = this._indicatorCache.getHistory(this._symbol);
+    const hist = this._indicatorCache.getHistory(this.getCurrentSymbol());
     const highs = hist ? hist.highs : [];
-    if (highs.length === 0) return this._latestPrice || '0';
+    if (highs.length === 0) return this._s().latestPrice || '0';
 
     const start = Math.max(0, highs.length - lookback * 3);
     let highest = highs[start];
@@ -606,11 +595,11 @@ class MacdDivergenceStrategy extends StrategyBase {
    * @param {string} confidence — confidence string
    */
   _emitClose(action, reason, confidence) {
-    const price = this._latestPrice || '0';
+    const price = this._s().latestPrice || '0';
 
     const signal = {
       action,
-      symbol: this._symbol,
+      symbol: this.getCurrentSymbol(),
       category: this._category,
       suggestedQty: this.config.positionSizePercent,
       suggestedPrice: price,
@@ -618,16 +607,16 @@ class MacdDivergenceStrategy extends StrategyBase {
       confidence,
       reason,
       marketContext: {
-        entryPrice: this._entryPrice,
+        entryPrice: this._s().entryPrice,
         exitPrice: price,
-        positionSide: this._positionSide,
-        candlesSinceEntry: this._candlesSinceEntry,
-        trailingActive: this._trailingActive,
+        positionSide: this._s().positionSide,
+        candlesSinceEntry: this._s().candlesSinceEntry,
+        trailingActive: this._s().trailingActive,
         regime: this.getEffectiveRegime(),
       },
     };
 
-    this._lastSignal = signal;
+    this._s().lastSignal = signal;
     this.emitSignal(signal);
     this._resetPosition();
   }
@@ -636,16 +625,16 @@ class MacdDivergenceStrategy extends StrategyBase {
    * Reset all position tracking state.
    */
   _resetPosition() {
-    this._entryPrice = null;
-    this._positionSide = null;
-    this._slPrice = null;
-    this._candlesSinceEntry = 0;
-    this._entryHistogramSign = 0;
-    this._trailingActive = false;
-    this._trailingStopPrice = null;
-    this._trailingDistance = null;
-    this._highestSinceEntry = null;
-    this._lowestSinceEntry = null;
+    this._s().entryPrice = null;
+    this._s().positionSide = null;
+    this._s().slPrice = null;
+    this._s().candlesSinceEntry = 0;
+    this._s().entryHistogramSign = 0;
+    this._s().trailingActive = false;
+    this._s().trailingStopPrice = null;
+    this._s().trailingDistance = null;
+    this._s().highestSinceEntry = null;
+    this._s().lowestSinceEntry = null;
   }
 }
 

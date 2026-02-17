@@ -51,6 +51,7 @@ class BreakoutStrategy extends StrategyBase {
     targetRegimes: ['quiet', 'ranging'],
     riskLevel: 'high',
     maxConcurrentPositions: 1,
+    maxSymbolsPerStrategy: 3,
     cooldownMs: 300000,
     gracePeriodMs: 900000,
     warmupCandles: 30,
@@ -84,47 +85,47 @@ class BreakoutStrategy extends StrategyBase {
   constructor(config = {}) {
     const merged = { ...BreakoutStrategy.metadata.defaultConfig, ...config };
     super('BreakoutStrategy', merged);
+  }
 
-    // Internal state ----------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // Per-symbol state (SymbolState pattern)
+  // ---------------------------------------------------------------------------
 
-    /** @type {string[]} ATR values as Strings (to compute ATR SMA) */
-    this._atrHistory = [];
+  /**
+   * Override to add strategy-specific per-symbol fields.
+   * @returns {object}
+   */
+  _createDefaultState() {
+    return {
+      ...super._createDefaultState(),
 
-    /** @type {number} consecutive candles where BB is inside KC */
-    this._squeezeCount = 0;
+      /** @type {string[]} ATR values as Strings (to compute ATR SMA) */
+      atrHistory: [],
 
-    /** @type {string|null} opposite BB band when squeeze was active (SL reference) */
-    this._squeezeOppositeBand = null;
+      /** @type {number} consecutive candles where BB is inside KC */
+      squeezeCount: 0,
 
-    /** @type {object|null} most recently generated signal */
-    this._lastSignal = null;
+      /** @type {string|null} opposite BB band when squeeze was active (SL reference) */
+      squeezeOppositeBand: null,
 
-    /** @type {string|null} latest ticker price */
-    this._latestPrice = null;
+      /** @type {number} candles elapsed since entry (for failure check) */
+      candlesSinceEntry: 0,
 
-    /** @type {string|null} entry price for the current position */
-    this._entryPrice = null;
+      /** @type {boolean} whether trailing stop has been activated */
+      trailingActive: false,
 
-    /** @type {'long'|'short'|null} current position direction */
-    this._positionSide = null;
+      /** @type {string|null} current trailing stop price */
+      trailingStopPrice: null,
 
-    /** @type {number} candles elapsed since entry (for failure check) */
-    this._candlesSinceEntry = 0;
+      /** @type {string|null} highest price since entry (long positions) */
+      highestSinceEntry: null,
 
-    /** @type {boolean} whether trailing stop has been activated */
-    this._trailingActive = false;
+      /** @type {string|null} lowest price since entry (short positions) */
+      lowestSinceEntry: null,
 
-    /** @type {string|null} current trailing stop price */
-    this._trailingStopPrice = null;
-
-    /** @type {string|null} highest price since entry (long positions) */
-    this._highestSinceEntry = null;
-
-    /** @type {string|null} lowest price since entry (short positions) */
-    this._lowestSinceEntry = null;
-
-    /** @type {string|null} previous EMA(9) value for slope detection */
-    this._prevEma9 = null;
+      /** @type {string|null} previous EMA(9) value for slope detection */
+      prevEma9: null,
+    };
   }
 
   // --------------------------------------------------------------------------
@@ -137,23 +138,26 @@ class BreakoutStrategy extends StrategyBase {
   onTick(ticker) {
     if (!this._active) return;
 
+    const s = this._s();
+    const sym = this.getCurrentSymbol();
+
     if (ticker && ticker.lastPrice !== undefined) {
-      this._latestPrice = String(ticker.lastPrice);
+      s.latestPrice = String(ticker.lastPrice);
     }
 
     // Only check exits when we have a position
-    if (this._entryPrice === null || this._positionSide === null) return;
-    if (this._latestPrice === null) return;
+    if (s.entryPrice === null || s.positionSide === null) return;
+    if (s.latestPrice === null) return;
 
-    const price = this._latestPrice;
+    const price = s.latestPrice;
     const { positionSizePercent } = this.config;
 
     // --- Stop Loss: opposite BB band at squeeze time ---
-    if (this._squeezeOppositeBand !== null) {
-      if (this._positionSide === 'long' && isLessThan(price, this._squeezeOppositeBand)) {
+    if (s.squeezeOppositeBand !== null) {
+      if (s.positionSide === 'long' && isLessThan(price, s.squeezeOppositeBand)) {
         const signal = {
           action: SIGNAL_ACTIONS.CLOSE_LONG,
-          symbol: this._symbol,
+          symbol: sym,
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: price,
@@ -161,20 +165,20 @@ class BreakoutStrategy extends StrategyBase {
           confidence: toFixed('0.9500', 4),
           reason: 'stop_loss_opposite_band',
           marketContext: {
-            entryPrice: this._entryPrice,
+            entryPrice: s.entryPrice,
             currentPrice: price,
-            slPrice: this._squeezeOppositeBand,
+            slPrice: s.squeezeOppositeBand,
           },
         };
-        this._lastSignal = signal;
+        s.lastSignal = signal;
         this.emitSignal(signal);
         this._resetPosition();
         return;
       }
-      if (this._positionSide === 'short' && isGreaterThan(price, this._squeezeOppositeBand)) {
+      if (s.positionSide === 'short' && isGreaterThan(price, s.squeezeOppositeBand)) {
         const signal = {
           action: SIGNAL_ACTIONS.CLOSE_SHORT,
-          symbol: this._symbol,
+          symbol: sym,
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: price,
@@ -182,12 +186,12 @@ class BreakoutStrategy extends StrategyBase {
           confidence: toFixed('0.9500', 4),
           reason: 'stop_loss_opposite_band',
           marketContext: {
-            entryPrice: this._entryPrice,
+            entryPrice: s.entryPrice,
             currentPrice: price,
-            slPrice: this._squeezeOppositeBand,
+            slPrice: s.squeezeOppositeBand,
           },
         };
-        this._lastSignal = signal;
+        s.lastSignal = signal;
         this.emitSignal(signal);
         this._resetPosition();
         return;
@@ -195,22 +199,22 @@ class BreakoutStrategy extends StrategyBase {
     }
 
     // --- Trailing stop check ---
-    if (this._trailingActive && this._trailingStopPrice !== null) {
-      if (this._positionSide === 'long') {
+    if (s.trailingActive && s.trailingStopPrice !== null) {
+      if (s.positionSide === 'long') {
         // Update highest price seen
-        if (this._highestSinceEntry === null || isGreaterThan(price, this._highestSinceEntry)) {
-          this._highestSinceEntry = price;
+        if (s.highestSinceEntry === null || isGreaterThan(price, s.highestSinceEntry)) {
+          s.highestSinceEntry = price;
           // Recalculate trailing stop
-          const latestAtr = this._getLatestAtr();
+          const latestAtr = this._getLatestAtr(s);
           if (latestAtr !== null) {
             const trailDist = multiply(this.config.trailingDistanceAtr, latestAtr);
-            this._trailingStopPrice = subtract(this._highestSinceEntry, trailDist);
+            s.trailingStopPrice = subtract(s.highestSinceEntry, trailDist);
           }
         }
-        if (isLessThan(price, this._trailingStopPrice)) {
+        if (isLessThan(price, s.trailingStopPrice)) {
           const signal = {
             action: SIGNAL_ACTIONS.CLOSE_LONG,
-            symbol: this._symbol,
+            symbol: sym,
             category: this._category,
             suggestedQty: positionSizePercent,
             suggestedPrice: price,
@@ -218,31 +222,31 @@ class BreakoutStrategy extends StrategyBase {
             confidence: toFixed('0.8500', 4),
             reason: 'trailing_stop',
             marketContext: {
-              entryPrice: this._entryPrice,
+              entryPrice: s.entryPrice,
               currentPrice: price,
-              trailingStopPrice: this._trailingStopPrice,
+              trailingStopPrice: s.trailingStopPrice,
             },
           };
-          this._lastSignal = signal;
+          s.lastSignal = signal;
           this.emitSignal(signal);
           this._resetPosition();
           return;
         }
-      } else if (this._positionSide === 'short') {
+      } else if (s.positionSide === 'short') {
         // Update lowest price seen
-        if (this._lowestSinceEntry === null || isLessThan(price, this._lowestSinceEntry)) {
-          this._lowestSinceEntry = price;
+        if (s.lowestSinceEntry === null || isLessThan(price, s.lowestSinceEntry)) {
+          s.lowestSinceEntry = price;
           // Recalculate trailing stop
-          const latestAtr = this._getLatestAtr();
+          const latestAtr = this._getLatestAtr(s);
           if (latestAtr !== null) {
             const trailDist = multiply(this.config.trailingDistanceAtr, latestAtr);
-            this._trailingStopPrice = add(this._lowestSinceEntry, trailDist);
+            s.trailingStopPrice = add(s.lowestSinceEntry, trailDist);
           }
         }
-        if (isGreaterThan(price, this._trailingStopPrice)) {
+        if (isGreaterThan(price, s.trailingStopPrice)) {
           const signal = {
             action: SIGNAL_ACTIONS.CLOSE_SHORT,
-            symbol: this._symbol,
+            symbol: sym,
             category: this._category,
             suggestedQty: positionSizePercent,
             suggestedPrice: price,
@@ -250,12 +254,12 @@ class BreakoutStrategy extends StrategyBase {
             confidence: toFixed('0.8500', 4),
             reason: 'trailing_stop',
             marketContext: {
-              entryPrice: this._entryPrice,
+              entryPrice: s.entryPrice,
               currentPrice: price,
-              trailingStopPrice: this._trailingStopPrice,
+              trailingStopPrice: s.trailingStopPrice,
             },
           };
-          this._lastSignal = signal;
+          s.lastSignal = signal;
           this.emitSignal(signal);
           this._resetPosition();
           return;
@@ -280,6 +284,8 @@ class BreakoutStrategy extends StrategyBase {
     const high = kline && kline.high !== undefined ? String(kline.high) : close;
     const low = kline && kline.low !== undefined ? String(kline.low) : close;
     const volume = kline && kline.volume !== undefined ? String(kline.volume) : '0';
+    const sym = this.getCurrentSymbol();
+    const s = this._s();
 
     // 1. Need enough data -----------------------------------------------------
     const {
@@ -303,7 +309,7 @@ class BreakoutStrategy extends StrategyBase {
 
     const minRequired = Math.max(bbPeriod, kcEmaPeriod, kcAtrPeriod + 1, atrPeriod + 1, emaSlopePeriod, volumeSmaPeriod);
 
-    const hist = this._indicatorCache ? this._indicatorCache.getHistory(this._symbol) : null;
+    const hist = this._indicatorCache ? this._indicatorCache.getHistory(sym) : null;
     if (!hist || hist.closes.length < minRequired) {
       log.debug('Not enough data yet', {
         have: hist ? hist.closes.length : 0,
@@ -314,70 +320,67 @@ class BreakoutStrategy extends StrategyBase {
 
     // 2. Compute indicators via IndicatorCache --------------------------------
     const c = this._indicatorCache;
-    const bb = c.get(this._symbol, 'bb', { period: bbPeriod, stdDev: bbStdDev });
+    const bb = c.get(sym, 'bb', { period: bbPeriod, stdDev: bbStdDev });
     if (bb === null) return;
 
-    const kc = c.get(this._symbol, 'keltner', { emaPeriod: kcEmaPeriod, atrPeriod: kcAtrPeriod, mult: kcMult });
+    const kc = c.get(sym, 'keltner', { emaPeriod: kcEmaPeriod, atrPeriod: kcAtrPeriod, mult: kcMult });
     if (kc === null) return;
 
-    const currentAtr = c.get(this._symbol, 'atr', { period: atrPeriod });
+    const currentAtr = c.get(sym, 'atr', { period: atrPeriod });
     if (currentAtr === null) return;
 
     // Store ATR for ATR SMA computation
-    this._atrHistory.push(currentAtr);
-    if (this._atrHistory.length > 200) {
-      this._atrHistory = this._atrHistory.slice(-200);
+    s.atrHistory.push(currentAtr);
+    if (s.atrHistory.length > 200) {
+      s.atrHistory = s.atrHistory.slice(-200);
     }
 
     const volumeSma = hist ? sma(hist.volumes, volumeSmaPeriod) : null;
-    const atrSma = sma(this._atrHistory, volumeSmaPeriod); // ATR SMA over 20 periods
+    const atrSma = sma(s.atrHistory, volumeSmaPeriod); // ATR SMA over 20 periods
 
-    const currentEma9 = c.get(this._symbol, 'ema', { period: emaSlopePeriod });
+    const currentEma9 = c.get(sym, 'ema', { period: emaSlopePeriod });
 
     // 3. Check squeeze: BB inside KC? -----------------------------------------
     const isSqueeze = isLessThan(bb.upper, kc.upper) && isGreaterThan(bb.lower, kc.lower);
 
     if (isSqueeze) {
-      this._squeezeCount += 1;
+      s.squeezeCount += 1;
       // Track opposite band during squeeze for SL reference
-      // For long breakout upward: SL = BB lower at squeeze time
-      // For short breakout downward: SL = BB upper at squeeze time
-      // We store the lower band (for potential long) and update as needed
-      this._squeezeOppositeBand = bb.lower; // will be re-assigned on entry based on direction
+      s.squeezeOppositeBand = bb.lower; // will be re-assigned on entry based on direction
     } else {
       // Reset squeeze count if not in squeeze and no position
-      if (this._positionSide === null) {
-        this._squeezeCount = 0;
+      if (s.positionSide === null) {
+        s.squeezeCount = 0;
       }
     }
 
     const price = close;
 
     // 4. If position open: check failure, TP, trailing activation -------------
-    if (this._positionSide !== null && this._entryPrice !== null) {
-      this._candlesSinceEntry += 1;
+    if (s.positionSide !== null && s.entryPrice !== null) {
+      s.candlesSinceEntry += 1;
 
       // Update extreme prices
-      if (this._positionSide === 'long') {
-        if (this._highestSinceEntry === null || isGreaterThan(high, this._highestSinceEntry)) {
-          this._highestSinceEntry = high;
+      if (s.positionSide === 'long') {
+        if (s.highestSinceEntry === null || isGreaterThan(high, s.highestSinceEntry)) {
+          s.highestSinceEntry = high;
         }
       } else {
-        if (this._lowestSinceEntry === null || isLessThan(low, this._lowestSinceEntry)) {
-          this._lowestSinceEntry = low;
+        if (s.lowestSinceEntry === null || isLessThan(low, s.lowestSinceEntry)) {
+          s.lowestSinceEntry = low;
         }
       }
 
       // Failure check: price re-enters BB range within failureCandles candles
-      if (this._candlesSinceEntry <= failureCandles) {
+      if (s.candlesSinceEntry <= failureCandles) {
         const reEnteredBB = isGreaterThan(price, bb.lower) && isLessThan(price, bb.upper);
         if (reEnteredBB) {
-          const closeAction = this._positionSide === 'long'
+          const closeAction = s.positionSide === 'long'
             ? SIGNAL_ACTIONS.CLOSE_LONG
             : SIGNAL_ACTIONS.CLOSE_SHORT;
           const signal = {
             action: closeAction,
-            symbol: this._symbol,
+            symbol: sym,
             category: this._category,
             suggestedQty: positionSizePercent,
             suggestedPrice: price,
@@ -385,29 +388,29 @@ class BreakoutStrategy extends StrategyBase {
             confidence: toFixed('0.8000', 4),
             reason: 'breakout_failure',
             marketContext: {
-              entryPrice: this._entryPrice,
+              entryPrice: s.entryPrice,
               currentPrice: price,
-              candlesSinceEntry: this._candlesSinceEntry,
+              candlesSinceEntry: s.candlesSinceEntry,
               bbUpper: bb.upper,
               bbLower: bb.lower,
             },
           };
-          this._lastSignal = signal;
+          s.lastSignal = signal;
           this.emitSignal(signal);
           this._resetPosition();
-          this._updatePrevEma9(currentEma9);
+          this._updatePrevEma9(s, currentEma9);
           return;
         }
       }
 
       // TP check: 3 * ATR from entry
       const tpDistance = multiply(tpAtrMult, currentAtr);
-      if (this._positionSide === 'long') {
-        const tpPrice = add(this._entryPrice, tpDistance);
+      if (s.positionSide === 'long') {
+        const tpPrice = add(s.entryPrice, tpDistance);
         if (isGreaterThan(price, tpPrice)) {
           const signal = {
             action: SIGNAL_ACTIONS.CLOSE_LONG,
-            symbol: this._symbol,
+            symbol: sym,
             category: this._category,
             suggestedQty: positionSizePercent,
             suggestedPrice: price,
@@ -415,24 +418,24 @@ class BreakoutStrategy extends StrategyBase {
             confidence: toFixed('0.9000', 4),
             reason: 'take_profit',
             marketContext: {
-              entryPrice: this._entryPrice,
+              entryPrice: s.entryPrice,
               currentPrice: price,
               tpPrice,
               atr: currentAtr,
             },
           };
-          this._lastSignal = signal;
+          s.lastSignal = signal;
           this.emitSignal(signal);
           this._resetPosition();
-          this._updatePrevEma9(currentEma9);
+          this._updatePrevEma9(s, currentEma9);
           return;
         }
-      } else if (this._positionSide === 'short') {
-        const tpPrice = subtract(this._entryPrice, tpDistance);
+      } else if (s.positionSide === 'short') {
+        const tpPrice = subtract(s.entryPrice, tpDistance);
         if (isLessThan(price, tpPrice)) {
           const signal = {
             action: SIGNAL_ACTIONS.CLOSE_SHORT,
-            symbol: this._symbol,
+            symbol: sym,
             category: this._category,
             suggestedQty: positionSizePercent,
             suggestedPrice: price,
@@ -440,69 +443,69 @@ class BreakoutStrategy extends StrategyBase {
             confidence: toFixed('0.9000', 4),
             reason: 'take_profit',
             marketContext: {
-              entryPrice: this._entryPrice,
+              entryPrice: s.entryPrice,
               currentPrice: price,
               tpPrice,
               atr: currentAtr,
             },
           };
-          this._lastSignal = signal;
+          s.lastSignal = signal;
           this.emitSignal(signal);
           this._resetPosition();
-          this._updatePrevEma9(currentEma9);
+          this._updatePrevEma9(s, currentEma9);
           return;
         }
       }
 
       // Trailing activation: after 1*ATR profit, trail at 1.5*ATR
-      if (!this._trailingActive) {
+      if (!s.trailingActive) {
         const activationDist = multiply(trailingActivationAtr, currentAtr);
-        if (this._positionSide === 'long') {
-          const profit = subtract(price, this._entryPrice);
+        if (s.positionSide === 'long') {
+          const profit = subtract(price, s.entryPrice);
           if (isGreaterThan(profit, activationDist)) {
-            this._trailingActive = true;
-            this._highestSinceEntry = this._highestSinceEntry || price;
+            s.trailingActive = true;
+            s.highestSinceEntry = s.highestSinceEntry || price;
             const trailDist = multiply(trailingDistanceAtr, currentAtr);
-            this._trailingStopPrice = subtract(this._highestSinceEntry, trailDist);
+            s.trailingStopPrice = subtract(s.highestSinceEntry, trailDist);
             log.info('Trailing stop activated (long)', {
-              symbol: this._symbol,
-              trailingStopPrice: this._trailingStopPrice,
+              symbol: sym,
+              trailingStopPrice: s.trailingStopPrice,
             });
           }
-        } else if (this._positionSide === 'short') {
-          const profit = subtract(this._entryPrice, price);
+        } else if (s.positionSide === 'short') {
+          const profit = subtract(s.entryPrice, price);
           if (isGreaterThan(profit, activationDist)) {
-            this._trailingActive = true;
-            this._lowestSinceEntry = this._lowestSinceEntry || price;
+            s.trailingActive = true;
+            s.lowestSinceEntry = s.lowestSinceEntry || price;
             const trailDist = multiply(trailingDistanceAtr, currentAtr);
-            this._trailingStopPrice = add(this._lowestSinceEntry, trailDist);
+            s.trailingStopPrice = add(s.lowestSinceEntry, trailDist);
             log.info('Trailing stop activated (short)', {
-              symbol: this._symbol,
-              trailingStopPrice: this._trailingStopPrice,
+              symbol: sym,
+              trailingStopPrice: s.trailingStopPrice,
             });
           }
         }
       }
 
-      this._updatePrevEma9(currentEma9);
+      this._updatePrevEma9(s, currentEma9);
       return;
     }
 
     // 5. No position: check breakout entry conditions -------------------------
-    if (this._squeezeCount < minSqueezeCandles) {
-      this._updatePrevEma9(currentEma9);
+    if (s.squeezeCount < minSqueezeCandles) {
+      this._updatePrevEma9(s, currentEma9);
       return;
     }
 
     // Need volume SMA and ATR SMA for breakout confirmation
     if (volumeSma === null || atrSma === null || currentEma9 === null) {
-      this._updatePrevEma9(currentEma9);
+      this._updatePrevEma9(s, currentEma9);
       return;
     }
 
     // EMA slope check requires previous EMA9
-    if (this._prevEma9 === null) {
-      this._updatePrevEma9(currentEma9);
+    if (s.prevEma9 === null) {
+      this._updatePrevEma9(s, currentEma9);
       return;
     }
 
@@ -512,7 +515,7 @@ class BreakoutStrategy extends StrategyBase {
       regime === MARKET_REGIMES.QUIET ||
       regime === MARKET_REGIMES.RANGING;
     if (!regimeOk) {
-      this._updatePrevEma9(currentEma9);
+      this._updatePrevEma9(s, currentEma9);
       return;
     }
 
@@ -525,8 +528,8 @@ class BreakoutStrategy extends StrategyBase {
     const atrOk = isGreaterThan(currentAtr, atrThreshold);
 
     // EMA(9) slope
-    const emaSlopePositive = isGreaterThan(currentEma9, this._prevEma9);
-    const emaSlopeNegative = isLessThan(currentEma9, this._prevEma9);
+    const emaSlopePositive = isGreaterThan(currentEma9, s.prevEma9);
+    const emaSlopeNegative = isLessThan(currentEma9, s.prevEma9);
 
     // --- Long breakout: close > BB upper ---
     if (
@@ -535,17 +538,17 @@ class BreakoutStrategy extends StrategyBase {
       atrOk &&
       emaSlopePositive
     ) {
-      const conf = this._calcConfidence(volumeSma, volume, atrSma, currentAtr);
+      const conf = this._calcConfidence(s, volumeSma, volume, atrSma, currentAtr);
       // SL = BB lower band at squeeze time (opposite band for long)
-      this._squeezeOppositeBand = bb.lower;
+      s.squeezeOppositeBand = bb.lower;
 
       const signal = {
         action: SIGNAL_ACTIONS.OPEN_LONG,
-        symbol: this._symbol,
+        symbol: sym,
         category: this._category,
         suggestedQty: positionSizePercent,
         suggestedPrice: price,
-        stopLossPrice: this._squeezeOppositeBand,
+        stopLossPrice: s.squeezeOppositeBand,
         confidence: toFixed(String(conf), 4),
         leverage: this.config.leverage,
         reason: 'squeeze_breakout_long',
@@ -554,7 +557,7 @@ class BreakoutStrategy extends StrategyBase {
           bbLower: bb.lower,
           kcUpper: kc.upper,
           kcLower: kc.lower,
-          squeezeCandles: this._squeezeCount,
+          squeezeCandles: s.squeezeCount,
           volume,
           volumeSma,
           atr: currentAtr,
@@ -564,17 +567,17 @@ class BreakoutStrategy extends StrategyBase {
         },
       };
 
-      this._entryPrice = price;
-      this._positionSide = 'long';
-      this._candlesSinceEntry = 0;
-      this._trailingActive = false;
-      this._trailingStopPrice = null;
-      this._highestSinceEntry = high;
-      this._lowestSinceEntry = null;
+      s.entryPrice = price;
+      s.positionSide = 'long';
+      s.candlesSinceEntry = 0;
+      s.trailingActive = false;
+      s.trailingStopPrice = null;
+      s.highestSinceEntry = high;
+      s.lowestSinceEntry = null;
 
-      this._lastSignal = signal;
+      s.lastSignal = signal;
       this.emitSignal(signal);
-      this._updatePrevEma9(currentEma9);
+      this._updatePrevEma9(s, currentEma9);
       return;
     }
 
@@ -585,17 +588,17 @@ class BreakoutStrategy extends StrategyBase {
       atrOk &&
       emaSlopeNegative
     ) {
-      const conf = this._calcConfidence(volumeSma, volume, atrSma, currentAtr);
+      const conf = this._calcConfidence(s, volumeSma, volume, atrSma, currentAtr);
       // SL = BB upper band at squeeze time (opposite band for short)
-      this._squeezeOppositeBand = bb.upper;
+      s.squeezeOppositeBand = bb.upper;
 
       const signal = {
         action: SIGNAL_ACTIONS.OPEN_SHORT,
-        symbol: this._symbol,
+        symbol: sym,
         category: this._category,
         suggestedQty: positionSizePercent,
         suggestedPrice: price,
-        stopLossPrice: this._squeezeOppositeBand,
+        stopLossPrice: s.squeezeOppositeBand,
         confidence: toFixed(String(conf), 4),
         leverage: this.config.leverage,
         reason: 'squeeze_breakout_short',
@@ -604,7 +607,7 @@ class BreakoutStrategy extends StrategyBase {
           bbLower: bb.lower,
           kcUpper: kc.upper,
           kcLower: kc.lower,
-          squeezeCandles: this._squeezeCount,
+          squeezeCandles: s.squeezeCount,
           volume,
           volumeSma,
           atr: currentAtr,
@@ -614,21 +617,21 @@ class BreakoutStrategy extends StrategyBase {
         },
       };
 
-      this._entryPrice = price;
-      this._positionSide = 'short';
-      this._candlesSinceEntry = 0;
-      this._trailingActive = false;
-      this._trailingStopPrice = null;
-      this._highestSinceEntry = null;
-      this._lowestSinceEntry = low;
+      s.entryPrice = price;
+      s.positionSide = 'short';
+      s.candlesSinceEntry = 0;
+      s.trailingActive = false;
+      s.trailingStopPrice = null;
+      s.highestSinceEntry = null;
+      s.lowestSinceEntry = low;
 
-      this._lastSignal = signal;
+      s.lastSignal = signal;
       this.emitSignal(signal);
-      this._updatePrevEma9(currentEma9);
+      this._updatePrevEma9(s, currentEma9);
       return;
     }
 
-    this._updatePrevEma9(currentEma9);
+    this._updatePrevEma9(s, currentEma9);
   }
 
   // --------------------------------------------------------------------------
@@ -646,18 +649,20 @@ class BreakoutStrategy extends StrategyBase {
     if (!this._active) return;
     if (!fill) return;
     const action = fill.action || (fill.signal && fill.signal.action);
+    const sym = fill.symbol || this.getCurrentSymbol();
+    const s = this._s(sym);
 
     if (action === SIGNAL_ACTIONS.OPEN_LONG) {
-      this._positionSide = 'long';
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      s.positionSide = 'long';
+      if (fill.price !== undefined) s.entryPrice = String(fill.price);
+      log.trade('Long fill recorded', { entry: s.entryPrice, symbol: sym });
     } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
-      this._positionSide = 'short';
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      s.positionSide = 'short';
+      if (fill.price !== undefined) s.entryPrice = String(fill.price);
+      log.trade('Short fill recorded', { entry: s.entryPrice, symbol: sym });
     } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
-      log.trade('Position closed via fill', { side: this._positionSide, symbol: this._symbol });
-      this._resetPosition();
+      log.trade('Position closed via fill', { side: s.positionSide, symbol: sym });
+      this._resetPosition(sym);
     }
   }
 
@@ -669,7 +674,7 @@ class BreakoutStrategy extends StrategyBase {
    * @returns {object|null}
    */
   getSignal() {
-    return this._lastSignal;
+    return this._s().lastSignal;
   }
 
   // --------------------------------------------------------------------------
@@ -680,29 +685,31 @@ class BreakoutStrategy extends StrategyBase {
    * Get the latest ATR value from history.
    * @returns {string|null}
    */
-  _getLatestAtr() {
-    if (this._atrHistory.length === 0) return null;
-    return this._atrHistory[this._atrHistory.length - 1];
+  _getLatestAtr(s) {
+    if (s.atrHistory.length === 0) return null;
+    return s.atrHistory[s.atrHistory.length - 1];
   }
 
   /**
    * Update previous EMA(9) for slope detection on the next candle.
+   * @param {object} s — per-symbol state
    * @param {string|null} currentEma9
    */
-  _updatePrevEma9(currentEma9) {
-    this._prevEma9 = currentEma9;
+  _updatePrevEma9(s, currentEma9) {
+    s.prevEma9 = currentEma9;
   }
 
   /**
    * Calculate confidence score based on volume and ATR breakout strength.
    *
+   * @param {object} s — per-symbol state
    * @param {string} volumeSma
    * @param {string} volume
    * @param {string} atrSma
    * @param {string} currentAtr
    * @returns {number} confidence 0.50-1.00
    */
-  _calcConfidence(volumeSma, volume, atrSma, currentAtr) {
+  _calcConfidence(s, volumeSma, volume, atrSma, currentAtr) {
     // Volume component: how much volume exceeds threshold (0-0.25)
     const volRatio = parseFloat(divide(volume, volumeSma));
     const volScore = Math.min((volRatio - 2) / 4, 1) * 0.25;
@@ -712,7 +719,7 @@ class BreakoutStrategy extends StrategyBase {
     const atrScore = Math.min((atrRatio - 1.5) / 2, 1) * 0.25;
 
     // Squeeze duration component: longer squeeze = higher conviction (0-0.20)
-    const squeezeScore = Math.min(this._squeezeCount / 20, 1) * 0.20;
+    const squeezeScore = Math.min(s.squeezeCount / 20, 1) * 0.20;
 
     const confidence = Math.min(0.50 + Math.max(volScore, 0) + Math.max(atrScore, 0) + squeezeScore, 1);
     return confidence;
@@ -720,17 +727,19 @@ class BreakoutStrategy extends StrategyBase {
 
   /**
    * Reset all position-tracking state after a full exit.
+   * @param {string} [symbol] — defaults to getCurrentSymbol()
    */
-  _resetPosition() {
-    this._entryPrice = null;
-    this._positionSide = null;
-    this._candlesSinceEntry = 0;
-    this._trailingActive = false;
-    this._trailingStopPrice = null;
-    this._highestSinceEntry = null;
-    this._lowestSinceEntry = null;
-    this._squeezeCount = 0;
-    this._squeezeOppositeBand = null;
+  _resetPosition(symbol) {
+    const s = this._s(symbol);
+    s.entryPrice = null;
+    s.positionSide = null;
+    s.candlesSinceEntry = 0;
+    s.trailingActive = false;
+    s.trailingStopPrice = null;
+    s.highestSinceEntry = null;
+    s.lowestSinceEntry = null;
+    s.squeezeCount = 0;
+    s.squeezeOppositeBand = null;
   }
 }
 

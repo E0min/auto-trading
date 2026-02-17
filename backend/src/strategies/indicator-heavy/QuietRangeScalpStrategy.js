@@ -52,6 +52,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
     targetRegimes: ['quiet'],
     riskLevel: 'low',
     maxConcurrentPositions: 1,
+    maxSymbolsPerStrategy: 3,
     cooldownMs: 30000,
     gracePeriodMs: 900000,
     warmupCandles: 30,
@@ -75,16 +76,26 @@ class QuietRangeScalpStrategy extends StrategyBase {
     super('QuietRangeScalpStrategy', merged);
 
     this._log = createLogger('QuietRangeScalpStrategy');
+  }
 
-    /** @type {string[]} ATR values history for SMA */
-    this._atrHistory = [];
+  // ---------------------------------------------------------------------------
+  // Per-symbol state (SymbolState pattern)
+  // ---------------------------------------------------------------------------
 
-    this._latestPrice = null;
-    this._entryPrice = null;
-    /** @type {'long'|'short'|null} */
-    this._positionSide = null;
-    this._halfProfitTaken = false;
-    this._lastSignal = null;
+  /**
+   * Override to add strategy-specific per-symbol fields.
+   * @returns {object}
+   */
+  _createDefaultState() {
+    return {
+      ...super._createDefaultState(),
+
+      /** @type {string[]} ATR values history for SMA */
+      atrHistory: [],
+
+      /** @type {boolean} whether half profit has been taken */
+      halfProfitTaken: false,
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -95,32 +106,34 @@ class QuietRangeScalpStrategy extends StrategyBase {
     if (!this._active) return;
     if (!ticker || ticker.lastPrice === undefined) return;
 
-    this._latestPrice = String(ticker.lastPrice);
+    const s = this._s();
+    const sym = this.getCurrentSymbol();
+    s.latestPrice = String(ticker.lastPrice);
 
-    if (this._entryPrice === null || this._positionSide === null) return;
+    if (s.entryPrice === null || s.positionSide === null) return;
 
     // Regime change exit — if no longer QUIET, close immediately
     if (this.getEffectiveRegime() !== MARKET_REGIMES.QUIET) {
-      const action = this._positionSide === 'long'
+      const action = s.positionSide === 'long'
         ? SIGNAL_ACTIONS.CLOSE_LONG
         : SIGNAL_ACTIONS.CLOSE_SHORT;
       const signal = {
         action,
-        symbol: this._symbol,
+        symbol: sym,
         category: this._category,
         suggestedQty: this.config.positionSizePercent,
-        suggestedPrice: this._latestPrice,
+        suggestedPrice: s.latestPrice,
         reduceOnly: true,
         confidence: '0.9000',
         marketContext: { reason: 'regime_change_exit', regime: this.getEffectiveRegime() },
       };
-      this._lastSignal = signal;
+      s.lastSignal = signal;
       this.emitSignal(signal);
       this._resetPosition();
       return;
     }
 
-    this._checkExitOnTick(this._latestPrice);
+    this._checkExitOnTick(s, sym);
   }
 
   // -------------------------------------------------------------------------
@@ -135,6 +148,8 @@ class QuietRangeScalpStrategy extends StrategyBase {
 
     const high = kline && kline.high !== undefined ? String(kline.high) : close;
     const low = kline && kline.low !== undefined ? String(kline.low) : close;
+    const sym = this.getCurrentSymbol();
+    const s = this._s();
 
     const {
       emaPeriod,
@@ -147,25 +162,25 @@ class QuietRangeScalpStrategy extends StrategyBase {
 
     // --- IndicatorCache-based indicator retrieval ---
     const c = this._indicatorCache;
-    const hist = c.getHistory(this._symbol);
+    const hist = c.getHistory(sym);
     if (!hist) return;
 
     const minRequired = Math.max(emaPeriod, atrPeriod + 1, atrSmaPeriod);
     if (!hist || hist.closes.length < minRequired) return;
 
-    const emaValue = c.get(this._symbol, 'ema', { period: emaPeriod });
-    const atrVal = c.get(this._symbol, 'atr', { period: atrPeriod });
+    const emaValue = c.get(sym, 'ema', { period: emaPeriod });
+    const atrVal = c.get(sym, 'atr', { period: atrPeriod });
     if (!emaValue || !atrVal) return;
 
     // ATR SMA: accumulate cache-provided ATR values for SMA computation
-    this._atrHistory.push(atrVal);
-    if (this._atrHistory.length > 100) {
-      this._atrHistory = this._atrHistory.slice(-100);
+    s.atrHistory.push(atrVal);
+    if (s.atrHistory.length > 100) {
+      s.atrHistory = s.atrHistory.slice(-100);
     }
 
     // 3. Calculate ATR SMA (volatility baseline)
-    if (this._atrHistory.length < atrSmaPeriod) return;
-    const atrSmaValue = indicatorSma(this._atrHistory, atrSmaPeriod);
+    if (s.atrHistory.length < atrSmaPeriod) return;
+    const atrSmaValue = indicatorSma(s.atrHistory, atrSmaPeriod);
     if (!atrSmaValue) return;
 
     // 4. Keltner Channel bands
@@ -173,21 +188,21 @@ class QuietRangeScalpStrategy extends StrategyBase {
     const kcUpper = add(emaValue, band);
     const kcLower = subtract(emaValue, band);
 
-    // 5. Quiet filter: ATR ≤ ATR_SMA * threshold
+    // 5. Quiet filter: ATR <= ATR_SMA * threshold
     const atrThreshold = multiply(atrSmaValue, atrQuietThreshold);
     const isQuiet = isLessThanOrEqual(atrVal, atrThreshold);
 
     const regime = this.getEffectiveRegime();
 
     // Check EMA midpoint exit for open positions
-    if (this._entryPrice !== null && this._positionSide !== null) {
-      if (!this._halfProfitTaken) {
-        if (this._positionSide === 'long' && isGreaterThan(close, emaValue)) {
-          this._halfProfitTaken = true;
+    if (s.entryPrice !== null && s.positionSide !== null) {
+      if (!s.halfProfitTaken) {
+        if (s.positionSide === 'long' && isGreaterThan(close, emaValue)) {
+          s.halfProfitTaken = true;
           const halfQty = toFixed(divide(positionSizePercent, '2'), 4);
           const signal = {
             action: SIGNAL_ACTIONS.CLOSE_LONG,
-            symbol: this._symbol,
+            symbol: sym,
             category: this._category,
             suggestedQty: halfQty,
             suggestedPrice: close,
@@ -195,16 +210,16 @@ class QuietRangeScalpStrategy extends StrategyBase {
             confidence: '0.7000',
             marketContext: { reason: 'ema_midpoint_half_profit', ema: emaValue },
           };
-          this._lastSignal = signal;
+          s.lastSignal = signal;
           this.emitSignal(signal);
           return;
         }
-        if (this._positionSide === 'short' && isLessThan(close, emaValue)) {
-          this._halfProfitTaken = true;
+        if (s.positionSide === 'short' && isLessThan(close, emaValue)) {
+          s.halfProfitTaken = true;
           const halfQty = toFixed(divide(positionSizePercent, '2'), 4);
           const signal = {
             action: SIGNAL_ACTIONS.CLOSE_SHORT,
-            symbol: this._symbol,
+            symbol: sym,
             category: this._category,
             suggestedQty: halfQty,
             suggestedPrice: close,
@@ -212,7 +227,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
             confidence: '0.7000',
             marketContext: { reason: 'ema_midpoint_half_profit', ema: emaValue },
           };
-          this._lastSignal = signal;
+          s.lastSignal = signal;
           this.emitSignal(signal);
           return;
         }
@@ -240,7 +255,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
       const confidence = this._calcConfidence(close, kcLower, emaValue, 'long');
       const signal = {
         action: SIGNAL_ACTIONS.OPEN_LONG,
-        symbol: this._symbol,
+        symbol: sym,
         category: this._category,
         suggestedQty: positionSizePercent,
         suggestedPrice: close,
@@ -248,10 +263,10 @@ class QuietRangeScalpStrategy extends StrategyBase {
         confidence,
         marketContext: { ...marketContext, reason: 'kc_lower_touch' },
       };
-      this._entryPrice = close;
-      this._positionSide = 'long';
-      this._halfProfitTaken = false;
-      this._lastSignal = signal;
+      s.entryPrice = close;
+      s.positionSide = 'long';
+      s.halfProfitTaken = false;
+      s.lastSignal = signal;
       this.emitSignal(signal);
       return;
     }
@@ -261,7 +276,7 @@ class QuietRangeScalpStrategy extends StrategyBase {
       const confidence = this._calcConfidence(close, kcUpper, emaValue, 'short');
       const signal = {
         action: SIGNAL_ACTIONS.OPEN_SHORT,
-        symbol: this._symbol,
+        symbol: sym,
         category: this._category,
         suggestedQty: positionSizePercent,
         suggestedPrice: close,
@@ -269,10 +284,10 @@ class QuietRangeScalpStrategy extends StrategyBase {
         confidence,
         marketContext: { ...marketContext, reason: 'kc_upper_touch' },
       };
-      this._entryPrice = close;
-      this._positionSide = 'short';
-      this._halfProfitTaken = false;
-      this._lastSignal = signal;
+      s.entryPrice = close;
+      s.positionSide = 'short';
+      s.halfProfitTaken = false;
+      s.lastSignal = signal;
       this.emitSignal(signal);
     }
   }
@@ -285,51 +300,54 @@ class QuietRangeScalpStrategy extends StrategyBase {
     if (!fill) return;
     const price = fill.price !== undefined ? String(fill.price) : null;
     if (price === null) return;
+    const sym = fill.symbol || this.getCurrentSymbol();
+    const s = this._s(sym);
 
-    if (fill.side === 'buy' && this._entryPrice === null) {
-      this._entryPrice = price;
+    if (fill.side === 'buy' && s.entryPrice === null) {
+      s.entryPrice = price;
     }
-    if (fill.side === 'sell' && this._positionSide === 'long') {
-      this._resetPosition();
+    if (fill.side === 'sell' && s.positionSide === 'long') {
+      this._resetPosition(sym);
     }
-    if (fill.side === 'sell' && this._positionSide === null && this._entryPrice === null) {
-      this._entryPrice = price;
-      this._positionSide = 'short';
+    if (fill.side === 'sell' && s.positionSide === null && s.entryPrice === null) {
+      s.entryPrice = price;
+      s.positionSide = 'short';
     }
-    if (fill.side === 'buy' && this._positionSide === 'short') {
-      this._resetPosition();
+    if (fill.side === 'buy' && s.positionSide === 'short') {
+      this._resetPosition(sym);
     }
   }
 
   getSignal() {
-    return this._lastSignal;
+    return this._s().lastSignal;
   }
 
   // -------------------------------------------------------------------------
   // Private helpers
   // -------------------------------------------------------------------------
 
-  _checkExitOnTick(currentPrice) {
-    if (this._entryPrice === null || this._positionSide === null) return;
+  _checkExitOnTick(s, sym) {
+    if (s.entryPrice === null || s.positionSide === null) return;
 
+    const currentPrice = s.latestPrice;
     const { positionSizePercent, tpPercent, slPercent } = this.config;
 
-    if (this._positionSide === 'long') {
-      const tpPrice = multiply(this._entryPrice, add('1', divide(tpPercent, '100')));
-      const slPrice = multiply(this._entryPrice, subtract('1', divide(slPercent, '100')));
+    if (s.positionSide === 'long') {
+      const tpPrice = multiply(s.entryPrice, add('1', divide(tpPercent, '100')));
+      const slPrice = multiply(s.entryPrice, subtract('1', divide(slPercent, '100')));
 
       if (isGreaterThanOrEqual(currentPrice, tpPrice)) {
         const signal = {
           action: SIGNAL_ACTIONS.CLOSE_LONG,
-          symbol: this._symbol,
+          symbol: sym,
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: currentPrice,
           reduceOnly: true,
           confidence: '0.9500',
-          marketContext: { reason: 'take_profit', entryPrice: this._entryPrice, tpPrice },
+          marketContext: { reason: 'take_profit', entryPrice: s.entryPrice, tpPrice },
         };
-        this._lastSignal = signal;
+        s.lastSignal = signal;
         this.emitSignal(signal);
         this._resetPosition();
         return;
@@ -337,34 +355,34 @@ class QuietRangeScalpStrategy extends StrategyBase {
       if (isLessThanOrEqual(currentPrice, slPrice)) {
         const signal = {
           action: SIGNAL_ACTIONS.CLOSE_LONG,
-          symbol: this._symbol,
+          symbol: sym,
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: currentPrice,
           reduceOnly: true,
           confidence: '0.9500',
-          marketContext: { reason: 'stop_loss', entryPrice: this._entryPrice, slPrice },
+          marketContext: { reason: 'stop_loss', entryPrice: s.entryPrice, slPrice },
         };
-        this._lastSignal = signal;
+        s.lastSignal = signal;
         this.emitSignal(signal);
         this._resetPosition();
       }
-    } else if (this._positionSide === 'short') {
-      const tpPrice = multiply(this._entryPrice, subtract('1', divide(tpPercent, '100')));
-      const slPrice = multiply(this._entryPrice, add('1', divide(slPercent, '100')));
+    } else if (s.positionSide === 'short') {
+      const tpPrice = multiply(s.entryPrice, subtract('1', divide(tpPercent, '100')));
+      const slPrice = multiply(s.entryPrice, add('1', divide(slPercent, '100')));
 
       if (isLessThanOrEqual(currentPrice, tpPrice)) {
         const signal = {
           action: SIGNAL_ACTIONS.CLOSE_SHORT,
-          symbol: this._symbol,
+          symbol: sym,
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: currentPrice,
           reduceOnly: true,
           confidence: '0.9500',
-          marketContext: { reason: 'take_profit', entryPrice: this._entryPrice, tpPrice },
+          marketContext: { reason: 'take_profit', entryPrice: s.entryPrice, tpPrice },
         };
-        this._lastSignal = signal;
+        s.lastSignal = signal;
         this.emitSignal(signal);
         this._resetPosition();
         return;
@@ -372,15 +390,15 @@ class QuietRangeScalpStrategy extends StrategyBase {
       if (isGreaterThanOrEqual(currentPrice, slPrice)) {
         const signal = {
           action: SIGNAL_ACTIONS.CLOSE_SHORT,
-          symbol: this._symbol,
+          symbol: sym,
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: currentPrice,
           reduceOnly: true,
           confidence: '0.9500',
-          marketContext: { reason: 'stop_loss', entryPrice: this._entryPrice, slPrice },
+          marketContext: { reason: 'stop_loss', entryPrice: s.entryPrice, slPrice },
         };
-        this._lastSignal = signal;
+        s.lastSignal = signal;
         this.emitSignal(signal);
         this._resetPosition();
       }
@@ -401,10 +419,11 @@ class QuietRangeScalpStrategy extends StrategyBase {
     return toFixed(String(confidence), 4);
   }
 
-  _resetPosition() {
-    this._entryPrice = null;
-    this._positionSide = null;
-    this._halfProfitTaken = false;
+  _resetPosition(symbol) {
+    const s = this._s(symbol);
+    s.entryPrice = null;
+    s.positionSide = null;
+    s.halfProfitTaken = false;
   }
 }
 

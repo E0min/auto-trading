@@ -54,6 +54,7 @@ class FibonacciRetracementStrategy extends StrategyBase {
     gracePeriodMs: 600000,
     warmupCandles: 30,
     volatilityPreference: 'neutral',
+    maxSymbolsPerStrategy: 3,
     description: '피보나치 되돌림 — 골든 존(0.382-0.618) 바운스 + ATR 기반 리스크 관리',
     defaultConfig: {
       swingPeriod: 50,              // Lookback bars for swing detection
@@ -76,45 +77,60 @@ class FibonacciRetracementStrategy extends StrategyBase {
     const merged = { ...FibonacciRetracementStrategy.metadata.defaultConfig, ...config };
     super('FibonacciRetracementStrategy', merged);
 
-    // ---- Internal state ----
-    /** @type {Array<{high:string, low:string, close:string, open:string}>} */
-    this.klineHistory = [];
-    /** @type {string|null} latest ticker price */
-    this._latestPrice = null;
-    /** @type {object|null} most recently generated signal */
-    this._lastSignal = null;
-    /** @type {string|null} entry price */
-    this._entryPrice = null;
-    /** @type {'long'|'short'|null} current position direction */
-    this._positionSide = null;
-    /** @type {string|null} stop loss price */
-    this._stopPrice = null;
-    /** @type {string|null} TP1 — swing extreme */
-    this._tp1Price = null;
-    /** @type {string|null} TP2 — 1.272 extension */
-    this._tp2Price = null;
-    /** @type {boolean} whether TP1 partial (50%) exit has been taken */
-    this._partialTaken = false;
-    /** @type {boolean} trailing stop activated */
-    this._trailingActive = false;
-    /** @type {string|null} trailing stop price */
-    this._trailingStopPrice = null;
-    /** @type {string|null} highest price since entry (long) */
-    this._highestSinceEntry = null;
-    /** @type {string|null} lowest price since entry (short) */
-    this._lowestSinceEntry = null;
-    /** @type {string|null} latest ATR value */
-    this._latestAtr = null;
-    /** @type {{ price: string, index: number }|null} */
-    this._swingHigh = null;
-    /** @type {{ price: string, index: number }|null} */
-    this._swingLow = null;
-    /** @type {'up'|'down'|null} current swing direction */
-    this._swingDirection = null;
-    /** @type {object|null} computed Fibonacci levels */
-    this._fibLevels = null;
     /** @type {number} max kline data points to keep */
     this._maxHistory = 200;
+  }
+
+  /**
+   * Override: create per-symbol state with all position/indicator fields.
+   * @returns {object}
+   */
+  _createDefaultState() {
+    return {
+      ...super._createDefaultState(),
+
+      /** @type {Array<{high:string, low:string, close:string, open:string}>} */
+      klineHistory: [],
+
+      /** @type {string|null} stop loss price */
+      stopPrice: null,
+
+      /** @type {string|null} TP1 — swing extreme */
+      tp1Price: null,
+
+      /** @type {string|null} TP2 — 1.272 extension */
+      tp2Price: null,
+
+      /** @type {boolean} whether TP1 partial (50%) exit has been taken */
+      partialTaken: false,
+
+      /** @type {boolean} trailing stop activated */
+      trailingActive: false,
+
+      /** @type {string|null} trailing stop price */
+      trailingStopPrice: null,
+
+      /** @type {string|null} highest price since entry (long) */
+      highestSinceEntry: null,
+
+      /** @type {string|null} lowest price since entry (short) */
+      lowestSinceEntry: null,
+
+      /** @type {string|null} latest ATR value */
+      latestAtr: null,
+
+      /** @type {{ price: string, index: number }|null} */
+      swingHigh: null,
+
+      /** @type {{ price: string, index: number }|null} */
+      swingLow: null,
+
+      /** @type {'up'|'down'|null} current swing direction */
+      swingDirection: null,
+
+      /** @type {object|null} computed Fibonacci levels */
+      fibLevels: null,
+    };
   }
 
   // --------------------------------------------------------------------------
@@ -130,20 +146,21 @@ class FibonacciRetracementStrategy extends StrategyBase {
    * @returns {{ swingHigh: {price:string,index:number}|null, swingLow: {price:string,index:number}|null, direction: 'up'|'down'|null }}
    */
   _findSignificantSwing() {
+    const s = this._s();
     const { swingPeriod } = this.config;
-    const len = this.klineHistory.length;
+    const len = s.klineHistory.length;
     if (len < swingPeriod) {
       return { swingHigh: null, swingLow: null, direction: null };
     }
 
     const startIdx = len - swingPeriod;
-    let highestPrice = this.klineHistory[startIdx].high;
+    let highestPrice = s.klineHistory[startIdx].high;
     let highestIdx = startIdx;
-    let lowestPrice = this.klineHistory[startIdx].low;
+    let lowestPrice = s.klineHistory[startIdx].low;
     let lowestIdx = startIdx;
 
     for (let i = startIdx + 1; i < len; i++) {
-      const bar = this.klineHistory[i];
+      const bar = s.klineHistory[i];
       if (isGreaterThan(bar.high, highestPrice)) {
         highestPrice = bar.high;
         highestIdx = i;
@@ -215,9 +232,10 @@ class FibonacciRetracementStrategy extends StrategyBase {
    * @returns {boolean}
    */
   _isInGoldenZone(price, direction) {
-    if (!this._fibLevels) return false;
-    const fib382 = this._fibLevels['fib_0.382'];
-    const fib618 = this._fibLevels['fib_0.618'];
+    const s = this._s();
+    if (!s.fibLevels) return false;
+    const fib382 = s.fibLevels['fib_0.382'];
+    const fib618 = s.fibLevels['fib_0.618'];
     const zoneLow = mathMin(fib382, fib618);
     const zoneHigh = mathMax(fib382, fib618);
     return !isLessThan(price, zoneLow) && !isGreaterThan(price, zoneHigh);
@@ -239,12 +257,13 @@ class FibonacciRetracementStrategy extends StrategyBase {
    * @returns {number} 0.50–1.00
    */
   _calcConfidence(price, direction) {
+    const s = this._s();
     let conf = 0.55;
-    if (!this._fibLevels) return conf;
+    if (!s.fibLevels) return conf;
 
-    const dist382 = parseFloat(abs(subtract(price, this._fibLevels['fib_0.382'])));
-    const dist500 = parseFloat(abs(subtract(price, this._fibLevels['fib_0.500'])));
-    const dist618 = parseFloat(abs(subtract(price, this._fibLevels['fib_0.618'])));
+    const dist382 = parseFloat(abs(subtract(price, s.fibLevels['fib_0.382'])));
+    const dist500 = parseFloat(abs(subtract(price, s.fibLevels['fib_0.500'])));
+    const dist618 = parseFloat(abs(subtract(price, s.fibLevels['fib_0.618'])));
     const minDist = Math.min(dist382, dist500, dist618);
 
     if (minDist === dist618) conf += 0.20;
@@ -273,26 +292,29 @@ class FibonacciRetracementStrategy extends StrategyBase {
    */
   onTick(ticker) {
     if (!this._active) return;
-    if (ticker && ticker.lastPrice !== undefined) {
-      this._latestPrice = String(ticker.lastPrice);
-    }
-    if (this._entryPrice === null || this._positionSide === null) return;
-    if (this._latestPrice === null) return;
+    const s = this._s();
+    const sym = this.getCurrentSymbol();
 
-    const price = this._latestPrice;
+    if (ticker && ticker.lastPrice !== undefined) {
+      s.latestPrice = String(ticker.lastPrice);
+    }
+    if (s.entryPrice === null || s.positionSide === null) return;
+    if (s.latestPrice === null) return;
+
+    const price = s.latestPrice;
 
     // --- Hard stop loss ---
-    if (this._stopPrice !== null) {
-      if (this._positionSide === 'long' && isLessThan(price, this._stopPrice)) {
+    if (s.stopPrice !== null) {
+      if (s.positionSide === 'long' && isLessThan(price, s.stopPrice)) {
         this._emitCloseSignal('long', price, 'fib_stop_loss', {
-          entryPrice: this._entryPrice, stopPrice: this._stopPrice, fibLevels: this._fibLevels,
+          entryPrice: s.entryPrice, stopPrice: s.stopPrice, fibLevels: s.fibLevels,
         });
         this._resetPosition();
         return;
       }
-      if (this._positionSide === 'short' && isGreaterThan(price, this._stopPrice)) {
+      if (s.positionSide === 'short' && isGreaterThan(price, s.stopPrice)) {
         this._emitCloseSignal('short', price, 'fib_stop_loss', {
-          entryPrice: this._entryPrice, stopPrice: this._stopPrice, fibLevels: this._fibLevels,
+          entryPrice: s.entryPrice, stopPrice: s.stopPrice, fibLevels: s.fibLevels,
         });
         this._resetPosition();
         return;
@@ -300,17 +322,17 @@ class FibonacciRetracementStrategy extends StrategyBase {
     }
 
     // --- TP2: full exit at 1.272 extension ---
-    if (this._tp2Price !== null) {
-      if (this._positionSide === 'long' && isGreaterThan(price, this._tp2Price)) {
+    if (s.tp2Price !== null) {
+      if (s.positionSide === 'long' && isGreaterThan(price, s.tp2Price)) {
         this._emitCloseSignal('long', price, 'fib_tp2_extension', {
-          entryPrice: this._entryPrice, tp2Price: this._tp2Price,
+          entryPrice: s.entryPrice, tp2Price: s.tp2Price,
         });
         this._resetPosition();
         return;
       }
-      if (this._positionSide === 'short' && isLessThan(price, this._tp2Price)) {
+      if (s.positionSide === 'short' && isLessThan(price, s.tp2Price)) {
         this._emitCloseSignal('short', price, 'fib_tp2_extension', {
-          entryPrice: this._entryPrice, tp2Price: this._tp2Price,
+          entryPrice: s.entryPrice, tp2Price: s.tp2Price,
         });
         this._resetPosition();
         return;
@@ -318,57 +340,57 @@ class FibonacciRetracementStrategy extends StrategyBase {
     }
 
     // --- TP1: partial exit (50%) at swing extreme ---
-    if (this._tp1Price !== null && !this._partialTaken) {
-      if (this._positionSide === 'long' && isGreaterThan(price, this._tp1Price)) {
+    if (s.tp1Price !== null && !s.partialTaken) {
+      if (s.positionSide === 'long' && isGreaterThan(price, s.tp1Price)) {
         this._emitCloseSignal('long', price, 'fib_tp1_swing_high', {
-          entryPrice: this._entryPrice, tp1Price: this._tp1Price, partialPercent: '50',
+          entryPrice: s.entryPrice, tp1Price: s.tp1Price, partialPercent: '50',
         });
-        this._partialTaken = true;
-        this._trailingActive = true;
-        this._highestSinceEntry = price;
+        s.partialTaken = true;
+        s.trailingActive = true;
+        s.highestSinceEntry = price;
         this._updateTrailingStop();
         log.info('TP1 hit, trailing activated (long)', {
-          symbol: this._symbol, trailingStop: this._trailingStopPrice,
+          symbol: sym, trailingStop: s.trailingStopPrice,
         });
         return;
       }
-      if (this._positionSide === 'short' && isLessThan(price, this._tp1Price)) {
+      if (s.positionSide === 'short' && isLessThan(price, s.tp1Price)) {
         this._emitCloseSignal('short', price, 'fib_tp1_swing_low', {
-          entryPrice: this._entryPrice, tp1Price: this._tp1Price, partialPercent: '50',
+          entryPrice: s.entryPrice, tp1Price: s.tp1Price, partialPercent: '50',
         });
-        this._partialTaken = true;
-        this._trailingActive = true;
-        this._lowestSinceEntry = price;
+        s.partialTaken = true;
+        s.trailingActive = true;
+        s.lowestSinceEntry = price;
         this._updateTrailingStop();
         log.info('TP1 hit, trailing activated (short)', {
-          symbol: this._symbol, trailingStop: this._trailingStopPrice,
+          symbol: sym, trailingStop: s.trailingStopPrice,
         });
         return;
       }
     }
 
     // --- Trailing stop ---
-    if (this._trailingActive && this._trailingStopPrice !== null) {
-      if (this._positionSide === 'long') {
-        if (this._highestSinceEntry === null || isGreaterThan(price, this._highestSinceEntry)) {
-          this._highestSinceEntry = price;
+    if (s.trailingActive && s.trailingStopPrice !== null) {
+      if (s.positionSide === 'long') {
+        if (s.highestSinceEntry === null || isGreaterThan(price, s.highestSinceEntry)) {
+          s.highestSinceEntry = price;
           this._updateTrailingStop();
         }
-        if (isLessThan(price, this._trailingStopPrice)) {
+        if (isLessThan(price, s.trailingStopPrice)) {
           this._emitCloseSignal('long', price, 'fib_trailing_stop', {
-            entryPrice: this._entryPrice, trailingStopPrice: this._trailingStopPrice,
+            entryPrice: s.entryPrice, trailingStopPrice: s.trailingStopPrice,
           });
           this._resetPosition();
           return;
         }
-      } else if (this._positionSide === 'short') {
-        if (this._lowestSinceEntry === null || isLessThan(price, this._lowestSinceEntry)) {
-          this._lowestSinceEntry = price;
+      } else if (s.positionSide === 'short') {
+        if (s.lowestSinceEntry === null || isLessThan(price, s.lowestSinceEntry)) {
+          s.lowestSinceEntry = price;
           this._updateTrailingStop();
         }
-        if (isGreaterThan(price, this._trailingStopPrice)) {
+        if (isGreaterThan(price, s.trailingStopPrice)) {
           this._emitCloseSignal('short', price, 'fib_trailing_stop', {
-            entryPrice: this._entryPrice, trailingStopPrice: this._trailingStopPrice,
+            entryPrice: s.entryPrice, trailingStopPrice: s.trailingStopPrice,
           });
           this._resetPosition();
           return;
@@ -400,36 +422,39 @@ class FibonacciRetracementStrategy extends StrategyBase {
     const low = kline && kline.low !== undefined ? String(kline.low) : close;
     const open = kline && kline.open !== undefined ? String(kline.open) : close;
 
+    const s = this._s();
+    const sym = this.getCurrentSymbol();
+
     // 1. Push and trim
-    this.klineHistory.push({ high, low, close, open });
-    if (this.klineHistory.length > this._maxHistory) {
-      this.klineHistory = this.klineHistory.slice(-this._maxHistory);
+    s.klineHistory.push({ high, low, close, open });
+    if (s.klineHistory.length > this._maxHistory) {
+      s.klineHistory = s.klineHistory.slice(-this._maxHistory);
     }
 
     // 2. Minimum data check
     const { swingPeriod, atrPeriod } = this.config;
     const minRequired = Math.max(swingPeriod, atrPeriod + 1);
-    if (this.klineHistory.length < minRequired) {
-      log.debug('Not enough data', { have: this.klineHistory.length, need: minRequired });
+    if (s.klineHistory.length < minRequired) {
+      log.debug('Not enough data', { have: s.klineHistory.length, need: minRequired });
       return;
     }
 
     // 3. Compute ATR
-    const currentAtr = atr(this.klineHistory, atrPeriod);
+    const currentAtr = atr(s.klineHistory, atrPeriod);
     if (currentAtr === null) return;
-    this._latestAtr = currentAtr;
+    s.latestAtr = currentAtr;
 
     // 4. Position open: update extreme trackers only
-    if (this._positionSide !== null && this._entryPrice !== null) {
-      if (this._positionSide === 'long') {
-        if (this._highestSinceEntry === null || isGreaterThan(high, this._highestSinceEntry)) {
-          this._highestSinceEntry = high;
-          if (this._trailingActive) this._updateTrailingStop();
+    if (s.positionSide !== null && s.entryPrice !== null) {
+      if (s.positionSide === 'long') {
+        if (s.highestSinceEntry === null || isGreaterThan(high, s.highestSinceEntry)) {
+          s.highestSinceEntry = high;
+          if (s.trailingActive) this._updateTrailingStop();
         }
       } else {
-        if (this._lowestSinceEntry === null || isLessThan(low, this._lowestSinceEntry)) {
-          this._lowestSinceEntry = low;
-          if (this._trailingActive) this._updateTrailingStop();
+        if (s.lowestSinceEntry === null || isLessThan(low, s.lowestSinceEntry)) {
+          s.lowestSinceEntry = low;
+          if (s.trailingActive) this._updateTrailingStop();
         }
       }
       return; // No new entries while position open
@@ -453,16 +478,16 @@ class FibonacciRetracementStrategy extends StrategyBase {
     }
 
     // 5c. Update state and compute fib levels
-    this._swingHigh = swingHigh;
-    this._swingLow = swingLow;
-    this._swingDirection = direction;
-    this._fibLevels = this._computeFibLevels(swingHigh.price, swingLow.price, direction);
+    s.swingHigh = swingHigh;
+    s.swingLow = swingLow;
+    s.swingDirection = direction;
+    s.fibLevels = this._computeFibLevels(swingHigh.price, swingLow.price, direction);
 
     const regime = this.getEffectiveRegime();
     const price = close;
     const { positionSizePercent, slBuffer, fibInvalidation } = this.config;
 
-    // 5d. Bullish fib bounce → long entry
+    // 5d. Bullish fib bounce -> long entry
     if (direction === 'up') {
       const regimeOk = regime === null ||
         regime === MARKET_REGIMES.TRENDING_UP ||
@@ -471,19 +496,19 @@ class FibonacciRetracementStrategy extends StrategyBase {
       if (!this._isInGoldenZone(price, direction)) return;
       if (!isGreaterThan(close, open)) return; // Bullish candle required
 
-      const fib786 = this._fibLevels[`fib_${fibInvalidation}`];
+      const fib786 = s.fibLevels[`fib_${fibInvalidation}`];
       if (isLessThan(low, fib786)) return; // Invalidated
 
       const slDistance = multiply(slBuffer, currentAtr);
       const slPrice = subtract(fib786, slDistance);
       const riskPerUnit = subtract(price, slPrice);
-      const tp1 = this._fibLevels.swingHigh;
-      const tp2 = this._fibLevels['ext_1.272'];
+      const tp1 = s.fibLevels.swingHigh;
+      const tp2 = s.fibLevels['ext_1.272'];
       const conf = this._calcConfidence(price, direction);
 
       const signal = {
         action: SIGNAL_ACTIONS.OPEN_LONG,
-        symbol: this._symbol,
+        symbol: sym,
         category: this._category,
         suggestedQty: positionSizePercent,
         suggestedPrice: price,
@@ -494,28 +519,28 @@ class FibonacciRetracementStrategy extends StrategyBase {
         reason: 'fib_golden_zone_bounce_long',
         marketContext: {
           swingHigh: swingHigh.price, swingLow: swingLow.price,
-          swingDirection: direction, fibLevels: this._fibLevels,
+          swingDirection: direction, fibLevels: s.fibLevels,
           tp1, tp2, slPrice, atr: currentAtr, riskPerUnit, regime,
         },
       };
 
-      this._entryPrice = price;
-      this._positionSide = 'long';
-      this._stopPrice = slPrice;
-      this._tp1Price = tp1;
-      this._tp2Price = tp2;
-      this._partialTaken = false;
-      this._highestSinceEntry = high;
-      this._lowestSinceEntry = null;
-      this._trailingActive = false;
-      this._trailingStopPrice = null;
+      s.entryPrice = price;
+      s.positionSide = 'long';
+      s.stopPrice = slPrice;
+      s.tp1Price = tp1;
+      s.tp2Price = tp2;
+      s.partialTaken = false;
+      s.highestSinceEntry = high;
+      s.lowestSinceEntry = null;
+      s.trailingActive = false;
+      s.trailingStopPrice = null;
 
-      this._lastSignal = signal;
+      s.lastSignal = signal;
       this.emitSignal(signal);
       return;
     }
 
-    // 5e. Bearish fib bounce → short entry
+    // 5e. Bearish fib bounce -> short entry
     if (direction === 'down') {
       const regimeOk = regime === null ||
         regime === MARKET_REGIMES.TRENDING_DOWN ||
@@ -524,19 +549,19 @@ class FibonacciRetracementStrategy extends StrategyBase {
       if (!this._isInGoldenZone(price, direction)) return;
       if (!isLessThan(close, open)) return; // Bearish candle required
 
-      const fib786 = this._fibLevels[`fib_${fibInvalidation}`];
+      const fib786 = s.fibLevels[`fib_${fibInvalidation}`];
       if (isGreaterThan(high, fib786)) return; // Invalidated
 
       const slDistance = multiply(slBuffer, currentAtr);
       const slPrice = add(fib786, slDistance);
       const riskPerUnit = subtract(slPrice, price);
-      const tp1 = this._fibLevels.swingLow;
-      const tp2 = this._fibLevels['ext_1.272'];
+      const tp1 = s.fibLevels.swingLow;
+      const tp2 = s.fibLevels['ext_1.272'];
       const conf = this._calcConfidence(price, direction);
 
       const signal = {
         action: SIGNAL_ACTIONS.OPEN_SHORT,
-        symbol: this._symbol,
+        symbol: sym,
         category: this._category,
         suggestedQty: positionSizePercent,
         suggestedPrice: price,
@@ -547,23 +572,23 @@ class FibonacciRetracementStrategy extends StrategyBase {
         reason: 'fib_golden_zone_bounce_short',
         marketContext: {
           swingHigh: swingHigh.price, swingLow: swingLow.price,
-          swingDirection: direction, fibLevels: this._fibLevels,
+          swingDirection: direction, fibLevels: s.fibLevels,
           tp1, tp2, slPrice, atr: currentAtr, riskPerUnit, regime,
         },
       };
 
-      this._entryPrice = price;
-      this._positionSide = 'short';
-      this._stopPrice = slPrice;
-      this._tp1Price = tp1;
-      this._tp2Price = tp2;
-      this._partialTaken = false;
-      this._highestSinceEntry = null;
-      this._lowestSinceEntry = low;
-      this._trailingActive = false;
-      this._trailingStopPrice = null;
+      s.entryPrice = price;
+      s.positionSide = 'short';
+      s.stopPrice = slPrice;
+      s.tp1Price = tp1;
+      s.tp2Price = tp2;
+      s.partialTaken = false;
+      s.highestSinceEntry = null;
+      s.lowestSinceEntry = low;
+      s.trailingActive = false;
+      s.trailingStopPrice = null;
 
-      this._lastSignal = signal;
+      s.lastSignal = signal;
       this.emitSignal(signal);
       return;
     }
@@ -578,16 +603,19 @@ class FibonacciRetracementStrategy extends StrategyBase {
     if (!fill) return;
     const action = fill.action || (fill.signal && fill.signal.action);
 
+    const s = this._s();
+    const sym = this.getCurrentSymbol();
+
     if (action === SIGNAL_ACTIONS.OPEN_LONG) {
-      this._positionSide = 'long';
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      s.positionSide = 'long';
+      if (fill.price !== undefined) s.entryPrice = String(fill.price);
+      log.trade('Long fill recorded', { entry: s.entryPrice, symbol: sym });
     } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
-      this._positionSide = 'short';
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      s.positionSide = 'short';
+      if (fill.price !== undefined) s.entryPrice = String(fill.price);
+      log.trade('Short fill recorded', { entry: s.entryPrice, symbol: sym });
     } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
-      log.trade('Position closed via fill', { side: this._positionSide, symbol: this._symbol });
+      log.trade('Position closed via fill', { side: s.positionSide, symbol: sym });
       this._resetPosition();
     }
   }
@@ -598,7 +626,7 @@ class FibonacciRetracementStrategy extends StrategyBase {
 
   /** @returns {object|null} most recent signal */
   getSignal() {
-    return this._lastSignal;
+    return this._s().lastSignal;
   }
 
   // --------------------------------------------------------------------------
@@ -613,19 +641,21 @@ class FibonacciRetracementStrategy extends StrategyBase {
    * @param {object} context
    */
   _emitCloseSignal(side, price, reason, context) {
+    const s = this._s();
+    const sym = this.getCurrentSymbol();
     const action = side === 'long' ? SIGNAL_ACTIONS.CLOSE_LONG : SIGNAL_ACTIONS.CLOSE_SHORT;
     const signal = {
       action,
-      symbol: this._symbol,
+      symbol: sym,
       category: this._category,
       suggestedQty: this.config.positionSizePercent,
       suggestedPrice: price,
       reduceOnly: true,
       confidence: toFixed('0.9000', 4),
       reason,
-      marketContext: { ...context, currentPrice: price, atr: this._latestAtr },
+      marketContext: { ...context, currentPrice: price, atr: s.latestAtr },
     };
-    this._lastSignal = signal;
+    s.lastSignal = signal;
     this.emitSignal(signal);
   }
 
@@ -633,18 +663,19 @@ class FibonacciRetracementStrategy extends StrategyBase {
    * Update trailing stop price. Ratchets only — longs move up, shorts down.
    */
   _updateTrailingStop() {
-    if (this._latestAtr === null) return;
-    const trailDist = multiply(this.config.trailingDistanceAtr, this._latestAtr);
+    const s = this._s();
+    if (s.latestAtr === null) return;
+    const trailDist = multiply(this.config.trailingDistanceAtr, s.latestAtr);
 
-    if (this._positionSide === 'long' && this._highestSinceEntry !== null) {
-      const newStop = subtract(this._highestSinceEntry, trailDist);
-      if (this._trailingStopPrice === null || isGreaterThan(newStop, this._trailingStopPrice)) {
-        this._trailingStopPrice = newStop;
+    if (s.positionSide === 'long' && s.highestSinceEntry !== null) {
+      const newStop = subtract(s.highestSinceEntry, trailDist);
+      if (s.trailingStopPrice === null || isGreaterThan(newStop, s.trailingStopPrice)) {
+        s.trailingStopPrice = newStop;
       }
-    } else if (this._positionSide === 'short' && this._lowestSinceEntry !== null) {
-      const newStop = add(this._lowestSinceEntry, trailDist);
-      if (this._trailingStopPrice === null || isLessThan(newStop, this._trailingStopPrice)) {
-        this._trailingStopPrice = newStop;
+    } else if (s.positionSide === 'short' && s.lowestSinceEntry !== null) {
+      const newStop = add(s.lowestSinceEntry, trailDist);
+      if (s.trailingStopPrice === null || isLessThan(newStop, s.trailingStopPrice)) {
+        s.trailingStopPrice = newStop;
       }
     }
   }
@@ -653,16 +684,17 @@ class FibonacciRetracementStrategy extends StrategyBase {
    * Reset all position-tracking state after a full exit.
    */
   _resetPosition() {
-    this._entryPrice = null;
-    this._positionSide = null;
-    this._stopPrice = null;
-    this._tp1Price = null;
-    this._tp2Price = null;
-    this._partialTaken = false;
-    this._trailingActive = false;
-    this._trailingStopPrice = null;
-    this._highestSinceEntry = null;
-    this._lowestSinceEntry = null;
+    const s = this._s();
+    s.entryPrice = null;
+    s.positionSide = null;
+    s.stopPrice = null;
+    s.tp1Price = null;
+    s.tp2Price = null;
+    s.partialTaken = false;
+    s.trailingActive = false;
+    s.trailingStopPrice = null;
+    s.highestSinceEntry = null;
+    s.lowestSinceEntry = null;
   }
 }
 

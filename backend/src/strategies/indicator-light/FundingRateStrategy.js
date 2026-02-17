@@ -44,6 +44,7 @@ class FundingRateStrategy extends StrategyBase {
     targetRegimes: ['trending_up', 'trending_down', 'volatile'],
     riskLevel: 'low',
     maxConcurrentPositions: 2,
+    maxSymbolsPerStrategy: 3,
     cooldownMs: 60000,
     gracePeriodMs: 300000,
     warmupCandles: 1,
@@ -82,31 +83,29 @@ class FundingRateStrategy extends StrategyBase {
     this._slPercent = merged.slPercent;                         // e.g. '2' (%)
     this._maxHoldHours = merged.maxHoldHours;                   // e.g. 24
 
-    // --- Internal state ------------------------------------------------------
-    /** @type {{ rate: string, timestamp: Date }[]} */
-    this._fundingRateHistory = [];
-
-    /** @type {{ oi: string, timestamp: Date }[]} */
-    this._oiHistory = [];
-
-    /** @type {string[]} — close prices for SMA calculation */
-    this._priceHistory = [];
-
-    this._lastSignal = null;
-    this._latestPrice = null;
-    this._entryPrice = null;
-    this._entryTime = null;
-
     /** Maximum number of history entries to retain */
     this._maxHistory = 250;
 
-    // Side of the currently open position ('long' | 'short' | null)
-    this._positionSide = null;
-
-    // Whether a partial exit (funding normalisation) has already fired
-    this._partialExitDone = false;
-
     log.info('FundingRateStrategy instantiated', { config: merged });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Per-symbol state (SymbolState pattern)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * @override
+   * @returns {object} default per-symbol state
+   */
+  _createDefaultState() {
+    return {
+      ...super._createDefaultState(),
+      fundingRateHistory: [],
+      oiHistory: [],
+      priceHistory: [],
+      entryTime: null,
+      partialExitDone: false,
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -130,41 +129,41 @@ class FundingRateStrategy extends StrategyBase {
 
     // --- Store latest price ---------------------------------------------------
     if (ticker.lastPrice || ticker.last) {
-      this._latestPrice = String(ticker.lastPrice || ticker.last);
+      this._s().latestPrice = String(ticker.lastPrice || ticker.last);
     }
 
     // --- Funding rate ingestion -----------------------------------------------
     if (ticker.fundingRate !== undefined && ticker.fundingRate !== null) {
-      this._fundingRateHistory.push({
+      this._s().fundingRateHistory.push({
         rate: String(ticker.fundingRate),
         timestamp: new Date(),
       });
 
       // Trim to last ~21 entries (7 days x 3 settlements per day)
-      if (this._fundingRateHistory.length > 63) {
-        this._fundingRateHistory = this._fundingRateHistory.slice(-63);
+      if (this._s().fundingRateHistory.length > 63) {
+        this._s().fundingRateHistory = this._s().fundingRateHistory.slice(-63);
       }
 
       log.debug('Funding rate recorded', {
         rate: ticker.fundingRate,
-        historyLen: this._fundingRateHistory.length,
+        historyLen: this._s().fundingRateHistory.length,
       });
     }
 
     // --- Open-interest ingestion ----------------------------------------------
     if (ticker.openInterest !== undefined && ticker.openInterest !== null) {
-      this._oiHistory.push({
+      this._s().oiHistory.push({
         oi: String(ticker.openInterest),
         timestamp: new Date(),
       });
 
-      if (this._oiHistory.length > this._maxHistory) {
-        this._oiHistory = this._oiHistory.slice(-this._maxHistory);
+      if (this._s().oiHistory.length > this._maxHistory) {
+        this._s().oiHistory = this._s().oiHistory.slice(-this._maxHistory);
       }
     }
 
     // --- Position monitoring (exit logic) -------------------------------------
-    if (this._positionSide && this._entryPrice && this._latestPrice) {
+    if (this._s().positionSide && this._s().entryPrice && this._s().latestPrice) {
       this._checkExitConditions();
     }
   }
@@ -187,29 +186,29 @@ class FundingRateStrategy extends StrategyBase {
     const close = String(kline.close || kline.c);
     if (!close || isZero(close)) return;
 
-    this._priceHistory.push(close);
-    if (this._priceHistory.length > this._maxHistory) {
-      this._priceHistory = this._priceHistory.slice(-this._maxHistory);
+    this._s().priceHistory.push(close);
+    if (this._s().priceHistory.length > this._maxHistory) {
+      this._s().priceHistory = this._s().priceHistory.slice(-this._maxHistory);
     }
 
     // Need at least 20 candles to compute SMA(20)
-    if (this._priceHistory.length < 20) return;
+    if (this._s().priceHistory.length < 20) return;
 
     // --- SMA(20) calculation --------------------------------------------------
     const sma20 = this._calculateSMA(20);
     if (!sma20) return;
 
     // --- Skip entry evaluation if already in a position -----------------------
-    if (this._positionSide) return;
+    if (this._s().positionSide) return;
 
     // --- Funding rate analysis ------------------------------------------------
-    if (this._fundingRateHistory.length < this._consecutivePeriods) return;
+    if (this._s().fundingRateHistory.length < this._consecutivePeriods) return;
 
-    const latestFunding = this._fundingRateHistory[this._fundingRateHistory.length - 1].rate;
+    const latestFunding = this._s().fundingRateHistory[this._s().fundingRateHistory.length - 1].rate;
     const direction = this._getConsecutiveFundingDirection();
     const oiChange = this._getOiChange24h();
 
-    const currentPrice = this._latestPrice || close;
+    const currentPrice = this._s().latestPrice || close;
 
     // --- Long entry evaluation ------------------------------------------------
     if (
@@ -223,9 +222,9 @@ class FundingRateStrategy extends StrategyBase {
       const confidence = this._calculateLongConfidence(latestFunding, oiChange);
       const qty = this._calculatePositionSize(currentPrice);
 
-      this._lastSignal = {
+      this._s().lastSignal = {
         action: SIGNAL_ACTIONS.OPEN_LONG,
-        symbol: this._symbol,
+        symbol: this.getCurrentSymbol(),
         category: this._category,
         suggestedQty: qty,
         suggestedPrice: currentPrice,
@@ -242,11 +241,11 @@ class FundingRateStrategy extends StrategyBase {
         },
       };
 
-      this.emitSignal(this._lastSignal);
-      this._positionSide = 'long';
-      this._entryPrice = currentPrice;
-      this._entryTime = new Date();
-      this._partialExitDone = false;
+      this.emitSignal(this._s().lastSignal);
+      this._s().positionSide = 'long';
+      this._s().entryPrice = currentPrice;
+      this._s().entryTime = new Date();
+      this._s().partialExitDone = false;
 
       log.trade('Long entry signal generated', {
         fundingRate: latestFunding,
@@ -270,9 +269,9 @@ class FundingRateStrategy extends StrategyBase {
       const confidence = this._calculateShortConfidence(latestFunding, oiChange);
       const qty = this._calculatePositionSize(currentPrice);
 
-      this._lastSignal = {
+      this._s().lastSignal = {
         action: SIGNAL_ACTIONS.OPEN_SHORT,
-        symbol: this._symbol,
+        symbol: this.getCurrentSymbol(),
         category: this._category,
         suggestedQty: qty,
         suggestedPrice: currentPrice,
@@ -289,11 +288,11 @@ class FundingRateStrategy extends StrategyBase {
         },
       };
 
-      this.emitSignal(this._lastSignal);
-      this._positionSide = 'short';
-      this._entryPrice = currentPrice;
-      this._entryTime = new Date();
-      this._partialExitDone = false;
+      this.emitSignal(this._s().lastSignal);
+      this._s().positionSide = 'short';
+      this._s().entryPrice = currentPrice;
+      this._s().entryTime = new Date();
+      this._s().partialExitDone = false;
 
       log.trade('Short entry signal generated', {
         fundingRate: latestFunding,
@@ -316,15 +315,15 @@ class FundingRateStrategy extends StrategyBase {
     const action = fill.action || (fill.signal && fill.signal.action);
 
     if (action === SIGNAL_ACTIONS.OPEN_LONG) {
-      this._positionSide = 'long';
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      this._s().positionSide = 'long';
+      if (fill.price !== undefined) this._s().entryPrice = String(fill.price);
+      log.trade('Long fill recorded', { entry: this._s().entryPrice, symbol: this.getCurrentSymbol() });
     } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
-      this._positionSide = 'short';
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      this._s().positionSide = 'short';
+      if (fill.price !== undefined) this._s().entryPrice = String(fill.price);
+      log.trade('Short fill recorded', { entry: this._s().entryPrice, symbol: this.getCurrentSymbol() });
     } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
-      log.trade('Position closed via fill', { side: this._positionSide, symbol: this._symbol });
+      log.trade('Position closed via fill', { side: this._s().positionSide, symbol: this.getCurrentSymbol() });
       this._resetPosition();
     }
   }
@@ -336,26 +335,28 @@ class FundingRateStrategy extends StrategyBase {
    * @param {{ symbol: string, fundingRate: string|null, openInterest: string|null, timestamp: number }} data
    */
   onFundingUpdate(data) {
-    if (data.symbol !== this._symbol) return; // Only process relevant symbol
+    if (!this.hasSymbol(data.symbol)) return; // Only process relevant symbols
+
+    const s = this._s(data.symbol);
 
     if (data.fundingRate !== null && data.fundingRate !== undefined) {
-      this._fundingRateHistory.push({
+      s.fundingRateHistory.push({
         rate: String(data.fundingRate),
         timestamp: new Date(data.timestamp || Date.now()),
       });
       // Trim history
-      while (this._fundingRateHistory.length > this._maxHistory) {
-        this._fundingRateHistory.shift();
+      while (s.fundingRateHistory.length > this._maxHistory) {
+        s.fundingRateHistory.shift();
       }
     }
 
     if (data.openInterest !== null && data.openInterest !== undefined) {
-      this._oiHistory.push({
+      s.oiHistory.push({
         oi: String(data.openInterest),
         timestamp: new Date(data.timestamp || Date.now()),
       });
-      while (this._oiHistory.length > this._maxHistory) {
-        this._oiHistory.shift();
+      while (s.oiHistory.length > this._maxHistory) {
+        s.oiHistory.shift();
       }
     }
   }
@@ -365,7 +366,7 @@ class FundingRateStrategy extends StrategyBase {
    * @returns {object|null}
    */
   getSignal() {
-    return this._lastSignal;
+    return this._s().lastSignal;
   }
 
   // ---------------------------------------------------------------------------
@@ -378,9 +379,9 @@ class FundingRateStrategy extends StrategyBase {
    * @private
    */
   _checkExitConditions() {
-    const price = this._latestPrice;
-    const entry = this._entryPrice;
-    const side = this._positionSide;
+    const price = this._s().latestPrice;
+    const entry = this._s().entryPrice;
+    const side = this._s().positionSide;
 
     // --- Take-Profit ----------------------------------------------------------
     if (side === 'long') {
@@ -413,8 +414,8 @@ class FundingRateStrategy extends StrategyBase {
     }
 
     // --- 24-hour time limit ---------------------------------------------------
-    if (this._entryTime) {
-      const elapsed = Date.now() - this._entryTime.getTime();
+    if (this._s().entryTime) {
+      const elapsed = Date.now() - this._s().entryTime.getTime();
       const limitMs = this._maxHoldHours * 60 * 60 * 1000;
 
       if (elapsed >= limitMs) {
@@ -427,8 +428,8 @@ class FundingRateStrategy extends StrategyBase {
     }
 
     // --- Funding rate normalisation (partial exit — 50%) ----------------------
-    if (!this._partialExitDone && this._fundingRateHistory.length > 0) {
-      const latestRate = this._fundingRateHistory[this._fundingRateHistory.length - 1].rate;
+    if (!this._s().partialExitDone && this._s().fundingRateHistory.length > 0) {
+      const latestRate = this._s().fundingRateHistory[this._s().fundingRateHistory.length - 1].rate;
 
       if (side === 'long' && isGreaterThanOrEqual(latestRate, '0')) {
         // Funding has normalised for a long (was negative, now >= 0)
@@ -457,36 +458,36 @@ class FundingRateStrategy extends StrategyBase {
    * @param {string} reason
    */
   _emitClose(action, reason) {
-    this._lastSignal = {
+    this._s().lastSignal = {
       action,
-      symbol: this._symbol,
+      symbol: this.getCurrentSymbol(),
       category: this._category,
-      suggestedPrice: this._latestPrice,
+      suggestedPrice: this._s().latestPrice,
       reduceOnly: true,
       confidence: '1.0000',
       leverage: '3',
       marketContext: {
         strategy: 'FundingRateStrategy',
         reason,
-        entryPrice: this._entryPrice,
-        exitPrice: this._latestPrice,
+        entryPrice: this._s().entryPrice,
+        exitPrice: this._s().latestPrice,
       },
     };
 
-    this.emitSignal(this._lastSignal);
+    this.emitSignal(this._s().lastSignal);
 
     log.trade('Close signal generated', {
       action,
       reason,
-      entryPrice: this._entryPrice,
-      exitPrice: this._latestPrice,
+      entryPrice: this._s().entryPrice,
+      exitPrice: this._s().latestPrice,
     });
 
     // Reset position state
-    this._positionSide = null;
-    this._entryPrice = null;
-    this._entryTime = null;
-    this._partialExitDone = false;
+    this._s().positionSide = null;
+    this._s().entryPrice = null;
+    this._s().entryTime = null;
+    this._s().partialExitDone = false;
   }
 
   /**
@@ -496,11 +497,11 @@ class FundingRateStrategy extends StrategyBase {
    * @param {string} reason
    */
   _emitPartialClose(action, reason) {
-    this._lastSignal = {
+    this._s().lastSignal = {
       action,
-      symbol: this._symbol,
+      symbol: this.getCurrentSymbol(),
       category: this._category,
-      suggestedPrice: this._latestPrice,
+      suggestedPrice: this._s().latestPrice,
       suggestedQty: '50%',
       reduceOnly: true,
       confidence: '0.8000',
@@ -509,20 +510,32 @@ class FundingRateStrategy extends StrategyBase {
         strategy: 'FundingRateStrategy',
         reason,
         partialExit: true,
-        entryPrice: this._entryPrice,
-        currentPrice: this._latestPrice,
+        entryPrice: this._s().entryPrice,
+        currentPrice: this._s().latestPrice,
       },
     };
 
-    this.emitSignal(this._lastSignal);
-    this._partialExitDone = true;
+    this.emitSignal(this._s().lastSignal);
+    this._s().partialExitDone = true;
 
     log.trade('Partial close signal generated (50%)', {
       action,
       reason,
-      entryPrice: this._entryPrice,
-      currentPrice: this._latestPrice,
+      entryPrice: this._s().entryPrice,
+      currentPrice: this._s().latestPrice,
     });
+  }
+
+  /**
+   * Reset position tracking state after full exit.
+   * @private
+   */
+  _resetPosition() {
+    const s = this._s();
+    s.positionSide = null;
+    s.entryPrice = null;
+    s.entryTime = null;
+    s.partialExitDone = false;
   }
 
   // ---------------------------------------------------------------------------
@@ -540,9 +553,9 @@ class FundingRateStrategy extends StrategyBase {
    */
   _getConsecutiveFundingDirection() {
     const n = this._consecutivePeriods;
-    if (this._fundingRateHistory.length < n) return null;
+    if (this._s().fundingRateHistory.length < n) return null;
 
-    const recent = this._fundingRateHistory.slice(-n);
+    const recent = this._s().fundingRateHistory.slice(-n);
 
     const allNegative = recent.every((entry) => isLessThan(entry.rate, '0'));
     if (allNegative) return 'negative';
@@ -561,16 +574,16 @@ class FundingRateStrategy extends StrategyBase {
    * @private
    */
   _getOiChange24h() {
-    if (this._oiHistory.length < 2) return null;
+    if (this._s().oiHistory.length < 2) return null;
 
     const now = Date.now();
     const cutoff = now - 24 * 60 * 60 * 1000;
 
     // Find the earliest entry that is at or before ~24h ago
     let oldest = null;
-    for (let i = 0; i < this._oiHistory.length; i++) {
-      if (this._oiHistory[i].timestamp.getTime() <= cutoff) {
-        oldest = this._oiHistory[i];
+    for (let i = 0; i < this._s().oiHistory.length; i++) {
+      if (this._s().oiHistory[i].timestamp.getTime() <= cutoff) {
+        oldest = this._s().oiHistory[i];
       } else {
         break;
       }
@@ -578,10 +591,10 @@ class FundingRateStrategy extends StrategyBase {
 
     // If no entry is 24h old yet, use the earliest available
     if (!oldest) {
-      oldest = this._oiHistory[0];
+      oldest = this._s().oiHistory[0];
     }
 
-    const latest = this._oiHistory[this._oiHistory.length - 1];
+    const latest = this._s().oiHistory[this._s().oiHistory.length - 1];
 
     if (isZero(oldest.oi)) return null;
 
@@ -675,9 +688,9 @@ class FundingRateStrategy extends StrategyBase {
    * @private
    */
   _calculateSMA(period) {
-    if (this._priceHistory.length < period) return null;
+    if (this._s().priceHistory.length < period) return null;
 
-    const slice = this._priceHistory.slice(-period);
+    const slice = this._s().priceHistory.slice(-period);
     let sum = '0';
     for (let i = 0; i < slice.length; i++) {
       sum = add(sum, slice[i]);

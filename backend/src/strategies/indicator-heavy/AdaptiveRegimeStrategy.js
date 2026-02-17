@@ -42,6 +42,7 @@ class AdaptiveRegimeStrategy extends StrategyBase {
     targetRegimes: ['trending_up', 'trending_down', 'ranging', 'volatile', 'quiet'],
     riskLevel: 'medium',
     maxConcurrentPositions: 1,
+    maxSymbolsPerStrategy: 3,
     cooldownMs: 120000,
     gracePeriodMs: 0,
     warmupCandles: 43,
@@ -88,24 +89,34 @@ class AdaptiveRegimeStrategy extends StrategyBase {
     this._trendLeverage = merged.trendLeverage;
     this._rangeLeverage = merged.rangeLeverage;
     this._volatileLeverage = merged.volatileLeverage;
+  }
 
-    // EMA values (String | null) — incremental, kept across klines
-    this._emaFast = null;
-    this._emaSlow = null;
+  // ---------------------------------------------------------------------------
+  // Per-symbol state (SymbolState pattern)
+  // ---------------------------------------------------------------------------
 
-    // Signal / position state
-    this._lastSignal = null;
-    this._latestPrice = null;
-    this._entryPrice = null;
-    this._positionSide = null;    // 'long' | 'short' | null
-    this._entryRegime = null;     // regime when position was opened
+  /**
+   * Override to add strategy-specific per-symbol fields.
+   * @returns {object}
+   */
+  _createDefaultState() {
+    return {
+      ...super._createDefaultState(),
 
-    // Trailing stop tracking
-    this._highestSinceEntry = null;
-    this._lowestSinceEntry = null;
+      // EMA values (String | null) — incremental, kept across klines
+      emaFast: null,
+      emaSlow: null,
 
-    // AD-37: Pending entry regime — set at signal time, applied at fill time
-    this._pendingEntryRegime = null;
+      // Regime when position was opened
+      entryRegime: null,
+
+      // Trailing stop tracking
+      highestSinceEntry: null,
+      lowestSinceEntry: null,
+
+      // AD-37: Pending entry regime — set at signal time, applied at fill time
+      pendingEntryRegime: null,
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -122,22 +133,24 @@ class AdaptiveRegimeStrategy extends StrategyBase {
     const price = String(ticker.lastPrice || ticker.last || ticker.price);
     if (!price || price === 'undefined' || price === 'null') return;
 
-    this._latestPrice = price;
+    const s = this._s();
+    const sym = this.getCurrentSymbol();
+    s.latestPrice = price;
 
     // No position open — nothing to monitor
-    if (!this._entryPrice || !this._positionSide) return;
+    if (!s.entryPrice || !s.positionSide) return;
 
-    const isLong = this._positionSide === 'long';
-    const isShort = this._positionSide === 'short';
+    const isLong = s.positionSide === 'long';
+    const isShort = s.positionSide === 'short';
 
     // Update trailing extremes
     if (isLong) {
-      this._highestSinceEntry = this._highestSinceEntry
-        ? max(this._highestSinceEntry, price)
+      s.highestSinceEntry = s.highestSinceEntry
+        ? max(s.highestSinceEntry, price)
         : price;
     } else {
-      this._lowestSinceEntry = this._lowestSinceEntry
-        ? min(this._lowestSinceEntry, price)
+      s.lowestSinceEntry = s.lowestSinceEntry
+        ? min(s.lowestSinceEntry, price)
         : price;
     }
 
@@ -145,29 +158,29 @@ class AdaptiveRegimeStrategy extends StrategyBase {
     const regime = this.getEffectiveRegime();
     if (isLong && regime === MARKET_REGIMES.TRENDING_DOWN) {
       log.trade('Regime incompatibility — closing long in TRENDING_DOWN', {
-        symbol: this._symbol, price, regime,
+        symbol: sym, price, regime,
       });
       this._emitExit(SIGNAL_ACTIONS.CLOSE_LONG, price, 'regime_incompatible');
       return;
     }
     if (isShort && regime === MARKET_REGIMES.TRENDING_UP) {
       log.trade('Regime incompatibility — closing short in TRENDING_UP', {
-        symbol: this._symbol, price, regime,
+        symbol: sym, price, regime,
       });
       this._emitExit(SIGNAL_ACTIONS.CLOSE_SHORT, price, 'regime_incompatible');
       return;
     }
 
     // Need ATR for dynamic SL / trailing — require indicator cache
-    const atrVal = this._indicatorCache.get(this._symbol, 'atr', { period: this._atrPeriod });
+    const atrVal = this._indicatorCache.get(sym, 'atr', { period: this._atrPeriod });
     if (!atrVal) return;
 
     // --- 2) Dynamic stop-loss check ---
-    const slMultiplier = this._isTrendRegime(this._entryRegime) ? '1.5' : '0.8';
+    const slMultiplier = this._isTrendRegime(s.entryRegime) ? '1.5' : '0.8';
     const slDistance = multiply(atrVal, slMultiplier);
 
     if (isLong) {
-      const slPrice = subtract(this._entryPrice, slDistance);
+      const slPrice = subtract(s.entryPrice, slDistance);
       if (isLessThan(price, slPrice)) {
         log.trade('Dynamic SL hit (long)', { price, slPrice, atr: atrVal });
         this._emitExit(SIGNAL_ACTIONS.CLOSE_LONG, price, 'stop_loss');
@@ -175,7 +188,7 @@ class AdaptiveRegimeStrategy extends StrategyBase {
       }
     }
     if (isShort) {
-      const slPrice = add(this._entryPrice, slDistance);
+      const slPrice = add(s.entryPrice, slDistance);
       if (isGreaterThan(price, slPrice)) {
         log.trade('Dynamic SL hit (short)', { price, slPrice, atr: atrVal });
         this._emitExit(SIGNAL_ACTIONS.CLOSE_SHORT, price, 'stop_loss');
@@ -184,25 +197,25 @@ class AdaptiveRegimeStrategy extends StrategyBase {
     }
 
     // --- 3) Trailing stop (trend regimes only) ---
-    if (this._isTrendRegime(this._entryRegime)) {
+    if (this._isTrendRegime(s.entryRegime)) {
       const trailDistance = multiply(atrVal, '1');
 
-      if (isLong && this._highestSinceEntry) {
-        const trailingStop = subtract(this._highestSinceEntry, trailDistance);
+      if (isLong && s.highestSinceEntry) {
+        const trailingStop = subtract(s.highestSinceEntry, trailDistance);
         if (isLessThan(price, trailingStop)) {
           log.trade('Trailing stop hit (long)', {
-            price, highest: this._highestSinceEntry, trailingStop,
+            price, highest: s.highestSinceEntry, trailingStop,
           });
           this._emitExit(SIGNAL_ACTIONS.CLOSE_LONG, price, 'trailing_stop');
           return;
         }
       }
 
-      if (isShort && this._lowestSinceEntry) {
-        const trailingStop = add(this._lowestSinceEntry, trailDistance);
+      if (isShort && s.lowestSinceEntry) {
+        const trailingStop = add(s.lowestSinceEntry, trailDistance);
         if (isGreaterThan(price, trailingStop)) {
           log.trade('Trailing stop hit (short)', {
-            price, lowest: this._lowestSinceEntry, trailingStop,
+            price, lowest: s.lowestSinceEntry, trailingStop,
           });
           this._emitExit(SIGNAL_ACTIONS.CLOSE_SHORT, price, 'trailing_stop');
           return;
@@ -226,6 +239,8 @@ class AdaptiveRegimeStrategy extends StrategyBase {
     const high = String(kline.high);
     const low = String(kline.low);
     const volume = String(kline.volume || '0');
+    const sym = this.getCurrentSymbol();
+    const s = this._s();
 
     // ------ 1) Check if enough data for all indicators ------
     const minRequired = Math.max(
@@ -234,7 +249,7 @@ class AdaptiveRegimeStrategy extends StrategyBase {
       this._adxPeriod * 2 + 1,
       this._emaPeriodSlow,
     );
-    const hist = this._indicatorCache.getHistory(this._symbol);
+    const hist = this._indicatorCache.getHistory(sym);
     if (!hist || hist.closes.length < minRequired) {
       log.debug('Warming up — not enough data', {
         have: hist ? hist.closes.length : 0, need: minRequired,
@@ -246,41 +261,41 @@ class AdaptiveRegimeStrategy extends StrategyBase {
     const c = this._indicatorCache;
 
     // EMA fast/slow (incremental when available, seed from cache)
-    if (this._emaFast !== null) {
-      this._emaFast = emaStep(this._emaFast, close, this._emaPeriodFast);
+    if (s.emaFast !== null) {
+      s.emaFast = emaStep(s.emaFast, close, this._emaPeriodFast);
     } else {
-      this._emaFast = c.get(this._symbol, 'ema', { period: this._emaPeriodFast });
+      s.emaFast = c.get(sym, 'ema', { period: this._emaPeriodFast });
     }
 
-    if (this._emaSlow !== null) {
-      this._emaSlow = emaStep(this._emaSlow, close, this._emaPeriodSlow);
+    if (s.emaSlow !== null) {
+      s.emaSlow = emaStep(s.emaSlow, close, this._emaPeriodSlow);
     } else {
-      this._emaSlow = c.get(this._symbol, 'ema', { period: this._emaPeriodSlow });
+      s.emaSlow = c.get(sym, 'ema', { period: this._emaPeriodSlow });
     }
 
-    const rsiVal = c.get(this._symbol, 'rsi', { period: this._rsiPeriod });
-    const adxVal = c.get(this._symbol, 'adx', { period: this._adxPeriod });
-    const atrVal = c.get(this._symbol, 'atr', { period: this._atrPeriod });
-    const bb = c.get(this._symbol, 'bb', { period: this._bbPeriod, stdDev: this._bbStdDev });
+    const rsiVal = c.get(sym, 'rsi', { period: this._rsiPeriod });
+    const adxVal = c.get(sym, 'adx', { period: this._adxPeriod });
+    const atrVal = c.get(sym, 'atr', { period: this._atrPeriod });
+    const bb = c.get(sym, 'bb', { period: this._bbPeriod, stdDev: this._bbStdDev });
 
     // If any critical indicator is null, skip
-    if (!this._emaFast || !this._emaSlow || !rsiVal || !adxVal || !atrVal || !bb) {
+    if (!s.emaFast || !s.emaSlow || !rsiVal || !adxVal || !atrVal || !bb) {
       log.debug('One or more indicators returned null — skipping');
       return;
     }
 
     // Volume surge check (pass current candle's volume for comparison)
-    const volumeSurge = this._checkVolumeSurge();
+    const volumeSurge = this._checkVolumeSurge(sym);
 
     const regime = this.getEffectiveRegime();
 
     // ------ 3) If position open, check dynamic TP ------
-    if (this._entryPrice && this._positionSide) {
-      const tpMultiplier = this._isTrendRegime(this._entryRegime) ? '2' : '1';
+    if (s.entryPrice && s.positionSide) {
+      const tpMultiplier = this._isTrendRegime(s.entryRegime) ? '2' : '1';
       const tpDistance = multiply(atrVal, tpMultiplier);
 
-      if (this._positionSide === 'long') {
-        const tpPrice = add(this._entryPrice, tpDistance);
+      if (s.positionSide === 'long') {
+        const tpPrice = add(s.entryPrice, tpDistance);
         if (isGreaterThan(close, tpPrice)) {
           log.trade('Dynamic TP hit (long)', { close, tpPrice, atr: atrVal });
           this._emitExit(SIGNAL_ACTIONS.CLOSE_LONG, close, 'take_profit');
@@ -288,8 +303,8 @@ class AdaptiveRegimeStrategy extends StrategyBase {
         }
       }
 
-      if (this._positionSide === 'short') {
-        const tpPrice = subtract(this._entryPrice, tpDistance);
+      if (s.positionSide === 'short') {
+        const tpPrice = subtract(s.entryPrice, tpDistance);
         if (isLessThan(close, tpPrice)) {
           log.trade('Dynamic TP hit (short)', { close, tpPrice, atr: atrVal });
           this._emitExit(SIGNAL_ACTIONS.CLOSE_SHORT, close, 'take_profit');
@@ -299,15 +314,15 @@ class AdaptiveRegimeStrategy extends StrategyBase {
     }
 
     // ------ 4) If no position, check entry based on current regime ------
-    if (this._entryPrice) return; // Already in position — skip entry
+    if (s.entryPrice) return; // Already in position — skip entry
 
     // Early exit if regime is null — AdaptiveRegime fundamentally depends on knowing the regime
     if (regime === null) return;
 
     const marketContext = {
       regime,
-      emaFast: this._emaFast,
-      emaSlow: this._emaSlow,
+      emaFast: s.emaFast,
+      emaSlow: s.emaSlow,
       rsi: rsiVal,
       adx: adxVal,
       atr: atrVal,
@@ -329,7 +344,7 @@ class AdaptiveRegimeStrategy extends StrategyBase {
     // QUIET regime — no entry, data accumulation only
 
     if (signal) {
-      this._lastSignal = signal;
+      s.lastSignal = signal;
       this.emitSignal(signal);
     }
   }
@@ -343,7 +358,7 @@ class AdaptiveRegimeStrategy extends StrategyBase {
    * @returns {object|null}
    */
   getSignal() {
-    return this._lastSignal;
+    return this._s().lastSignal;
   }
 
   // ---------------------------------------------------------------------------
@@ -362,27 +377,29 @@ class AdaptiveRegimeStrategy extends StrategyBase {
     if (!fill) return;
     const action = fill.action || (fill.signal && fill.signal.action);
     const fillPrice = fill.price !== undefined ? String(fill.price) : null;
+    const sym = fill.symbol || this.getCurrentSymbol();
+    const s = this._s(sym);
 
     // AD-37: Set all position state ONLY on confirmed fill
     if (action === SIGNAL_ACTIONS.OPEN_LONG) {
-      this._positionSide = 'long';
-      this._entryPrice = fillPrice || this._latestPrice;
-      this._entryRegime = this._pendingEntryRegime || this.getEffectiveRegime();
-      this._highestSinceEntry = this._entryPrice;
-      this._lowestSinceEntry = null;
-      this._pendingEntryRegime = null;
-      log.trade('Long fill recorded', { entry: this._entryPrice, regime: this._entryRegime, symbol: this._symbol });
+      s.positionSide = 'long';
+      s.entryPrice = fillPrice || s.latestPrice;
+      s.entryRegime = s.pendingEntryRegime || this.getEffectiveRegime();
+      s.highestSinceEntry = s.entryPrice;
+      s.lowestSinceEntry = null;
+      s.pendingEntryRegime = null;
+      log.trade('Long fill recorded', { entry: s.entryPrice, regime: s.entryRegime, symbol: sym });
     } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
-      this._positionSide = 'short';
-      this._entryPrice = fillPrice || this._latestPrice;
-      this._entryRegime = this._pendingEntryRegime || this.getEffectiveRegime();
-      this._lowestSinceEntry = this._entryPrice;
-      this._highestSinceEntry = null;
-      this._pendingEntryRegime = null;
-      log.trade('Short fill recorded', { entry: this._entryPrice, regime: this._entryRegime, symbol: this._symbol });
+      s.positionSide = 'short';
+      s.entryPrice = fillPrice || s.latestPrice;
+      s.entryRegime = s.pendingEntryRegime || this.getEffectiveRegime();
+      s.lowestSinceEntry = s.entryPrice;
+      s.highestSinceEntry = null;
+      s.pendingEntryRegime = null;
+      log.trade('Short fill recorded', { entry: s.entryPrice, regime: s.entryRegime, symbol: sym });
     } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
-      log.trade('Position closed via fill', { side: this._positionSide, symbol: this._symbol });
-      this._resetPosition();
+      log.trade('Position closed via fill', { side: s.positionSide, symbol: sym });
+      this._resetPosition(sym);
     }
   }
 
@@ -395,7 +412,9 @@ class AdaptiveRegimeStrategy extends StrategyBase {
    * @returns {object|null}
    */
   _checkTrendUpEntry(price, rsiVal, adxVal, marketContext) {
-    const emaFastAboveSlow = isGreaterThan(this._emaFast, this._emaSlow);
+    const s = this._s();
+    const sym = this.getCurrentSymbol();
+    const emaFastAboveSlow = isGreaterThan(s.emaFast, s.emaSlow);
     const rsiPullback = isGreaterThan(rsiVal, '40') && isLessThan(rsiVal, '50');
     const adxStrong = isGreaterThan(adxVal, '25');
 
@@ -403,15 +422,15 @@ class AdaptiveRegimeStrategy extends StrategyBase {
       const confidence = this._calcConfidence(adxVal, rsiVal, false);
 
       log.trade('Trend-up long entry', {
-        symbol: this._symbol, price, rsi: rsiVal, adx: adxVal,
+        symbol: sym, price, rsi: rsiVal, adx: adxVal,
       });
 
       // AD-37: Do NOT set position state here — defer to onFill()
-      this._pendingEntryRegime = MARKET_REGIMES.TRENDING_UP;
+      s.pendingEntryRegime = MARKET_REGIMES.TRENDING_UP;
 
       return {
         action: SIGNAL_ACTIONS.OPEN_LONG,
-        symbol: this._symbol,
+        symbol: sym,
         category: this._category,
         suggestedQty: this._trendPositionSizePercent,
         suggestedPrice: price,
@@ -431,7 +450,9 @@ class AdaptiveRegimeStrategy extends StrategyBase {
    * @returns {object|null}
    */
   _checkTrendDownEntry(price, rsiVal, adxVal, marketContext) {
-    const emaFastBelowSlow = isLessThan(this._emaFast, this._emaSlow);
+    const s = this._s();
+    const sym = this.getCurrentSymbol();
+    const emaFastBelowSlow = isLessThan(s.emaFast, s.emaSlow);
     const rsiRally = isGreaterThan(rsiVal, '50') && isLessThan(rsiVal, '60');
     const adxStrong = isGreaterThan(adxVal, '25');
 
@@ -439,15 +460,15 @@ class AdaptiveRegimeStrategy extends StrategyBase {
       const confidence = this._calcConfidence(adxVal, rsiVal, false);
 
       log.trade('Trend-down short entry', {
-        symbol: this._symbol, price, rsi: rsiVal, adx: adxVal,
+        symbol: sym, price, rsi: rsiVal, adx: adxVal,
       });
 
       // AD-37: Do NOT set position state here — defer to onFill()
-      this._pendingEntryRegime = MARKET_REGIMES.TRENDING_DOWN;
+      s.pendingEntryRegime = MARKET_REGIMES.TRENDING_DOWN;
 
       return {
         action: SIGNAL_ACTIONS.OPEN_SHORT,
-        symbol: this._symbol,
+        symbol: sym,
         category: this._category,
         suggestedQty: this._trendPositionSizePercent,
         suggestedPrice: price,
@@ -467,20 +488,23 @@ class AdaptiveRegimeStrategy extends StrategyBase {
    * @returns {object|null}
    */
   _checkRangingEntry(price, rsiVal, bb, marketContext) {
+    const s = this._s();
+    const sym = this.getCurrentSymbol();
+
     // Long: price below BB lower band and RSI oversold
     if (isLessThan(price, bb.lower) && isLessThan(rsiVal, '35')) {
       const confidence = this._calcConfidence(null, rsiVal, false);
 
       log.trade('Ranging mean-reversion long entry', {
-        symbol: this._symbol, price, rsi: rsiVal, bbLower: bb.lower,
+        symbol: sym, price, rsi: rsiVal, bbLower: bb.lower,
       });
 
       // AD-37: Do NOT set position state here — defer to onFill()
-      this._pendingEntryRegime = MARKET_REGIMES.RANGING;
+      s.pendingEntryRegime = MARKET_REGIMES.RANGING;
 
       return {
         action: SIGNAL_ACTIONS.OPEN_LONG,
-        symbol: this._symbol,
+        symbol: sym,
         category: this._category,
         suggestedQty: this._rangePositionSizePercent,
         suggestedPrice: price,
@@ -497,15 +521,15 @@ class AdaptiveRegimeStrategy extends StrategyBase {
       const confidence = this._calcConfidence(null, rsiVal, false);
 
       log.trade('Ranging mean-reversion short entry', {
-        symbol: this._symbol, price, rsi: rsiVal, bbUpper: bb.upper,
+        symbol: sym, price, rsi: rsiVal, bbUpper: bb.upper,
       });
 
       // AD-37: Do NOT set position state here — defer to onFill()
-      this._pendingEntryRegime = MARKET_REGIMES.RANGING;
+      s.pendingEntryRegime = MARKET_REGIMES.RANGING;
 
       return {
         action: SIGNAL_ACTIONS.OPEN_SHORT,
-        symbol: this._symbol,
+        symbol: sym,
         category: this._category,
         suggestedQty: this._rangePositionSizePercent,
         suggestedPrice: price,
@@ -525,20 +549,23 @@ class AdaptiveRegimeStrategy extends StrategyBase {
    * @returns {object|null}
    */
   _checkVolatileEntry(price, rsiVal, volumeSurge, marketContext) {
+    const s = this._s();
+    const sym = this.getCurrentSymbol();
+
     // Long: oversold bounce with volume confirmation
     if (isLessThan(rsiVal, '25') && volumeSurge) {
       const confidence = this._calcConfidence(null, rsiVal, true);
 
       log.trade('Volatile momentum long entry', {
-        symbol: this._symbol, price, rsi: rsiVal, volumeSurge,
+        symbol: sym, price, rsi: rsiVal, volumeSurge,
       });
 
       // AD-37: Do NOT set position state here — defer to onFill()
-      this._pendingEntryRegime = MARKET_REGIMES.VOLATILE;
+      s.pendingEntryRegime = MARKET_REGIMES.VOLATILE;
 
       return {
         action: SIGNAL_ACTIONS.OPEN_LONG,
-        symbol: this._symbol,
+        symbol: sym,
         category: this._category,
         suggestedQty: this._volatilePositionSizePercent,
         suggestedPrice: price,
@@ -555,15 +582,15 @@ class AdaptiveRegimeStrategy extends StrategyBase {
       const confidence = this._calcConfidence(null, rsiVal, true);
 
       log.trade('Volatile momentum short entry', {
-        symbol: this._symbol, price, rsi: rsiVal, volumeSurge,
+        symbol: sym, price, rsi: rsiVal, volumeSurge,
       });
 
       // AD-37: Do NOT set position state here — defer to onFill()
-      this._pendingEntryRegime = MARKET_REGIMES.VOLATILE;
+      s.pendingEntryRegime = MARKET_REGIMES.VOLATILE;
 
       return {
         action: SIGNAL_ACTIONS.OPEN_SHORT,
-        symbol: this._symbol,
+        symbol: sym,
         category: this._category,
         suggestedQty: this._volatilePositionSizePercent,
         suggestedPrice: price,
@@ -587,8 +614,8 @@ class AdaptiveRegimeStrategy extends StrategyBase {
    * Uses the last element of the IndicatorCache volume history as the current candle.
    * @returns {boolean}
    */
-  _checkVolumeSurge() {
-    const hist = this._indicatorCache.getHistory(this._symbol);
+  _checkVolumeSurge(sym) {
+    const hist = this._indicatorCache.getHistory(sym || this.getCurrentSymbol());
     if (!hist) return false;
 
     const volumes = hist.volumes;
@@ -666,17 +693,20 @@ class AdaptiveRegimeStrategy extends StrategyBase {
    * @private
    */
   _emitExit(action, price, reason) {
+    const s = this._s();
+    const sym = this.getCurrentSymbol();
+
     // Determine suggestedQty based on the regime under which the position was opened
     let suggestedQty = this._trendPositionSizePercent;
-    if (this._entryRegime === MARKET_REGIMES.RANGING) {
+    if (s.entryRegime === MARKET_REGIMES.RANGING) {
       suggestedQty = this._rangePositionSizePercent;
-    } else if (this._entryRegime === MARKET_REGIMES.VOLATILE) {
+    } else if (s.entryRegime === MARKET_REGIMES.VOLATILE) {
       suggestedQty = this._volatilePositionSizePercent;
     }
 
     const signal = {
       action,
-      symbol: this._symbol,
+      symbol: sym,
       category: this._category,
       suggestedQty,
       suggestedPrice: price,
@@ -685,15 +715,15 @@ class AdaptiveRegimeStrategy extends StrategyBase {
       reduceOnly: true,
       marketContext: {
         regime: this.getEffectiveRegime(),
-        entryRegime: this._entryRegime,
-        entryPrice: this._entryPrice,
+        entryRegime: s.entryRegime,
+        entryPrice: s.entryPrice,
         exitPrice: price,
-        highestSinceEntry: this._highestSinceEntry,
-        lowestSinceEntry: this._lowestSinceEntry,
+        highestSinceEntry: s.highestSinceEntry,
+        lowestSinceEntry: s.lowestSinceEntry,
       },
     };
 
-    this._lastSignal = signal;
+    s.lastSignal = signal;
     this.emitSignal(signal);
     this._resetPosition();
   }
@@ -702,13 +732,14 @@ class AdaptiveRegimeStrategy extends StrategyBase {
    * Reset all position-related state.
    * @private
    */
-  _resetPosition() {
-    this._entryPrice = null;
-    this._positionSide = null;
-    this._entryRegime = null;
-    this._highestSinceEntry = null;
-    this._lowestSinceEntry = null;
-    this._pendingEntryRegime = null;
+  _resetPosition(symbol) {
+    const s = this._s(symbol);
+    s.entryPrice = null;
+    s.positionSide = null;
+    s.entryRegime = null;
+    s.highestSinceEntry = null;
+    s.lowestSinceEntry = null;
+    s.pendingEntryRegime = null;
   }
 }
 

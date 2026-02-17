@@ -389,14 +389,17 @@ class BotService extends EventEmitter {
         });
       }
 
-      // 11. Wire up: marketData TICKER_UPDATE -> strategy.onTick
+      // 11. Wire up: marketData TICKER_UPDATE -> strategy.onTick (multi-symbol)
       const onTickerUpdate = (ticker) => {
         for (const strategy of this.strategies) {
-          if (strategy.isActive() && strategy._symbol === ticker.symbol) {
+          if (strategy.isActive() && strategy.hasSymbol(ticker.symbol)) {
+            strategy._setCurrentProcessingSymbol(ticker.symbol);
             try {
               strategy.onTick(ticker);
             } catch (err) {
               log.error('Strategy onTick error', { strategy: strategy.name, error: err });
+            } finally {
+              strategy._setCurrentProcessingSymbol(null);
             }
           }
         }
@@ -406,18 +409,21 @@ class BotService extends EventEmitter {
         this.marketData.removeListener(MARKET_EVENTS.TICKER_UPDATE, onTickerUpdate);
       });
 
-      // 11b. Wire up: marketData KLINE_UPDATE -> strategy.trackKline + strategy.onKline
+      // 11b. Wire up: marketData KLINE_UPDATE -> strategy.trackKline + strategy.onKline (multi-symbol)
       const onKlineUpdate = (kline) => {
         for (const strategy of this.strategies) {
-          if (strategy.isActive() && strategy._symbol === kline.symbol) {
-            // R9-T2: Track kline for warm-up progress (before onKline)
-            if (typeof strategy.trackKline === 'function') {
-              strategy.trackKline();
-            }
+          if (strategy.isActive() && strategy.hasSymbol(kline.symbol)) {
+            strategy._setCurrentProcessingSymbol(kline.symbol);
             try {
+              // R9-T2: Track kline for warm-up progress (before onKline, per-symbol)
+              if (typeof strategy.trackKline === 'function') {
+                strategy.trackKline(kline.symbol);
+              }
               strategy.onKline(kline);
             } catch (err) {
               log.error('Strategy onKline error', { strategy: strategy.name, error: err });
+            } finally {
+              strategy._setCurrentProcessingSymbol(null);
             }
           }
         }
@@ -1077,6 +1083,7 @@ class BotService extends EventEmitter {
         name: s.name,
         active: s.isActive(),
         symbol: s._symbol,
+        symbols: s.getSymbols(),
         config: s.getConfig(),
         lastSignal: (() => { try { return s.getSignal(); } catch { return null; } })(),
         targetRegimes: s.getTargetRegimes(),

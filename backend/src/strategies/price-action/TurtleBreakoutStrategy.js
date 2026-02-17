@@ -65,6 +65,7 @@ class TurtleBreakoutStrategy extends StrategyBase {
     gracePeriodMs: 600000,
     warmupCandles: 51,
     volatilityPreference: 'high',
+    maxSymbolsPerStrategy: 3,
     trailingStop: { enabled: false, activationPercent: '2.0', callbackPercent: '1.5' },
     description: '터틀 트레이딩 — Donchian 채널 돌파 + ATR 기반 2% 리스크 룰',
     defaultConfig: {
@@ -87,43 +88,48 @@ class TurtleBreakoutStrategy extends StrategyBase {
     const merged = { ...TurtleBreakoutStrategy.metadata.defaultConfig, ...config };
     super('TurtleBreakoutStrategy', merged);
 
-    // ---- Internal state ----
-
-    /** @type {Array<{high:string, low:string, close:string}>} kline history */
-    this.klineHistory = [];
-
-    /** @type {string|null} latest ticker price */
-    this._latestPrice = null;
-
-    /** @type {object|null} most recently generated signal */
-    this._lastSignal = null;
-
-    /** @type {string|null} entry price */
-    this._entryPrice = null;
-
-    /** @type {'long'|'short'|null} current position direction */
-    this._positionSide = null;
-
-    /** @type {string|null} ATR-based stop loss price */
-    this._stopPrice = null;
-
-    /** @type {boolean} trailing stop activated */
-    this._trailingActive = false;
-
-    /** @type {string|null} trailing stop price */
-    this._trailingStopPrice = null;
-
-    /** @type {string|null} highest price since entry (long) */
-    this._highestSinceEntry = null;
-
-    /** @type {string|null} lowest price since entry (short) */
-    this._lowestSinceEntry = null;
-
-    /** @type {string|null} latest ATR value */
-    this._latestAtr = null;
-
     /** @type {number} max data points to keep */
     this._maxHistory = 200;
+  }
+
+  /**
+   * Override: create per-symbol state with all position/indicator fields.
+   * @returns {object}
+   */
+  _createDefaultState() {
+    return {
+      ...super._createDefaultState(),
+
+      /** @type {Array<{high:string, low:string, close:string}>} kline history */
+      klineHistory: [],
+
+      /** @type {string|null} ATR-based stop loss price */
+      stopPrice: null,
+
+      /** @type {boolean} trailing stop activated */
+      trailingActive: false,
+
+      /** @type {string|null} trailing stop price */
+      trailingStopPrice: null,
+
+      /** @type {string|null} highest price since entry (long) */
+      highestSinceEntry: null,
+
+      /** @type {string|null} lowest price since entry (short) */
+      lowestSinceEntry: null,
+
+      /** @type {string|null} latest ATR value */
+      latestAtr: null,
+
+      /** @type {string|null} pending stop price from signal */
+      pendingStopPrice: null,
+
+      /** @type {string|null} pending entry high */
+      pendingEntryHigh: null,
+
+      /** @type {string|null} pending entry low */
+      pendingEntryLow: null,
+    };
   }
 
   // --------------------------------------------------------------------------
@@ -138,10 +144,11 @@ class TurtleBreakoutStrategy extends StrategyBase {
    * @returns {{ upper: string, lower: string, mid: string }|null}
    */
   _donchian(period) {
+    const s = this._s();
     // Need at least period + 1 bars (period previous + 1 current)
-    if (this.klineHistory.length < period + 1) return null;
+    if (s.klineHistory.length < period + 1) return null;
 
-    const slice = this.klineHistory.slice(-(period + 1), -1);
+    const slice = s.klineHistory.slice(-(period + 1), -1);
     let highest = slice[0].high;
     let lowest = slice[0].low;
 
@@ -164,29 +171,31 @@ class TurtleBreakoutStrategy extends StrategyBase {
   onTick(ticker) {
     if (!this._active) return;
 
+    const s = this._s();
+
     if (ticker && ticker.lastPrice !== undefined) {
-      this._latestPrice = String(ticker.lastPrice);
+      s.latestPrice = String(ticker.lastPrice);
     }
 
-    if (this._entryPrice === null || this._positionSide === null) return;
-    if (this._latestPrice === null) return;
+    if (s.entryPrice === null || s.positionSide === null) return;
+    if (s.latestPrice === null) return;
 
-    const price = this._latestPrice;
+    const price = s.latestPrice;
 
     // --- Hard stop loss (ATR-based) ---
-    if (this._stopPrice !== null) {
-      if (this._positionSide === 'long' && isLessThan(price, this._stopPrice)) {
+    if (s.stopPrice !== null) {
+      if (s.positionSide === 'long' && isLessThan(price, s.stopPrice)) {
         this._emitCloseSignal('long', price, 'atr_stop_loss', {
-          entryPrice: this._entryPrice,
-          stopPrice: this._stopPrice,
+          entryPrice: s.entryPrice,
+          stopPrice: s.stopPrice,
         });
         this._resetPosition();
         return;
       }
-      if (this._positionSide === 'short' && isGreaterThan(price, this._stopPrice)) {
+      if (s.positionSide === 'short' && isGreaterThan(price, s.stopPrice)) {
         this._emitCloseSignal('short', price, 'atr_stop_loss', {
-          entryPrice: this._entryPrice,
-          stopPrice: this._stopPrice,
+          entryPrice: s.entryPrice,
+          stopPrice: s.stopPrice,
         });
         this._resetPosition();
         return;
@@ -194,29 +203,29 @@ class TurtleBreakoutStrategy extends StrategyBase {
     }
 
     // --- Trailing stop check ---
-    if (this._trailingActive && this._trailingStopPrice !== null) {
-      if (this._positionSide === 'long') {
-        if (this._highestSinceEntry === null || isGreaterThan(price, this._highestSinceEntry)) {
-          this._highestSinceEntry = price;
+    if (s.trailingActive && s.trailingStopPrice !== null) {
+      if (s.positionSide === 'long') {
+        if (s.highestSinceEntry === null || isGreaterThan(price, s.highestSinceEntry)) {
+          s.highestSinceEntry = price;
           this._updateTrailingStop();
         }
-        if (isLessThan(price, this._trailingStopPrice)) {
+        if (isLessThan(price, s.trailingStopPrice)) {
           this._emitCloseSignal('long', price, 'trailing_stop', {
-            entryPrice: this._entryPrice,
-            trailingStopPrice: this._trailingStopPrice,
+            entryPrice: s.entryPrice,
+            trailingStopPrice: s.trailingStopPrice,
           });
           this._resetPosition();
           return;
         }
-      } else if (this._positionSide === 'short') {
-        if (this._lowestSinceEntry === null || isLessThan(price, this._lowestSinceEntry)) {
-          this._lowestSinceEntry = price;
+      } else if (s.positionSide === 'short') {
+        if (s.lowestSinceEntry === null || isLessThan(price, s.lowestSinceEntry)) {
+          s.lowestSinceEntry = price;
           this._updateTrailingStop();
         }
-        if (isGreaterThan(price, this._trailingStopPrice)) {
+        if (isGreaterThan(price, s.trailingStopPrice)) {
           this._emitCloseSignal('short', price, 'trailing_stop', {
-            entryPrice: this._entryPrice,
-            trailingStopPrice: this._trailingStopPrice,
+            entryPrice: s.entryPrice,
+            trailingStopPrice: s.trailingStopPrice,
           });
           this._resetPosition();
           return;
@@ -241,18 +250,21 @@ class TurtleBreakoutStrategy extends StrategyBase {
     const high = kline && kline.high !== undefined ? String(kline.high) : close;
     const low = kline && kline.low !== undefined ? String(kline.low) : close;
 
+    const s = this._s();
+    const sym = this.getCurrentSymbol();
+
     // 1. Push data and trim
-    this.klineHistory.push({ high, low, close });
-    if (this.klineHistory.length > this._maxHistory) {
-      this.klineHistory = this.klineHistory.slice(-this._maxHistory);
+    s.klineHistory.push({ high, low, close });
+    if (s.klineHistory.length > this._maxHistory) {
+      s.klineHistory = s.klineHistory.slice(-this._maxHistory);
     }
 
     // 2. Need enough data for the longest channel + ATR
     const { entryChannel, exitChannel, trendFilter, atrPeriod } = this.config;
     const minRequired = Math.max(trendFilter + 1, entryChannel + 1, exitChannel + 1, atrPeriod + 1);
-    if (this.klineHistory.length < minRequired) {
+    if (s.klineHistory.length < minRequired) {
       log.debug('Not enough data yet', {
-        have: this.klineHistory.length,
+        have: s.klineHistory.length,
         need: minRequired,
       });
       return;
@@ -262,41 +274,41 @@ class TurtleBreakoutStrategy extends StrategyBase {
     const entryDC = this._donchian(entryChannel);
     const exitDC = this._donchian(exitChannel);
     const trendDC = this._donchian(trendFilter);
-    const currentAtr = atr(this.klineHistory, atrPeriod);
+    const currentAtr = atr(s.klineHistory, atrPeriod);
 
     if (!entryDC || !exitDC || !trendDC || currentAtr === null) return;
 
-    this._latestAtr = currentAtr;
+    s.latestAtr = currentAtr;
     const price = close;
     const { stopMultiplier, positionSizePercent, trailingActivationAtr, trailingDistanceAtr } = this.config;
 
     // 4. If position open: check Donchian exit channel + trailing activation
-    if (this._positionSide !== null && this._entryPrice !== null) {
+    if (s.positionSide !== null && s.entryPrice !== null) {
       // Update extreme prices
-      if (this._positionSide === 'long') {
-        if (this._highestSinceEntry === null || isGreaterThan(high, this._highestSinceEntry)) {
-          this._highestSinceEntry = high;
-          if (this._trailingActive) this._updateTrailingStop();
+      if (s.positionSide === 'long') {
+        if (s.highestSinceEntry === null || isGreaterThan(high, s.highestSinceEntry)) {
+          s.highestSinceEntry = high;
+          if (s.trailingActive) this._updateTrailingStop();
         }
       } else {
-        if (this._lowestSinceEntry === null || isLessThan(low, this._lowestSinceEntry)) {
-          this._lowestSinceEntry = low;
-          if (this._trailingActive) this._updateTrailingStop();
+        if (s.lowestSinceEntry === null || isLessThan(low, s.lowestSinceEntry)) {
+          s.lowestSinceEntry = low;
+          if (s.trailingActive) this._updateTrailingStop();
         }
       }
 
       // Donchian exit channel: 10-bar low for longs, 10-bar high for shorts
-      if (this._positionSide === 'long' && isLessThan(price, exitDC.lower)) {
+      if (s.positionSide === 'long' && isLessThan(price, exitDC.lower)) {
         this._emitCloseSignal('long', price, 'donchian_exit', {
-          entryPrice: this._entryPrice,
+          entryPrice: s.entryPrice,
           exitChannelLower: exitDC.lower,
         });
         this._resetPosition();
         return;
       }
-      if (this._positionSide === 'short' && isGreaterThan(price, exitDC.upper)) {
+      if (s.positionSide === 'short' && isGreaterThan(price, exitDC.upper)) {
         this._emitCloseSignal('short', price, 'donchian_exit', {
-          entryPrice: this._entryPrice,
+          entryPrice: s.entryPrice,
           exitChannelUpper: exitDC.upper,
         });
         this._resetPosition();
@@ -304,28 +316,28 @@ class TurtleBreakoutStrategy extends StrategyBase {
       }
 
       // Trailing activation: after N×ATR profit
-      if (!this._trailingActive) {
+      if (!s.trailingActive) {
         const activationDist = multiply(trailingActivationAtr, currentAtr);
-        if (this._positionSide === 'long') {
-          const profit = subtract(price, this._entryPrice);
+        if (s.positionSide === 'long') {
+          const profit = subtract(price, s.entryPrice);
           if (isGreaterThan(profit, activationDist)) {
-            this._trailingActive = true;
-            this._highestSinceEntry = this._highestSinceEntry || price;
+            s.trailingActive = true;
+            s.highestSinceEntry = s.highestSinceEntry || price;
             this._updateTrailingStop();
             log.info('Trailing stop activated (long)', {
-              symbol: this._symbol,
-              trailingStopPrice: this._trailingStopPrice,
+              symbol: sym,
+              trailingStopPrice: s.trailingStopPrice,
             });
           }
-        } else if (this._positionSide === 'short') {
-          const profit = subtract(this._entryPrice, price);
+        } else if (s.positionSide === 'short') {
+          const profit = subtract(s.entryPrice, price);
           if (isGreaterThan(profit, activationDist)) {
-            this._trailingActive = true;
-            this._lowestSinceEntry = this._lowestSinceEntry || price;
+            s.trailingActive = true;
+            s.lowestSinceEntry = s.lowestSinceEntry || price;
             this._updateTrailingStop();
             log.info('Trailing stop activated (short)', {
-              symbol: this._symbol,
-              trailingStopPrice: this._trailingStopPrice,
+              symbol: sym,
+              trailingStopPrice: s.trailingStopPrice,
             });
           }
         }
@@ -357,7 +369,7 @@ class TurtleBreakoutStrategy extends StrategyBase {
 
       const signal = {
         action: SIGNAL_ACTIONS.OPEN_LONG,
-        symbol: this._symbol,
+        symbol: sym,
         category: this._category,
         suggestedQty: positionSizePercent,
         suggestedPrice: price,
@@ -378,11 +390,11 @@ class TurtleBreakoutStrategy extends StrategyBase {
         },
       };
 
-      this._lastSignal = signal;
+      s.lastSignal = signal;
       // Store pending stop price and kline data for onFill to pick up
-      this._pendingStopPrice = slPrice;
-      this._pendingEntryHigh = high;
-      this._pendingEntryLow = low;
+      s.pendingStopPrice = slPrice;
+      s.pendingEntryHigh = high;
+      s.pendingEntryLow = low;
       this.emitSignal(signal);
       return;
     }
@@ -397,7 +409,7 @@ class TurtleBreakoutStrategy extends StrategyBase {
 
       const signal = {
         action: SIGNAL_ACTIONS.OPEN_SHORT,
-        symbol: this._symbol,
+        symbol: sym,
         category: this._category,
         suggestedQty: positionSizePercent,
         suggestedPrice: price,
@@ -418,11 +430,11 @@ class TurtleBreakoutStrategy extends StrategyBase {
         },
       };
 
-      this._lastSignal = signal;
+      s.lastSignal = signal;
       // Store pending stop price and kline data for onFill to pick up
-      this._pendingStopPrice = slPrice;
-      this._pendingEntryHigh = high;
-      this._pendingEntryLow = low;
+      s.pendingStopPrice = slPrice;
+      s.pendingEntryHigh = high;
+      s.pendingEntryLow = low;
       this.emitSignal(signal);
       return;
     }
@@ -437,32 +449,35 @@ class TurtleBreakoutStrategy extends StrategyBase {
     if (!fill) return;
     const action = fill.action || (fill.signal && fill.signal.action);
 
+    const s = this._s();
+    const sym = this.getCurrentSymbol();
+
     if (action === SIGNAL_ACTIONS.OPEN_LONG) {
-      this._positionSide = 'long';
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      this._stopPrice = this._pendingStopPrice || null;
-      this._highestSinceEntry = this._pendingEntryHigh || this._entryPrice;
-      this._lowestSinceEntry = null;
-      this._trailingActive = false;
-      this._trailingStopPrice = null;
-      this._pendingStopPrice = null;
-      this._pendingEntryHigh = null;
-      this._pendingEntryLow = null;
-      log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      s.positionSide = 'long';
+      if (fill.price !== undefined) s.entryPrice = String(fill.price);
+      s.stopPrice = s.pendingStopPrice || null;
+      s.highestSinceEntry = s.pendingEntryHigh || s.entryPrice;
+      s.lowestSinceEntry = null;
+      s.trailingActive = false;
+      s.trailingStopPrice = null;
+      s.pendingStopPrice = null;
+      s.pendingEntryHigh = null;
+      s.pendingEntryLow = null;
+      log.trade('Long fill recorded', { entry: s.entryPrice, symbol: sym });
     } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
-      this._positionSide = 'short';
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      this._stopPrice = this._pendingStopPrice || null;
-      this._highestSinceEntry = null;
-      this._lowestSinceEntry = this._pendingEntryLow || this._entryPrice;
-      this._trailingActive = false;
-      this._trailingStopPrice = null;
-      this._pendingStopPrice = null;
-      this._pendingEntryHigh = null;
-      this._pendingEntryLow = null;
-      log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      s.positionSide = 'short';
+      if (fill.price !== undefined) s.entryPrice = String(fill.price);
+      s.stopPrice = s.pendingStopPrice || null;
+      s.highestSinceEntry = null;
+      s.lowestSinceEntry = s.pendingEntryLow || s.entryPrice;
+      s.trailingActive = false;
+      s.trailingStopPrice = null;
+      s.pendingStopPrice = null;
+      s.pendingEntryHigh = null;
+      s.pendingEntryLow = null;
+      log.trade('Short fill recorded', { entry: s.entryPrice, symbol: sym });
     } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
-      log.trade('Position closed via fill', { side: this._positionSide, symbol: this._symbol });
+      log.trade('Position closed via fill', { side: s.positionSide, symbol: sym });
       this._resetPosition();
     }
   }
@@ -472,7 +487,7 @@ class TurtleBreakoutStrategy extends StrategyBase {
   // --------------------------------------------------------------------------
 
   getSignal() {
-    return this._lastSignal;
+    return this._s().lastSignal;
   }
 
   // --------------------------------------------------------------------------
@@ -487,10 +502,12 @@ class TurtleBreakoutStrategy extends StrategyBase {
    * @param {object} context
    */
   _emitCloseSignal(side, price, reason, context) {
+    const s = this._s();
+    const sym = this.getCurrentSymbol();
     const action = side === 'long' ? SIGNAL_ACTIONS.CLOSE_LONG : SIGNAL_ACTIONS.CLOSE_SHORT;
     const signal = {
       action,
-      symbol: this._symbol,
+      symbol: sym,
       category: this._category,
       suggestedQty: this.config.positionSizePercent,
       suggestedPrice: price,
@@ -500,10 +517,10 @@ class TurtleBreakoutStrategy extends StrategyBase {
       marketContext: {
         ...context,
         currentPrice: price,
-        atr: this._latestAtr,
+        atr: s.latestAtr,
       },
     };
-    this._lastSignal = signal;
+    s.lastSignal = signal;
     this.emitSignal(signal);
   }
 
@@ -511,20 +528,21 @@ class TurtleBreakoutStrategy extends StrategyBase {
    * Update trailing stop price based on extreme price and ATR.
    */
   _updateTrailingStop() {
-    if (this._latestAtr === null) return;
-    const trailDist = multiply(this.config.trailingDistanceAtr, this._latestAtr);
+    const s = this._s();
+    if (s.latestAtr === null) return;
+    const trailDist = multiply(this.config.trailingDistanceAtr, s.latestAtr);
 
-    if (this._positionSide === 'long' && this._highestSinceEntry !== null) {
-      const newStop = subtract(this._highestSinceEntry, trailDist);
+    if (s.positionSide === 'long' && s.highestSinceEntry !== null) {
+      const newStop = subtract(s.highestSinceEntry, trailDist);
       // Only move stop up, never down
-      if (this._trailingStopPrice === null || isGreaterThan(newStop, this._trailingStopPrice)) {
-        this._trailingStopPrice = newStop;
+      if (s.trailingStopPrice === null || isGreaterThan(newStop, s.trailingStopPrice)) {
+        s.trailingStopPrice = newStop;
       }
-    } else if (this._positionSide === 'short' && this._lowestSinceEntry !== null) {
-      const newStop = add(this._lowestSinceEntry, trailDist);
+    } else if (s.positionSide === 'short' && s.lowestSinceEntry !== null) {
+      const newStop = add(s.lowestSinceEntry, trailDist);
       // Only move stop down, never up
-      if (this._trailingStopPrice === null || isLessThan(newStop, this._trailingStopPrice)) {
-        this._trailingStopPrice = newStop;
+      if (s.trailingStopPrice === null || isLessThan(newStop, s.trailingStopPrice)) {
+        s.trailingStopPrice = newStop;
       }
     }
   }
@@ -571,13 +589,14 @@ class TurtleBreakoutStrategy extends StrategyBase {
    * Reset all position-tracking state after a full exit.
    */
   _resetPosition() {
-    this._entryPrice = null;
-    this._positionSide = null;
-    this._stopPrice = null;
-    this._trailingActive = false;
-    this._trailingStopPrice = null;
-    this._highestSinceEntry = null;
-    this._lowestSinceEntry = null;
+    const s = this._s();
+    s.entryPrice = null;
+    s.positionSide = null;
+    s.stopPrice = null;
+    s.trailingActive = false;
+    s.trailingStopPrice = null;
+    s.highestSinceEntry = null;
+    s.lowestSinceEntry = null;
   }
 }
 

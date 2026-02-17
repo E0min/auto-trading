@@ -62,6 +62,7 @@ class VwapReversionStrategy extends StrategyBase {
     targetRegimes: ['ranging', 'quiet'],
     riskLevel: 'low',
     maxConcurrentPositions: 2,
+    maxSymbolsPerStrategy: 3,
     cooldownMs: 60000,
     gracePeriodMs: 300000,
     warmupCandles: 20,
@@ -92,39 +93,26 @@ class VwapReversionStrategy extends StrategyBase {
     const merged = { ...VwapReversionStrategy.metadata.defaultConfig, ...config };
     super('VwapReversionStrategy', merged);
 
-    // ------------------------------------------------------------------
-    // Internal state
-    // ------------------------------------------------------------------
+  }
 
-    /** @type {Array<{high:string, low:string, close:string, volume:string}>} current VWAP session klines */
-    this._sessionKlines = [];
+  // --------------------------------------------------------------------------
+  // Per-symbol state (SymbolState pattern)
+  // --------------------------------------------------------------------------
 
-    /** @type {object|null} most recently generated signal */
-    this._lastSignal = null;
-
-    /** @type {string|null} latest ticker price */
-    this._latestPrice = null;
-
-    /** @type {string|null} entry price for current position */
-    this._entryPrice = null;
-
-    /** @type {'long'|'short'|null} current position direction */
-    this._positionSide = null;
-
-    /** @type {number} candles since entry (for time limit) */
-    this._candlesSinceEntry = 0;
-
-    /** @type {boolean} whether first TP (VWAP level) was hit */
-    this._tp1Hit = false;
-
-    /** @type {boolean} whether add-on entry was made */
-    this._addOnDone = false;
-
-    /** @type {number} total candle counter */
-    this._klineCount = 0;
-
-    /** @type {number} kline count at session start */
-    this._sessionStartKline = 0;
+  /**
+   * @override
+   * @returns {object} default per-symbol state
+   */
+  _createDefaultState() {
+    return {
+      ...super._createDefaultState(),
+      sessionKlines: [],
+      klineCount: 0,
+      sessionStartKline: 0,
+      candlesSinceEntry: 0,
+      tp1Hit: false,
+      addOnDone: false,
+    };
   }
 
   // --------------------------------------------------------------------------
@@ -138,31 +126,31 @@ class VwapReversionStrategy extends StrategyBase {
     if (!this._active) return;
 
     if (ticker && ticker.lastPrice !== undefined) {
-      this._latestPrice = String(ticker.lastPrice);
+      this._s().latestPrice = String(ticker.lastPrice);
     }
 
     // Only check SL when we have a position
-    if (this._entryPrice === null || this._positionSide === null) return;
-    if (this._latestPrice === null) return;
+    if (this._s().entryPrice === null || this._s().positionSide === null) return;
+    if (this._s().latestPrice === null) return;
 
-    const price = this._latestPrice;
-    const entry = this._entryPrice;
+    const price = this._s().latestPrice;
+    const entry = this._s().entryPrice;
 
     // Compute current ATR for SL calculation via IndicatorCache
     const atrVal = this._indicatorCache
-      ? this._indicatorCache.get(this._symbol, 'atr', { period: this.config.atrPeriod })
+      ? this._indicatorCache.get(this.getCurrentSymbol(), 'atr', { period: this.config.atrPeriod })
       : null;
     if (atrVal === null) return;
 
     const slDistance = multiply(this.config.slAtrMult, atrVal);
 
-    if (this._positionSide === 'long') {
+    if (this._s().positionSide === 'long') {
       const slPrice = subtract(entry, slDistance);
       if (isLessThan(price, slPrice)) {
         log.trade('Stop loss hit (long)', { price, entry, slPrice });
         const signal = {
           action: SIGNAL_ACTIONS.CLOSE_LONG,
-          symbol: this._symbol,
+          symbol: this.getCurrentSymbol(),
           category: this._category,
           suggestedQty: this.config.positionSizePercent,
           suggestedPrice: price,
@@ -171,18 +159,18 @@ class VwapReversionStrategy extends StrategyBase {
           reason: 'stop_loss',
           marketContext: { entryPrice: entry, currentPrice: price, slPrice },
         };
-        this._lastSignal = signal;
+        this._s().lastSignal = signal;
         this.emitSignal(signal);
         this._resetPosition();
         return;
       }
-    } else if (this._positionSide === 'short') {
+    } else if (this._s().positionSide === 'short') {
       const slPrice = add(entry, slDistance);
       if (isGreaterThan(price, slPrice)) {
         log.trade('Stop loss hit (short)', { price, entry, slPrice });
         const signal = {
           action: SIGNAL_ACTIONS.CLOSE_SHORT,
-          symbol: this._symbol,
+          symbol: this.getCurrentSymbol(),
           category: this._category,
           suggestedQty: this.config.positionSizePercent,
           suggestedPrice: price,
@@ -191,7 +179,7 @@ class VwapReversionStrategy extends StrategyBase {
           reason: 'stop_loss',
           marketContext: { entryPrice: entry, currentPrice: price, slPrice },
         };
-        this._lastSignal = signal;
+        this._s().lastSignal = signal;
         this.emitSignal(signal);
         this._resetPosition();
         return;
@@ -219,44 +207,44 @@ class VwapReversionStrategy extends StrategyBase {
 
     // 1. Get shared history from IndicatorCache
     const c = this._indicatorCache;
-    const hist = c.getHistory(this._symbol);
+    const hist = c.getHistory(this.getCurrentSymbol());
     if (!hist) return;
 
     // 2. Session reset check (every 96 candles = ~1 day of 15-min candles)
-    this._klineCount += 1;
+    this._s().klineCount += 1;
 
-    if (this._klineCount - this._sessionStartKline >= 96) {
-      this._sessionKlines = [];
-      this._sessionStartKline = this._klineCount;
+    if (this._s().klineCount - this._s().sessionStartKline >= 96) {
+      this._s().sessionKlines = [];
+      this._s().sessionStartKline = this._s().klineCount;
     }
 
     // Push current kline to session
-    this._sessionKlines.push({ high, low, close, volume });
+    this._s().sessionKlines.push({ high, low, close, volume });
 
     // 3. Calculate indicators
     const { rsiPeriod, atrPeriod, volumeSmaPeriod } = this.config;
 
     // Need enough data for indicators
     const minRequired = Math.max(rsiPeriod + 1, atrPeriod + 1, volumeSmaPeriod);
-    if (hist.closes.length < minRequired || this._sessionKlines.length < 2) {
+    if (hist.closes.length < minRequired || this._s().sessionKlines.length < 2) {
       log.debug('Not enough data yet', {
         have: hist.closes.length,
         need: minRequired,
-        sessionKlines: this._sessionKlines.length,
+        sessionKlines: this._s().sessionKlines.length,
       });
       return;
     }
 
     // VWAP from session klines (strategy-specific, NOT from cache)
-    const vwapVal = vwap(this._sessionKlines);
+    const vwapVal = vwap(this._s().sessionKlines);
     if (vwapVal === null) return;
 
     // RSI via IndicatorCache
-    const rsiVal = c.get(this._symbol, 'rsi', { period: rsiPeriod });
+    const rsiVal = c.get(this.getCurrentSymbol(), 'rsi', { period: rsiPeriod });
     if (rsiVal === null) return;
 
     // ATR via IndicatorCache
-    const atrVal = c.get(this._symbol, 'atr', { period: atrPeriod });
+    const atrVal = c.get(this.getCurrentSymbol(), 'atr', { period: atrPeriod });
     if (atrVal === null) return;
 
     // Volume SMA — cache's sma uses close prices, so compute from raw volumes
@@ -302,20 +290,20 @@ class VwapReversionStrategy extends StrategyBase {
     };
 
     // 4. If position open: manage TP1, TP2, time limit, add-on
-    if (this._entryPrice !== null && this._positionSide !== null) {
-      this._candlesSinceEntry += 1;
+    if (this._s().entryPrice !== null && this._s().positionSide !== null) {
+      this._s().candlesSinceEntry += 1;
 
       // --- Time limit check ---
-      if (this._candlesSinceEntry >= maxHoldCandles) {
+      if (this._s().candlesSinceEntry >= maxHoldCandles) {
         log.trade('Time limit reached — closing position', {
-          candles: this._candlesSinceEntry, maxHoldCandles,
+          candles: this._s().candlesSinceEntry, maxHoldCandles,
         });
-        const closeAction = this._positionSide === 'long'
+        const closeAction = this._s().positionSide === 'long'
           ? SIGNAL_ACTIONS.CLOSE_LONG
           : SIGNAL_ACTIONS.CLOSE_SHORT;
         const signal = {
           action: closeAction,
-          symbol: this._symbol,
+          symbol: this.getCurrentSymbol(),
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: close,
@@ -324,33 +312,33 @@ class VwapReversionStrategy extends StrategyBase {
           reason: 'time_limit',
           marketContext,
         };
-        this._lastSignal = signal;
+        this._s().lastSignal = signal;
         this.emitSignal(signal);
         this._resetPosition();
         return;
       }
 
       // --- TP1: VWAP level (close 50%) ---
-      if (!this._tp1Hit) {
+      if (!this._s().tp1Hit) {
         let tp1Triggered = false;
 
-        if (this._positionSide === 'long' && isGreaterThan(close, vwapVal)) {
+        if (this._s().positionSide === 'long' && isGreaterThan(close, vwapVal)) {
           tp1Triggered = true;
-        } else if (this._positionSide === 'short' && isLessThan(close, vwapVal)) {
+        } else if (this._s().positionSide === 'short' && isLessThan(close, vwapVal)) {
           tp1Triggered = true;
         }
 
         if (tp1Triggered) {
-          this._tp1Hit = true;
+          this._s().tp1Hit = true;
           const halfQty = toFixed(multiply(positionSizePercent, '0.5'), 4);
-          const closeAction = this._positionSide === 'long'
+          const closeAction = this._s().positionSide === 'long'
             ? SIGNAL_ACTIONS.CLOSE_LONG
             : SIGNAL_ACTIONS.CLOSE_SHORT;
 
           log.trade('TP1 hit — VWAP reached, closing 50%', { vwap: vwapVal, close });
           const signal = {
             action: closeAction,
-            symbol: this._symbol,
+            symbol: this.getCurrentSymbol(),
             category: this._category,
             suggestedQty: halfQty,
             suggestedPrice: close,
@@ -359,23 +347,23 @@ class VwapReversionStrategy extends StrategyBase {
             reason: 'tp1_vwap',
             marketContext,
           };
-          this._lastSignal = signal;
+          this._s().lastSignal = signal;
           this.emitSignal(signal);
           return;
         }
       }
 
       // --- TP2: VWAP + 0.5*ATR overshoot (close remaining 50%) ---
-      if (this._tp1Hit) {
+      if (this._s().tp1Hit) {
         const overshoot = multiply(tp2AtrMult, atrVal);
         let tp2Triggered = false;
 
-        if (this._positionSide === 'long') {
+        if (this._s().positionSide === 'long') {
           const tp2Level = add(vwapVal, overshoot);
           if (isGreaterThan(close, tp2Level)) {
             tp2Triggered = true;
           }
-        } else if (this._positionSide === 'short') {
+        } else if (this._s().positionSide === 'short') {
           const tp2Level = subtract(vwapVal, overshoot);
           if (isLessThan(close, tp2Level)) {
             tp2Triggered = true;
@@ -384,12 +372,12 @@ class VwapReversionStrategy extends StrategyBase {
 
         if (tp2Triggered) {
           log.trade('TP2 hit — VWAP overshoot, closing remaining', { close });
-          const closeAction = this._positionSide === 'long'
+          const closeAction = this._s().positionSide === 'long'
             ? SIGNAL_ACTIONS.CLOSE_LONG
             : SIGNAL_ACTIONS.CLOSE_SHORT;
           const signal = {
             action: closeAction,
-            symbol: this._symbol,
+            symbol: this.getCurrentSymbol(),
             category: this._category,
             suggestedQty: positionSizePercent,
             suggestedPrice: close,
@@ -398,7 +386,7 @@ class VwapReversionStrategy extends StrategyBase {
             reason: 'tp2_vwap_overshoot',
             marketContext,
           };
-          this._lastSignal = signal;
+          this._s().lastSignal = signal;
           this.emitSignal(signal);
           this._resetPosition();
           return;
@@ -406,20 +394,20 @@ class VwapReversionStrategy extends StrategyBase {
       }
 
       // --- Add-on entry check (if price drops 0.5*ATR more from entry) ---
-      if (!this._addOnDone) {
+      if (!this._s().addOnDone) {
         const addOnDistance = multiply(addOnAtrMult, atrVal);
 
-        if (this._positionSide === 'long') {
-          const addOnLevel = subtract(this._entryPrice, addOnDistance);
+        if (this._s().positionSide === 'long') {
+          const addOnLevel = subtract(this._s().entryPrice, addOnDistance);
           if (isLessThan(close, addOnLevel)) {
-            this._addOnDone = true;
+            this._s().addOnDone = true;
             const addOnQty = toFixed(multiply(positionSizePercent, addOnSizeRatio), 4);
             const confidence = this._calcConfidence(rsiVal, deviation, atrVal);
 
             log.trade('Add-on entry (long) — price dropped further', { close, addOnLevel });
             const signal = {
               action: SIGNAL_ACTIONS.OPEN_LONG,
-              symbol: this._symbol,
+              symbol: this.getCurrentSymbol(),
               category: this._category,
               suggestedQty: addOnQty,
               suggestedPrice: close,
@@ -428,21 +416,21 @@ class VwapReversionStrategy extends StrategyBase {
               reason: 'vwap_reversion_long_addon',
               marketContext,
             };
-            this._lastSignal = signal;
+            this._s().lastSignal = signal;
             this.emitSignal(signal);
             return;
           }
-        } else if (this._positionSide === 'short') {
-          const addOnLevel = add(this._entryPrice, addOnDistance);
+        } else if (this._s().positionSide === 'short') {
+          const addOnLevel = add(this._s().entryPrice, addOnDistance);
           if (isGreaterThan(close, addOnLevel)) {
-            this._addOnDone = true;
+            this._s().addOnDone = true;
             const addOnQty = toFixed(multiply(positionSizePercent, addOnSizeRatio), 4);
             const confidence = this._calcConfidence(rsiVal, deviation, atrVal);
 
             log.trade('Add-on entry (short) — price rallied further', { close, addOnLevel });
             const signal = {
               action: SIGNAL_ACTIONS.OPEN_SHORT,
-              symbol: this._symbol,
+              symbol: this.getCurrentSymbol(),
               category: this._category,
               suggestedQty: addOnQty,
               suggestedPrice: close,
@@ -451,7 +439,7 @@ class VwapReversionStrategy extends StrategyBase {
               reason: 'vwap_reversion_short_addon',
               marketContext,
             };
-            this._lastSignal = signal;
+            this._s().lastSignal = signal;
             this.emitSignal(signal);
             return;
           }
@@ -477,18 +465,18 @@ class VwapReversionStrategy extends StrategyBase {
       const confidence = this._calcConfidence(rsiVal, deviation, atrVal);
 
       log.trade('Long entry — VWAP reversion', {
-        symbol: this._symbol, close, vwap: vwapVal, rsi: rsiVal, deviation,
+        symbol: this.getCurrentSymbol(), close, vwap: vwapVal, rsi: rsiVal, deviation,
       });
 
-      this._entryPrice = close;
-      this._positionSide = 'long';
-      this._candlesSinceEntry = 0;
-      this._tp1Hit = false;
-      this._addOnDone = false;
+      this._s().entryPrice = close;
+      this._s().positionSide = 'long';
+      this._s().candlesSinceEntry = 0;
+      this._s().tp1Hit = false;
+      this._s().addOnDone = false;
 
       const signal = {
         action: SIGNAL_ACTIONS.OPEN_LONG,
-        symbol: this._symbol,
+        symbol: this.getCurrentSymbol(),
         category: this._category,
         suggestedQty: sizePercent,
         suggestedPrice: close,
@@ -498,7 +486,7 @@ class VwapReversionStrategy extends StrategyBase {
         reason: 'vwap_reversion_long',
         marketContext,
       };
-      this._lastSignal = signal;
+      this._s().lastSignal = signal;
       this.emitSignal(signal);
       return;
     }
@@ -513,18 +501,18 @@ class VwapReversionStrategy extends StrategyBase {
       const confidence = this._calcConfidence(rsiVal, deviation, atrVal);
 
       log.trade('Short entry — VWAP reversion', {
-        symbol: this._symbol, close, vwap: vwapVal, rsi: rsiVal, deviation,
+        symbol: this.getCurrentSymbol(), close, vwap: vwapVal, rsi: rsiVal, deviation,
       });
 
-      this._entryPrice = close;
-      this._positionSide = 'short';
-      this._candlesSinceEntry = 0;
-      this._tp1Hit = false;
-      this._addOnDone = false;
+      this._s().entryPrice = close;
+      this._s().positionSide = 'short';
+      this._s().candlesSinceEntry = 0;
+      this._s().tp1Hit = false;
+      this._s().addOnDone = false;
 
       const signal = {
         action: SIGNAL_ACTIONS.OPEN_SHORT,
-        symbol: this._symbol,
+        symbol: this.getCurrentSymbol(),
         category: this._category,
         suggestedQty: sizePercent,
         suggestedPrice: close,
@@ -534,7 +522,7 @@ class VwapReversionStrategy extends StrategyBase {
         reason: 'vwap_reversion_short',
         marketContext,
       };
-      this._lastSignal = signal;
+      this._s().lastSignal = signal;
       this.emitSignal(signal);
       return;
     }
@@ -548,7 +536,7 @@ class VwapReversionStrategy extends StrategyBase {
    * @returns {object|null}
    */
   getSignal() {
-    return this._lastSignal;
+    return this._s().lastSignal;
   }
 
   // --------------------------------------------------------------------------
@@ -567,15 +555,15 @@ class VwapReversionStrategy extends StrategyBase {
     const action = fill.action || (fill.signal && fill.signal.action);
 
     if (action === SIGNAL_ACTIONS.OPEN_LONG) {
-      this._positionSide = 'long';
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      this._s().positionSide = 'long';
+      if (fill.price !== undefined) this._s().entryPrice = String(fill.price);
+      log.trade('Long fill recorded', { entry: this._s().entryPrice, symbol: this.getCurrentSymbol() });
     } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
-      this._positionSide = 'short';
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      this._s().positionSide = 'short';
+      if (fill.price !== undefined) this._s().entryPrice = String(fill.price);
+      log.trade('Short fill recorded', { entry: this._s().entryPrice, symbol: this.getCurrentSymbol() });
     } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
-      log.trade('Position closed via fill', { side: this._positionSide, symbol: this._symbol });
+      log.trade('Position closed via fill', { side: this._s().positionSide, symbol: this.getCurrentSymbol() });
       this._resetPosition();
     }
   }
@@ -615,11 +603,11 @@ class VwapReversionStrategy extends StrategyBase {
    * @private
    */
   _resetPosition() {
-    this._entryPrice = null;
-    this._positionSide = null;
-    this._candlesSinceEntry = 0;
-    this._tp1Hit = false;
-    this._addOnDone = false;
+    this._s().entryPrice = null;
+    this._s().positionSide = null;
+    this._s().candlesSinceEntry = 0;
+    this._s().tp1Hit = false;
+    this._s().addOnDone = false;
   }
 }
 

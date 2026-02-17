@@ -25,6 +25,8 @@
  *             SL: swing low - 0.5*ATR | Trailing: 2*ATR profit -> 1.5*ATR trail
  * Exit Short: structure violation (price > recent swing high)
  *             SL: swing high + 0.5*ATR | Trailing: 2*ATR profit -> 1.5*ATR trail
+ *
+ * Per-symbol state via StrategyBase SymbolState pattern.
  */
 
 const StrategyBase = require('../../services/strategyBase');
@@ -56,6 +58,7 @@ class SwingStructureStrategy extends StrategyBase {
     gracePeriodMs: 600000,
     warmupCandles: 20,
     volatilityPreference: 'high',
+    maxSymbolsPerStrategy: 3,
     trailingStop: { enabled: false, activationPercent: '1.5', callbackPercent: '1.0' },
     description: '스윙 구조 추세 — HH/HL/LH/LL 구조 분석 + BOS 돌파 진입',
     defaultConfig: {
@@ -74,24 +77,30 @@ class SwingStructureStrategy extends StrategyBase {
     const merged = { ...SwingStructureStrategy.metadata.defaultConfig, ...config };
     super('SwingStructureStrategy', merged);
 
-    /** @type {Array<{high:string, low:string, close:string}>} */
-    this.klineHistory = [];
-    /** @type {string|null} */ this._latestPrice = null;
-    /** @type {object|null} */ this._lastSignal = null;
-    /** @type {string|null} */ this._entryPrice = null;
-    /** @type {'long'|'short'|null} */ this._positionSide = null;
-    /** @type {string|null} */ this._stopPrice = null;
-    /** @type {boolean} */ this._trailingActive = false;
-    /** @type {string|null} */ this._trailingStopPrice = null;
-    /** @type {string|null} */ this._highestSinceEntry = null;
-    /** @type {string|null} */ this._lowestSinceEntry = null;
-    /** @type {string|null} */ this._latestAtr = null;
-    /** @type {Array<{price: string, index: number}>} */ this._swingHighs = [];
-    /** @type {Array<{price: string, index: number}>} */ this._swingLows = [];
-    /** @type {'uptrend'|'downtrend'|null} */ this._structure = null;
-    /** @type {string|null} BOS level that triggered current entry */ this._bosLevel = null;
     /** @type {number} */ this._maxHistory = 200;
     /** @type {number} */ this._maxSwings = 10;
+  }
+
+  // --------------------------------------------------------------------------
+  // SymbolState — per-symbol state defaults
+  // --------------------------------------------------------------------------
+
+  /** @override */
+  _createDefaultState() {
+    return {
+      ...super._createDefaultState(),
+      klineHistory: [],
+      swingHighs: [],
+      swingLows: [],
+      structure: null,
+      bosLevel: null,
+      stopPrice: null,
+      trailingActive: false,
+      trailingStopPrice: null,
+      highestSinceEntry: null,
+      lowestSinceEntry: null,
+      latestAtr: null,
+    };
   }
 
   // --------------------------------------------------------------------------
@@ -100,12 +109,13 @@ class SwingStructureStrategy extends StrategyBase {
 
   /**
    * Scan klineHistory for swing highs/lows. A swing high has its high greater
-   * than all bars within swingLookback on each side. Updates _swingHighs and
-   * _swingLows (ascending by index, trimmed to _maxSwings).
+   * than all bars within swingLookback on each side. Updates swingHighs and
+   * swingLows (ascending by index, trimmed to _maxSwings).
    */
   _detectSwings() {
+    const s = this._s();
     const lb = this.config.swingLookback;
-    const klines = this.klineHistory;
+    const klines = s.klineHistory;
     const len = klines.length;
     if (len < lb * 2 + 1) return;
 
@@ -128,8 +138,8 @@ class SwingStructureStrategy extends StrategyBase {
       if (isSwingLow) swingLows.push({ price: candidateLow, index: i });
     }
 
-    this._swingHighs = swingHighs.slice(-this._maxSwings);
-    this._swingLows = swingLows.slice(-this._maxSwings);
+    s.swingHighs = swingHighs.slice(-this._maxSwings);
+    s.swingLows = swingLows.slice(-this._maxSwings);
   }
 
   // --------------------------------------------------------------------------
@@ -141,23 +151,24 @@ class SwingStructureStrategy extends StrategyBase {
    * Uptrend: HH + HL. Downtrend: LH + LL. Requires >= 2 of each swing type.
    */
   _analyzeStructure() {
-    if (this._swingHighs.length < 2 || this._swingLows.length < 2) {
-      this._structure = null;
+    const s = this._s();
+    if (s.swingHighs.length < 2 || s.swingLows.length < 2) {
+      s.structure = null;
       return;
     }
-    const prevSH = this._swingHighs[this._swingHighs.length - 2];
-    const lastSH = this._swingHighs[this._swingHighs.length - 1];
-    const prevSL = this._swingLows[this._swingLows.length - 2];
-    const lastSL = this._swingLows[this._swingLows.length - 1];
+    const prevSH = s.swingHighs[s.swingHighs.length - 2];
+    const lastSH = s.swingHighs[s.swingHighs.length - 1];
+    const prevSL = s.swingLows[s.swingLows.length - 2];
+    const lastSL = s.swingLows[s.swingLows.length - 1];
 
     const higherHigh = isGreaterThan(lastSH.price, prevSH.price);
     const higherLow = isGreaterThan(lastSL.price, prevSL.price);
     const lowerHigh = isLessThan(lastSH.price, prevSH.price);
     const lowerLow = isLessThan(lastSL.price, prevSL.price);
 
-    if (higherHigh && higherLow) this._structure = 'uptrend';
-    else if (lowerHigh && lowerLow) this._structure = 'downtrend';
-    else this._structure = null;
+    if (higherHigh && higherLow) s.structure = 'uptrend';
+    else if (lowerHigh && lowerLow) s.structure = 'downtrend';
+    else s.structure = null;
   }
 
   // --------------------------------------------------------------------------
@@ -167,25 +178,26 @@ class SwingStructureStrategy extends StrategyBase {
   /** @param {object} ticker — must have { lastPrice: string } */
   onTick(ticker) {
     if (!this._active) return;
+    const s = this._s();
     if (ticker && ticker.lastPrice !== undefined) {
-      this._latestPrice = String(ticker.lastPrice);
+      s.latestPrice = String(ticker.lastPrice);
     }
-    if (this._entryPrice === null || this._positionSide === null) return;
-    if (this._latestPrice === null) return;
-    const price = this._latestPrice;
+    if (s.entryPrice === null || s.positionSide === null) return;
+    if (s.latestPrice === null) return;
+    const price = s.latestPrice;
 
     // Hard stop loss
-    if (this._stopPrice !== null) {
-      if (this._positionSide === 'long' && isLessThan(price, this._stopPrice)) {
+    if (s.stopPrice !== null) {
+      if (s.positionSide === 'long' && isLessThan(price, s.stopPrice)) {
         this._emitCloseSignal('long', price, 'swing_stop_loss', {
-          entryPrice: this._entryPrice, stopPrice: this._stopPrice, bosLevel: this._bosLevel,
+          entryPrice: s.entryPrice, stopPrice: s.stopPrice, bosLevel: s.bosLevel,
         });
         this._resetPosition();
         return;
       }
-      if (this._positionSide === 'short' && isGreaterThan(price, this._stopPrice)) {
+      if (s.positionSide === 'short' && isGreaterThan(price, s.stopPrice)) {
         this._emitCloseSignal('short', price, 'swing_stop_loss', {
-          entryPrice: this._entryPrice, stopPrice: this._stopPrice, bosLevel: this._bosLevel,
+          entryPrice: s.entryPrice, stopPrice: s.stopPrice, bosLevel: s.bosLevel,
         });
         this._resetPosition();
         return;
@@ -193,27 +205,27 @@ class SwingStructureStrategy extends StrategyBase {
     }
 
     // Trailing stop
-    if (this._trailingActive && this._trailingStopPrice !== null) {
-      if (this._positionSide === 'long') {
-        if (this._highestSinceEntry === null || isGreaterThan(price, this._highestSinceEntry)) {
-          this._highestSinceEntry = price;
+    if (s.trailingActive && s.trailingStopPrice !== null) {
+      if (s.positionSide === 'long') {
+        if (s.highestSinceEntry === null || isGreaterThan(price, s.highestSinceEntry)) {
+          s.highestSinceEntry = price;
           this._updateTrailingStop();
         }
-        if (isLessThan(price, this._trailingStopPrice)) {
+        if (isLessThan(price, s.trailingStopPrice)) {
           this._emitCloseSignal('long', price, 'trailing_stop', {
-            entryPrice: this._entryPrice, trailingStopPrice: this._trailingStopPrice,
+            entryPrice: s.entryPrice, trailingStopPrice: s.trailingStopPrice,
           });
           this._resetPosition();
           return;
         }
-      } else if (this._positionSide === 'short') {
-        if (this._lowestSinceEntry === null || isLessThan(price, this._lowestSinceEntry)) {
-          this._lowestSinceEntry = price;
+      } else if (s.positionSide === 'short') {
+        if (s.lowestSinceEntry === null || isLessThan(price, s.lowestSinceEntry)) {
+          s.lowestSinceEntry = price;
           this._updateTrailingStop();
         }
-        if (isGreaterThan(price, this._trailingStopPrice)) {
+        if (isGreaterThan(price, s.trailingStopPrice)) {
           this._emitCloseSignal('short', price, 'trailing_stop', {
-            entryPrice: this._entryPrice, trailingStopPrice: this._trailingStopPrice,
+            entryPrice: s.entryPrice, trailingStopPrice: s.trailingStopPrice,
           });
           this._resetPosition();
           return;
@@ -229,68 +241,70 @@ class SwingStructureStrategy extends StrategyBase {
   /** @param {object} kline — must have { high, low, close } */
   onKline(kline) {
     if (!this._active) return;
+    const s = this._s();
     const close = kline && kline.close !== undefined ? String(kline.close) : null;
     if (close === null) return;
     const high = kline && kline.high !== undefined ? String(kline.high) : close;
     const low = kline && kline.low !== undefined ? String(kline.low) : close;
 
     // 1. Push data and trim
-    this.klineHistory.push({ high, low, close });
-    if (this.klineHistory.length > this._maxHistory) {
-      this.klineHistory = this.klineHistory.slice(-this._maxHistory);
+    s.klineHistory.push({ high, low, close });
+    if (s.klineHistory.length > this._maxHistory) {
+      s.klineHistory = s.klineHistory.slice(-this._maxHistory);
     }
 
     // 2. Need enough data for swing detection + ATR
     const { swingLookback, atrPeriod } = this.config;
     const minRequired = Math.max(swingLookback * 2 + 1, atrPeriod + 1);
-    if (this.klineHistory.length < minRequired) {
-      log.debug('Not enough data yet', { have: this.klineHistory.length, need: minRequired });
+    if (s.klineHistory.length < minRequired) {
+      log.debug('Not enough data yet', { have: s.klineHistory.length, need: minRequired });
       return;
     }
 
     // 3. Compute ATR
-    const currentAtr = atr(this.klineHistory, atrPeriod);
+    const currentAtr = atr(s.klineHistory, atrPeriod);
     if (currentAtr === null || !isGreaterThan(currentAtr, '0')) return;
-    this._latestAtr = currentAtr;
+    s.latestAtr = currentAtr;
 
     // 4. Detect swing points and analyze structure
     this._detectSwings();
     this._analyzeStructure();
 
     const price = close;
+    const symbol = this.getCurrentSymbol();
     const { slBuffer, positionSizePercent, trailingActivationAtr, trailingDistanceAtr } = this.config;
 
     // 5. Position open: check structure violation exit + trailing activation
-    if (this._positionSide !== null && this._entryPrice !== null) {
-      if (this._positionSide === 'long') {
-        if (this._highestSinceEntry === null || isGreaterThan(high, this._highestSinceEntry)) {
-          this._highestSinceEntry = high;
-          if (this._trailingActive) this._updateTrailingStop();
+    if (s.positionSide !== null && s.entryPrice !== null) {
+      if (s.positionSide === 'long') {
+        if (s.highestSinceEntry === null || isGreaterThan(high, s.highestSinceEntry)) {
+          s.highestSinceEntry = high;
+          if (s.trailingActive) this._updateTrailingStop();
         }
       } else {
-        if (this._lowestSinceEntry === null || isLessThan(low, this._lowestSinceEntry)) {
-          this._lowestSinceEntry = low;
-          if (this._trailingActive) this._updateTrailingStop();
+        if (s.lowestSinceEntry === null || isLessThan(low, s.lowestSinceEntry)) {
+          s.lowestSinceEntry = low;
+          if (s.trailingActive) this._updateTrailingStop();
         }
       }
 
       // Structure violation: long — price breaks below most recent swing low
-      if (this._positionSide === 'long' && this._swingLows.length > 0) {
-        const recentSL = this._swingLows[this._swingLows.length - 1].price;
+      if (s.positionSide === 'long' && s.swingLows.length > 0) {
+        const recentSL = s.swingLows[s.swingLows.length - 1].price;
         if (isLessThan(price, recentSL)) {
           this._emitCloseSignal('long', price, 'structure_violation', {
-            entryPrice: this._entryPrice, swingLow: recentSL, bosLevel: this._bosLevel,
+            entryPrice: s.entryPrice, swingLow: recentSL, bosLevel: s.bosLevel,
           });
           this._resetPosition();
           return;
         }
       }
       // Structure violation: short — price breaks above most recent swing high
-      if (this._positionSide === 'short' && this._swingHighs.length > 0) {
-        const recentSH = this._swingHighs[this._swingHighs.length - 1].price;
+      if (s.positionSide === 'short' && s.swingHighs.length > 0) {
+        const recentSH = s.swingHighs[s.swingHighs.length - 1].price;
         if (isGreaterThan(price, recentSH)) {
           this._emitCloseSignal('short', price, 'structure_violation', {
-            entryPrice: this._entryPrice, swingHigh: recentSH, bosLevel: this._bosLevel,
+            entryPrice: s.entryPrice, swingHigh: recentSH, bosLevel: s.bosLevel,
           });
           this._resetPosition();
           return;
@@ -298,26 +312,26 @@ class SwingStructureStrategy extends StrategyBase {
       }
 
       // Trailing activation: after N×ATR profit
-      if (!this._trailingActive) {
+      if (!s.trailingActive) {
         const activationDist = multiply(trailingActivationAtr, currentAtr);
-        if (this._positionSide === 'long') {
-          const profit = subtract(price, this._entryPrice);
+        if (s.positionSide === 'long') {
+          const profit = subtract(price, s.entryPrice);
           if (isGreaterThan(profit, activationDist)) {
-            this._trailingActive = true;
-            this._highestSinceEntry = this._highestSinceEntry || price;
+            s.trailingActive = true;
+            s.highestSinceEntry = s.highestSinceEntry || price;
             this._updateTrailingStop();
             log.info('Trailing stop activated (long)', {
-              symbol: this._symbol, trailingStopPrice: this._trailingStopPrice,
+              symbol, trailingStopPrice: s.trailingStopPrice,
             });
           }
-        } else if (this._positionSide === 'short') {
-          const profit = subtract(this._entryPrice, price);
+        } else if (s.positionSide === 'short') {
+          const profit = subtract(s.entryPrice, price);
           if (isGreaterThan(profit, activationDist)) {
-            this._trailingActive = true;
-            this._lowestSinceEntry = this._lowestSinceEntry || price;
+            s.trailingActive = true;
+            s.lowestSinceEntry = s.lowestSinceEntry || price;
             this._updateTrailingStop();
             log.info('Trailing stop activated (short)', {
-              symbol: this._symbol, trailingStopPrice: this._trailingStopPrice,
+              symbol, trailingStopPrice: s.trailingStopPrice,
             });
           }
         }
@@ -326,85 +340,85 @@ class SwingStructureStrategy extends StrategyBase {
     }
 
     // 6. No position: check BOS entry conditions
-    if (this._structure === null) return;
-    if (this._swingHighs.length < 2 || this._swingLows.length < 2) return;
+    if (s.structure === null) return;
+    if (s.swingHighs.length < 2 || s.swingLows.length < 2) return;
     const regime = this.getEffectiveRegime();
 
     // --- BOS Long: uptrend + price breaks above most recent swing high ---
-    if (this._structure === 'uptrend') {
+    if (s.structure === 'uptrend') {
       const regimeOk = regime === null ||
         regime === MARKET_REGIMES.TRENDING_UP || regime === MARKET_REGIMES.VOLATILE;
       if (!regimeOk) return;
 
-      const recentSH = this._swingHighs[this._swingHighs.length - 1].price;
-      const recentSL = this._swingLows[this._swingLows.length - 1].price;
+      const recentSH = s.swingHighs[s.swingHighs.length - 1].price;
+      const recentSL = s.swingLows[s.swingLows.length - 1].price;
 
       if (isGreaterThan(price, recentSH)) {
         const slDistance = multiply(slBuffer, currentAtr);
         const slPrice = subtract(recentSL, slDistance);
         const riskPerUnit = subtract(price, slPrice);
-        const conf = this._calcConfidence(this._structure);
+        const conf = this._calcConfidence(s.structure);
         const signal = {
           action: SIGNAL_ACTIONS.OPEN_LONG,
-          symbol: this._symbol, category: this._category,
+          symbol, category: this._category,
           suggestedQty: positionSizePercent, suggestedPrice: price,
           stopLossPrice: slPrice, riskPerUnit, confidence: toFixed(String(conf), 4),
           leverage: this.config.leverage, reason: 'bos_bullish',
           marketContext: {
-            structure: this._structure, bosLevel: recentSH,
+            structure: s.structure, bosLevel: recentSH,
             swingHigh: recentSH, swingLow: recentSL,
             atr: currentAtr, riskPerUnit, slPrice, regime,
           },
         };
-        this._entryPrice = price;
-        this._positionSide = 'long';
-        this._stopPrice = slPrice;
-        this._bosLevel = recentSH;
-        this._highestSinceEntry = high;
-        this._lowestSinceEntry = null;
-        this._trailingActive = false;
-        this._trailingStopPrice = null;
-        this._lastSignal = signal;
+        s.entryPrice = price;
+        s.positionSide = 'long';
+        s.stopPrice = slPrice;
+        s.bosLevel = recentSH;
+        s.highestSinceEntry = high;
+        s.lowestSinceEntry = null;
+        s.trailingActive = false;
+        s.trailingStopPrice = null;
+        s.lastSignal = signal;
         this.emitSignal(signal);
         return;
       }
     }
 
     // --- BOS Short: downtrend + price breaks below most recent swing low ---
-    if (this._structure === 'downtrend') {
+    if (s.structure === 'downtrend') {
       const regimeOk = regime === null ||
         regime === MARKET_REGIMES.TRENDING_DOWN || regime === MARKET_REGIMES.VOLATILE;
       if (!regimeOk) return;
 
-      const recentSH = this._swingHighs[this._swingHighs.length - 1].price;
-      const recentSL = this._swingLows[this._swingLows.length - 1].price;
+      const recentSH = s.swingHighs[s.swingHighs.length - 1].price;
+      const recentSL = s.swingLows[s.swingLows.length - 1].price;
 
       if (isLessThan(price, recentSL)) {
         const slDistance = multiply(slBuffer, currentAtr);
         const slPrice = add(recentSH, slDistance);
         const riskPerUnit = subtract(slPrice, price);
-        const conf = this._calcConfidence(this._structure);
+        const conf = this._calcConfidence(s.structure);
         const signal = {
           action: SIGNAL_ACTIONS.OPEN_SHORT,
-          symbol: this._symbol, category: this._category,
+          symbol, category: this._category,
           suggestedQty: positionSizePercent, suggestedPrice: price,
           stopLossPrice: slPrice, riskPerUnit, confidence: toFixed(String(conf), 4),
           leverage: this.config.leverage, reason: 'bos_bearish',
           marketContext: {
-            structure: this._structure, bosLevel: recentSL,
+            structure: s.structure, bosLevel: recentSL,
             swingHigh: recentSH, swingLow: recentSL,
             atr: currentAtr, riskPerUnit, slPrice, regime,
           },
         };
-        this._entryPrice = price;
-        this._positionSide = 'short';
-        this._stopPrice = slPrice;
-        this._bosLevel = recentSL;
-        this._highestSinceEntry = null;
-        this._lowestSinceEntry = low;
-        this._trailingActive = false;
-        this._trailingStopPrice = null;
-        this._lastSignal = signal;
+        s.entryPrice = price;
+        s.positionSide = 'short';
+        s.stopPrice = slPrice;
+        s.bosLevel = recentSL;
+        s.highestSinceEntry = null;
+        s.lowestSinceEntry = low;
+        s.trailingActive = false;
+        s.trailingStopPrice = null;
+        s.lastSignal = signal;
         this.emitSignal(signal);
         return;
       }
@@ -419,24 +433,26 @@ class SwingStructureStrategy extends StrategyBase {
   onFill(fill) {
     super.onFill(fill); // R10: update StrategyBase trailing stop state
     if (!fill) return;
+    const s = this._s();
     const action = fill.action || (fill.signal && fill.signal.action);
+    const symbol = this.getCurrentSymbol();
 
     if (action === SIGNAL_ACTIONS.OPEN_LONG) {
-      this._positionSide = 'long';
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      s.positionSide = 'long';
+      if (fill.price !== undefined) s.entryPrice = String(fill.price);
+      log.trade('Long fill recorded', { entry: s.entryPrice, symbol });
     } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
-      this._positionSide = 'short';
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      s.positionSide = 'short';
+      if (fill.price !== undefined) s.entryPrice = String(fill.price);
+      log.trade('Short fill recorded', { entry: s.entryPrice, symbol });
     } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
-      log.trade('Position closed via fill', { side: this._positionSide, symbol: this._symbol });
+      log.trade('Position closed via fill', { side: s.positionSide, symbol });
       this._resetPosition();
     }
   }
 
   /** @returns {object|null} most recently generated signal */
-  getSignal() { return this._lastSignal; }
+  getSignal() { return this._s().lastSignal; }
 
   // --------------------------------------------------------------------------
   // Private helpers
@@ -450,15 +466,16 @@ class SwingStructureStrategy extends StrategyBase {
    * @param {object} context
    */
   _emitCloseSignal(side, price, reason, context) {
+    const s = this._s();
     const action = side === 'long' ? SIGNAL_ACTIONS.CLOSE_LONG : SIGNAL_ACTIONS.CLOSE_SHORT;
     const signal = {
-      action, symbol: this._symbol, category: this._category,
+      action, symbol: this.getCurrentSymbol(), category: this._category,
       suggestedQty: this.config.positionSizePercent, suggestedPrice: price,
       reduceOnly: true,
       confidence: toFixed('0.9000', 4), reason,
-      marketContext: { ...context, currentPrice: price, atr: this._latestAtr, structure: this._structure },
+      marketContext: { ...context, currentPrice: price, atr: s.latestAtr, structure: s.structure },
     };
-    this._lastSignal = signal;
+    s.lastSignal = signal;
     this.emitSignal(signal);
   }
 
@@ -467,17 +484,18 @@ class SwingStructureStrategy extends StrategyBase {
    * trail above lowest. Stop only moves in favourable direction.
    */
   _updateTrailingStop() {
-    if (this._latestAtr === null) return;
-    const trailDist = multiply(this.config.trailingDistanceAtr, this._latestAtr);
-    if (this._positionSide === 'long' && this._highestSinceEntry !== null) {
-      const newStop = subtract(this._highestSinceEntry, trailDist);
-      if (this._trailingStopPrice === null || isGreaterThan(newStop, this._trailingStopPrice)) {
-        this._trailingStopPrice = newStop;
+    const s = this._s();
+    if (s.latestAtr === null) return;
+    const trailDist = multiply(this.config.trailingDistanceAtr, s.latestAtr);
+    if (s.positionSide === 'long' && s.highestSinceEntry !== null) {
+      const newStop = subtract(s.highestSinceEntry, trailDist);
+      if (s.trailingStopPrice === null || isGreaterThan(newStop, s.trailingStopPrice)) {
+        s.trailingStopPrice = newStop;
       }
-    } else if (this._positionSide === 'short' && this._lowestSinceEntry !== null) {
-      const newStop = add(this._lowestSinceEntry, trailDist);
-      if (this._trailingStopPrice === null || isLessThan(newStop, this._trailingStopPrice)) {
-        this._trailingStopPrice = newStop;
+    } else if (s.positionSide === 'short' && s.lowestSinceEntry !== null) {
+      const newStop = add(s.lowestSinceEntry, trailDist);
+      if (s.trailingStopPrice === null || isLessThan(newStop, s.trailingStopPrice)) {
+        s.trailingStopPrice = newStop;
       }
     }
   }
@@ -490,35 +508,36 @@ class SwingStructureStrategy extends StrategyBase {
    * @returns {number} 0.50-1.00
    */
   _calcConfidence(structure) {
+    const s = this._s();
     let conf = 0.55;
 
     // Structure depth: additional confirming swing points beyond required 2
-    if (this._swingHighs.length >= 3 && this._swingLows.length >= 3) {
+    if (s.swingHighs.length >= 3 && s.swingLows.length >= 3) {
       let depthBonus = 0;
-      const shLen = this._swingHighs.length;
-      const slLen = this._swingLows.length;
+      const shLen = s.swingHighs.length;
+      const slLen = s.swingLows.length;
       if (structure === 'uptrend') {
-        if (isGreaterThan(this._swingHighs[shLen - 2].price, this._swingHighs[shLen - 3].price)) depthBonus += 0.05;
-        if (isGreaterThan(this._swingLows[slLen - 2].price, this._swingLows[slLen - 3].price)) depthBonus += 0.05;
+        if (isGreaterThan(s.swingHighs[shLen - 2].price, s.swingHighs[shLen - 3].price)) depthBonus += 0.05;
+        if (isGreaterThan(s.swingLows[slLen - 2].price, s.swingLows[slLen - 3].price)) depthBonus += 0.05;
       } else if (structure === 'downtrend') {
-        if (isLessThan(this._swingHighs[shLen - 2].price, this._swingHighs[shLen - 3].price)) depthBonus += 0.05;
-        if (isLessThan(this._swingLows[slLen - 2].price, this._swingLows[slLen - 3].price)) depthBonus += 0.05;
+        if (isLessThan(s.swingHighs[shLen - 2].price, s.swingHighs[shLen - 3].price)) depthBonus += 0.05;
+        if (isLessThan(s.swingLows[slLen - 2].price, s.swingLows[slLen - 3].price)) depthBonus += 0.05;
       }
       conf += Math.min(depthBonus, 0.15);
     }
 
     // Swing separation clarity relative to ATR
-    if (this._latestAtr !== null && this._swingHighs.length >= 2 && this._swingLows.length >= 2) {
+    if (s.latestAtr !== null && s.swingHighs.length >= 2 && s.swingLows.length >= 2) {
       const highDiff = abs(subtract(
-        this._swingHighs[this._swingHighs.length - 1].price,
-        this._swingHighs[this._swingHighs.length - 2].price
+        s.swingHighs[s.swingHighs.length - 1].price,
+        s.swingHighs[s.swingHighs.length - 2].price
       ));
       const lowDiff = abs(subtract(
-        this._swingLows[this._swingLows.length - 1].price,
-        this._swingLows[this._swingLows.length - 2].price
+        s.swingLows[s.swingLows.length - 1].price,
+        s.swingLows[s.swingLows.length - 2].price
       ));
       const avgDiff = divide(add(highDiff, lowDiff), '2');
-      const clarityRatio = parseFloat(divide(avgDiff, this._latestAtr));
+      const clarityRatio = parseFloat(divide(avgDiff, s.latestAtr));
       conf += Math.min(clarityRatio * 0.05, 0.10);
     }
 
@@ -531,14 +550,15 @@ class SwingStructureStrategy extends StrategyBase {
 
   /** Reset all position-tracking state after a full exit. */
   _resetPosition() {
-    this._entryPrice = null;
-    this._positionSide = null;
-    this._stopPrice = null;
-    this._trailingActive = false;
-    this._trailingStopPrice = null;
-    this._highestSinceEntry = null;
-    this._lowestSinceEntry = null;
-    this._bosLevel = null;
+    const s = this._s();
+    s.entryPrice = null;
+    s.positionSide = null;
+    s.stopPrice = null;
+    s.trailingActive = false;
+    s.trailingStopPrice = null;
+    s.highestSinceEntry = null;
+    s.lowestSinceEntry = null;
+    s.bosLevel = null;
   }
 }
 

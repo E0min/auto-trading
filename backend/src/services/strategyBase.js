@@ -53,6 +53,9 @@ class StrategyBase extends EventEmitter {
     /** @type {Map<string, string>} Per-symbol regime overrides */
     this._symbolRegimes = new Map();
 
+    /** @type {Map<string, object>} Per-symbol state container — symbol → state object */
+    this._symbolStates = new Map();
+
     /** @type {import('./indicatorCache')|null} */
     this._indicatorCache = null;
 
@@ -62,10 +65,6 @@ class StrategyBase extends EventEmitter {
     // R9-T2: Warm-up tracking — suppress signals until enough klines received
     /** @type {number} Number of klines required before signals are allowed */
     this._warmupCandles = this.constructor.metadata?.warmupCandles || 0;
-    /** @type {number} Number of klines received since activation */
-    this._receivedCandles = 0;
-    /** @type {boolean} Whether warm-up is complete */
-    this._warmedUp = this._warmupCandles === 0;
 
     this._log = createLogger(`Strategy:${name}`);
 
@@ -74,12 +73,6 @@ class StrategyBase extends EventEmitter {
     this._trailingStopConfig = {
       activationPercent: null,  // profit % before trailing activates (null = immediate)
       callbackPercent: '1',     // trail distance as % from extreme
-    };
-    this._trailingState = {
-      entryPrice: null,
-      positionSide: null,       // 'long' | 'short'
-      extremePrice: null,       // highest (long) / lowest (short) since entry
-      activated: false,
     };
 
     // Read trailing stop config from static metadata
@@ -103,29 +96,31 @@ class StrategyBase extends EventEmitter {
     if (this._trailingStopEnabled && ticker) {
       const price = String(ticker.lastPrice || ticker.last || ticker.price || '');
       if (price && price !== 'undefined' && price !== 'null' && price !== '') {
-        const result = this._checkTrailingStop(price);
+        const sym = this._currentProcessingSymbol || this._symbol;
+        const result = this._checkTrailingStop(price, sym);
         if (result) {
+          const trailing = this._s(sym).trailing;
           // Guard: if trailing state already cleared (position already closed), skip
-          if (!this._trailingState.positionSide) return;
+          if (!trailing.positionSide) return;
 
           const signal = {
             action: result.action,
-            symbol: this._currentProcessingSymbol || this._symbol,
+            symbol: sym,
             category: this._category,
             suggestedPrice: price,
             confidence: '0.90',
             reason: result.reason,
             reduceOnly: true,
             marketContext: {
-              entryPrice: this._trailingState.entryPrice,
+              entryPrice: trailing.entryPrice,
               exitPrice: price,
-              extremePrice: this._trailingState.extremePrice,
+              extremePrice: trailing.extremePrice,
               trailingStopType: 'base_auto',
             },
           };
 
           this.emitSignal(signal);
-          this._resetTrailingState();
+          this._resetTrailingState(sym);
         }
       }
     }
@@ -154,16 +149,20 @@ class StrategyBase extends EventEmitter {
     const action = fill.action || (fill.signal && fill.signal.action);
     if (!action) return;
 
+    const sym = fill.symbol || this.getCurrentSymbol();
+    if (!sym) return;
+
     if (action === SIGNAL_ACTIONS.OPEN_LONG || action === SIGNAL_ACTIONS.OPEN_SHORT) {
       const entryPrice = fill.price !== undefined ? String(fill.price) : null;
       if (entryPrice) {
-        this._trailingState.entryPrice = entryPrice;
-        this._trailingState.positionSide = action === SIGNAL_ACTIONS.OPEN_LONG ? 'long' : 'short';
-        this._trailingState.extremePrice = entryPrice;
-        this._trailingState.activated = false;
+        const trailing = this._s(sym).trailing;
+        trailing.entryPrice = entryPrice;
+        trailing.positionSide = action === SIGNAL_ACTIONS.OPEN_LONG ? 'long' : 'short';
+        trailing.extremePrice = entryPrice;
+        trailing.activated = false;
       }
     } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
-      this._resetTrailingState();
+      this._resetTrailingState(sym);
     }
   }
 
@@ -197,9 +196,8 @@ class StrategyBase extends EventEmitter {
     this._category = category;
     this._active = true;
 
-    // R9-T2: Reset warm-up state on activation
-    this._receivedCandles = 0;
-    this._warmedUp = this._warmupCandles === 0;
+    // Initialize per-symbol state
+    this._initSymbolState(symbol);
 
     this._log.info('Strategy activated', { symbol, category, warmupCandles: this._warmupCandles });
   }
@@ -211,6 +209,7 @@ class StrategyBase extends EventEmitter {
   deactivate() {
     this._active = false;
     this._symbols.clear();
+    this._clearAllSymbolStates();
     this._log.info('Strategy deactivated', { symbol: this._symbol });
   }
 
@@ -224,7 +223,9 @@ class StrategyBase extends EventEmitter {
    */
   addSymbol(symbol) {
     this._symbols.add(symbol);
+    this._initSymbolState(symbol);
     if (!this._symbol) this._symbol = symbol;
+    if (!this._active) this._active = true;
   }
 
   /**
@@ -233,6 +234,7 @@ class StrategyBase extends EventEmitter {
    */
   removeSymbol(symbol) {
     this._symbols.delete(symbol);
+    this._clearSymbolState(symbol);
     if (this._symbols.size === 0) {
       this._active = false;
       this._symbol = null;
@@ -273,6 +275,86 @@ class StrategyBase extends EventEmitter {
    */
   getCurrentSymbol() {
     return this._currentProcessingSymbol || this._symbol;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Per-symbol state container (SymbolState)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Access the per-symbol state for the given symbol.
+   * Lazily creates state if it doesn't exist yet.
+   *
+   * @param {string} [symbol] — defaults to getCurrentSymbol()
+   * @returns {object} per-symbol state object
+   */
+  _s(symbol) {
+    const sym = symbol || this.getCurrentSymbol();
+    if (!sym) {
+      throw new Error(`${this.name}._s(): no symbol available`);
+    }
+    if (!this._symbolStates.has(sym)) {
+      this._symbolStates.set(sym, this._createDefaultState());
+    }
+    return this._symbolStates.get(sym);
+  }
+
+  /**
+   * Create a default per-symbol state object.
+   * Sub-classes SHOULD override this to add strategy-specific fields,
+   * calling `const base = super._createDefaultState()` and spreading it.
+   *
+   * @returns {object} default state
+   */
+  _createDefaultState() {
+    return {
+      // Position tracking
+      entryPrice: null,
+      positionSide: null,
+      latestPrice: null,
+      lastSignal: null,
+
+      // Warmup tracking (per-symbol)
+      receivedCandles: 0,
+      warmedUp: this._warmupCandles === 0,
+
+      // Trailing stop (per-symbol)
+      trailing: {
+        entryPrice: null,
+        positionSide: null,
+        extremePrice: null,
+        activated: false,
+      },
+    };
+  }
+
+  /**
+   * Initialize per-symbol state for a symbol.
+   * Called by activate() and addSymbol().
+   *
+   * @param {string} symbol
+   * @private
+   */
+  _initSymbolState(symbol) {
+    if (!this._symbolStates.has(symbol)) {
+      this._symbolStates.set(symbol, this._createDefaultState());
+    }
+  }
+
+  /**
+   * Clear per-symbol state for a symbol.
+   * @param {string} symbol
+   */
+  _clearSymbolState(symbol) {
+    this._symbolStates.delete(symbol);
+  }
+
+  /**
+   * Clear all per-symbol state.
+   * @private
+   */
+  _clearAllSymbolStates() {
+    this._symbolStates.clear();
   }
 
   /**
@@ -386,33 +468,48 @@ class StrategyBase extends EventEmitter {
   // ---------------------------------------------------------------------------
 
   /**
-   * Track an incoming kline for warm-up progress.
+   * Track an incoming kline for warm-up progress (per-symbol).
    * Called by BotService before onKline() on each kline update.
+   *
+   * @param {string} [symbol] — defaults to getCurrentSymbol()
    */
-  trackKline() {
-    if (!this._warmedUp) {
-      this._receivedCandles++;
-      if (this._receivedCandles >= this._warmupCandles) {
-        this._warmedUp = true;
-        this._log.info('Warm-up complete', { candles: this._receivedCandles });
+  trackKline(symbol) {
+    const sym = symbol || this.getCurrentSymbol();
+    if (!sym) return;
+    const state = this._s(sym);
+    if (!state.warmedUp) {
+      state.receivedCandles++;
+      if (state.receivedCandles >= this._warmupCandles) {
+        state.warmedUp = true;
+        this._log.info('Warm-up complete', { symbol: sym, candles: state.receivedCandles });
       }
     }
   }
 
   /**
+   * @param {string} [symbol] — defaults to getCurrentSymbol()
    * @returns {boolean} whether the warm-up period is complete
    */
-  isWarmedUp() {
-    return this._warmedUp;
+  isWarmedUp(symbol) {
+    const sym = symbol || this.getCurrentSymbol();
+    if (!sym) return this._warmupCandles === 0;
+    if (!this._symbolStates.has(sym)) return this._warmupCandles === 0;
+    return this._s(sym).warmedUp;
   }
 
   /**
+   * @param {string} [symbol] — defaults to getCurrentSymbol()
    * @returns {{ warmedUp: boolean, received: number, required: number }}
    */
-  getWarmupProgress() {
+  getWarmupProgress(symbol) {
+    const sym = symbol || this.getCurrentSymbol();
+    if (!sym || !this._symbolStates.has(sym)) {
+      return { warmedUp: this._warmupCandles === 0, received: 0, required: this._warmupCandles };
+    }
+    const state = this._s(sym);
     return {
-      warmedUp: this._warmedUp,
-      received: this._receivedCandles,
+      warmedUp: state.warmedUp,
+      received: state.receivedCandles,
       required: this._warmupCandles,
     };
   }
@@ -446,42 +543,45 @@ class StrategyBase extends EventEmitter {
 
   /**
    * Check whether the trailing stop should trigger a position close.
-   *
-   * Call this from onTick() or onKline() with the current price.
+   * Uses per-symbol trailing state.
    *
    * @param {string} price — current market price (String)
+   * @param {string} [symbol] — defaults to getCurrentSymbol()
    * @returns {{ action: string, reason: string }|null} — close signal info, or null
    */
-  _checkTrailingStop(price) {
+  _checkTrailingStop(price, symbol) {
     try {
       if (!this._trailingStopEnabled) return null;
 
-      const { entryPrice, positionSide, extremePrice } = this._trailingState;
+      const sym = symbol || this.getCurrentSymbol();
+      if (!sym) return null;
+      const trailing = this._s(sym).trailing;
+
+      const { entryPrice, positionSide, extremePrice } = trailing;
       if (!entryPrice || !positionSide) return null;
 
       // Update extreme price
       if (positionSide === 'long') {
         if (extremePrice === null || isGreaterThan(price, extremePrice)) {
-          this._trailingState.extremePrice = price;
+          trailing.extremePrice = price;
         }
       } else {
         if (extremePrice === null || isLessThan(price, extremePrice)) {
-          this._trailingState.extremePrice = price;
+          trailing.extremePrice = price;
         }
       }
 
-      const currentExtreme = this._trailingState.extremePrice;
+      const currentExtreme = trailing.extremePrice;
       const { activationPercent, callbackPercent } = this._trailingStopConfig;
 
       // Check activation: profit % must exceed activationPercent
-      if (!this._trailingState.activated) {
+      if (!trailing.activated) {
         if (activationPercent !== null) {
           let profitPct;
           try {
             if (positionSide === 'long') {
               profitPct = pctChange(entryPrice, price);
             } else {
-              // For short: profit when price drops
               profitPct = pctChange(price, entryPrice);
             }
           } catch (_) {
@@ -489,34 +589,27 @@ class StrategyBase extends EventEmitter {
           }
 
           if (!isGreaterThanOrEqual(profitPct, activationPercent)) {
-            return null; // Not yet activated
+            return null;
           }
         }
 
-        this._trailingState.activated = true;
+        trailing.activated = true;
         this._log.debug('Trailing stop activated', {
-          positionSide,
-          entryPrice,
-          price,
-          extremePrice: currentExtreme,
+          symbol: sym, positionSide, entryPrice, price, extremePrice: currentExtreme,
         });
       }
 
       // Check callback: has price dropped callbackPercent from extreme?
-      if (this._trailingState.activated && currentExtreme) {
+      if (trailing.activated && currentExtreme) {
         let retracement;
         try {
           if (positionSide === 'long') {
-            // Price has dropped from extreme (negative pctChange)
             retracement = pctChange(currentExtreme, price);
-            // retracement is negative when price drops; compare abs against callback
             if (isGreaterThan(abs(retracement), callbackPercent)) {
               return { action: SIGNAL_ACTIONS.CLOSE_LONG, reason: 'trailing_stop' };
             }
           } else {
-            // Price has risen from extreme (positive pctChange from short's extreme low)
             retracement = pctChange(currentExtreme, price);
-            // retracement is positive when price rises from low; compare against callback
             if (isGreaterThan(retracement, callbackPercent)) {
               return { action: SIGNAL_ACTIONS.CLOSE_SHORT, reason: 'trailing_stop' };
             }
@@ -534,14 +627,18 @@ class StrategyBase extends EventEmitter {
   }
 
   /**
-   * Reset all trailing stop state. Called on position close.
+   * Reset trailing stop state for a symbol. Called on position close.
+   * @param {string} [symbol] — defaults to getCurrentSymbol()
    * @private
    */
-  _resetTrailingState() {
-    this._trailingState.entryPrice = null;
-    this._trailingState.positionSide = null;
-    this._trailingState.extremePrice = null;
-    this._trailingState.activated = false;
+  _resetTrailingState(symbol) {
+    const sym = symbol || this.getCurrentSymbol();
+    if (!sym || !this._symbolStates.has(sym)) return;
+    const trailing = this._s(sym).trailing;
+    trailing.entryPrice = null;
+    trailing.positionSide = null;
+    trailing.extremePrice = null;
+    trailing.activated = false;
   }
 
   /**
@@ -558,10 +655,14 @@ class StrategyBase extends EventEmitter {
       return;
     }
 
-    // R9-T2: Suppress signals during warm-up period
-    if (!this._warmedUp) {
+    const sym = signalData.symbol || this._currentProcessingSymbol || this._symbol;
+
+    // R9-T2: Suppress signals during warm-up period (per-symbol)
+    if (sym && this._symbolStates.has(sym) && !this._s(sym).warmedUp) {
+      const state = this._s(sym);
       this._log.debug('Signal suppressed — warming up', {
-        received: this._receivedCandles,
+        symbol: sym,
+        received: state.receivedCandles,
         required: this._warmupCandles,
       });
       return;
@@ -571,8 +672,7 @@ class StrategyBase extends EventEmitter {
       strategy: this.name,
       timestamp: new Date().toISOString(),
       ...signalData,
-      // T0-3: symbol fallback chain
-      symbol: signalData.symbol || this._currentProcessingSymbol || this._symbol,
+      symbol: sym,
     };
 
     this._log.trade('Signal generated', {

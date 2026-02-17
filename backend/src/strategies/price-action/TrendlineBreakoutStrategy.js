@@ -24,6 +24,8 @@
  *   - Trailing: activates after trailingActivationAtr × ATR profit,
  *     trails at trailingDistanceAtr × ATR from extreme
  *   - Trendlines are FROZEN while in a position (no recalculation)
+ *
+ * Per-symbol state via StrategyBase SymbolState pattern.
  */
 
 const StrategyBase = require('../../services/strategyBase');
@@ -47,6 +49,7 @@ class TrendlineBreakoutStrategy extends StrategyBase {
     gracePeriodMs: 600000,
     warmupCandles: 30,
     volatilityPreference: 'neutral',
+    maxSymbolsPerStrategy: 3,
     description: '추세선 돌파 -- 피봇 2개 연결 추세선 돌파 시 추격 진입, 짧은 손절 = 높은 손익비',
     defaultConfig: {
       aggregationMinutes: 60,           // Aggregation bar size (minutes)
@@ -69,49 +72,35 @@ class TrendlineBreakoutStrategy extends StrategyBase {
     const merged = { ...TrendlineBreakoutStrategy.metadata.defaultConfig, ...config };
     super('TrendlineBreakoutStrategy', merged);
 
-    // --- Aggregation state ---
-    /** @type {Array<{high:string, low:string, close:string, open:string}>} aggregated bars */
-    this._aggBars = [];
-    /** @type {{high:string, low:string, close:string, open:string}|null} current building bar */
-    this._currentBar = null;
-    /** @type {number} 1-min klines accumulated in current bar */
-    this._barCount = 0;
     /** @type {number} max aggregated bars to keep */
     this._maxBars = 250;
+  }
 
-    // --- Trendline state ---
-    /** @type {{pivot1, pivot2, slope:string, projected:string}|null} */
-    this._resistanceLine = null;
-    /** @type {{pivot1, pivot2, slope:string, projected:string}|null} */
-    this._supportLine = null;
+  // --------------------------------------------------------------------------
+  // SymbolState — per-symbol state defaults
+  // --------------------------------------------------------------------------
 
-    // --- ATR ---
-    /** @type {string|null} */
-    this._latestAtr = null;
-
-    // --- Tick state ---
-    /** @type {string|null} */
-    this._latestPrice = null;
-    /** @type {object|null} */
-    this._lastSignal = null;
-
-    // --- Position state ---
-    /** @type {string|null} */
-    this._entryPrice = null;
-    /** @type {'long'|'short'|null} */
-    this._positionSide = null;
-    /** @type {string|null} */
-    this._stopPrice = null;
-    /** @type {boolean} */
-    this._trailingActive = false;
-    /** @type {string|null} */
-    this._trailingStopPrice = null;
-    /** @type {string|null} */
-    this._highestSinceEntry = null;
-    /** @type {string|null} */
-    this._lowestSinceEntry = null;
-    /** @type {boolean} freeze trendlines while in position */
-    this._trendlineFrozen = false;
+  /** @override */
+  _createDefaultState() {
+    return {
+      ...super._createDefaultState(),
+      // Aggregation state
+      aggBars: [],
+      currentBar: null,
+      barCount: 0,
+      // Trendline state
+      resistanceLine: null,
+      supportLine: null,
+      // ATR
+      latestAtr: null,
+      // Position state
+      stopPrice: null,
+      trailingActive: false,
+      trailingStopPrice: null,
+      highestSinceEntry: null,
+      lowestSinceEntry: null,
+      trendlineFrozen: false,
+    };
   }
 
   // --------------------------------------------------------------------------
@@ -125,6 +114,8 @@ class TrendlineBreakoutStrategy extends StrategyBase {
    */
   onKline(kline) {
     if (!this._active) return;
+    const s = this._s();
+    const symbol = this.getCurrentSymbol();
     const close = kline && kline.close !== undefined ? String(kline.close) : null;
     if (close === null) return;
     const high = kline && kline.high !== undefined ? String(kline.high) : close;
@@ -132,55 +123,55 @@ class TrendlineBreakoutStrategy extends StrategyBase {
     const open = kline && kline.open !== undefined ? String(kline.open) : close;
 
     // --- Aggregate 1-min klines into N-min bars ---
-    if (this._currentBar === null) {
-      this._currentBar = { open, high, low, close };
-      this._barCount = 1;
+    if (s.currentBar === null) {
+      s.currentBar = { open, high, low, close };
+      s.barCount = 1;
     } else {
-      if (isGreaterThan(high, this._currentBar.high)) this._currentBar.high = high;
-      if (isLessThan(low, this._currentBar.low)) this._currentBar.low = low;
-      this._currentBar.close = close;
-      this._barCount++;
+      if (isGreaterThan(high, s.currentBar.high)) s.currentBar.high = high;
+      if (isLessThan(low, s.currentBar.low)) s.currentBar.low = low;
+      s.currentBar.close = close;
+      s.barCount++;
     }
 
     // Not a complete aggregated bar yet
-    if (this._barCount < this.config.aggregationMinutes) return;
+    if (s.barCount < this.config.aggregationMinutes) return;
 
     // --- Bar complete: push and reset ---
-    this._aggBars.push({ ...this._currentBar });
-    if (this._aggBars.length > this._maxBars) {
-      this._aggBars = this._aggBars.slice(-this._maxBars);
+    s.aggBars.push({ ...s.currentBar });
+    if (s.aggBars.length > this._maxBars) {
+      s.aggBars = s.aggBars.slice(-this._maxBars);
     }
-    this._currentBar = null;
-    this._barCount = 0;
+    s.currentBar = null;
+    s.barCount = 0;
 
     // --- Minimum data check ---
     const { atrPeriod, pivotLeftBars, pivotRightBars } = this.config;
     const minRequired = Math.max(pivotLeftBars + pivotRightBars + 1, atrPeriod + 1);
-    if (this._aggBars.length < minRequired) {
+    if (s.aggBars.length < minRequired) {
       log.debug('Not enough aggregated bars', {
-        have: this._aggBars.length, need: minRequired,
+        have: s.aggBars.length, need: minRequired,
       });
       return;
     }
 
     // --- Compute ATR on aggregated bars ---
-    const currentAtr = atr(this._aggBars, atrPeriod);
+    const currentAtr = atr(s.aggBars, atrPeriod);
     if (currentAtr === null) return;
-    this._latestAtr = currentAtr;
+    s.latestAtr = currentAtr;
 
     // --- Skip trendline recalculation while in position ---
-    if (this._trendlineFrozen) {
-      log.debug('Trendlines frozen (position open)', { symbol: this._symbol });
+    if (s.trendlineFrozen) {
+      log.debug('Trendlines frozen (position open)', { symbol });
       return;
     }
 
     // --- Detect pivots on aggregated highs / lows ---
-    const highs = this._aggBars.map(b => b.high);
-    const lows = this._aggBars.map(b => b.low);
+    const highs = s.aggBars.map(b => b.high);
+    const lows = s.aggBars.map(b => b.low);
     const pivots = findPivots(highs, pivotLeftBars, pivotRightBars);
     const pivotLows = findPivots(lows, pivotLeftBars, pivotRightBars);
 
-    const currentIndex = this._aggBars.length - 1;
+    const currentIndex = s.aggBars.length - 1;
 
     // --- Find trendlines ---
     const lines = findTrendlines(
@@ -188,15 +179,15 @@ class TrendlineBreakoutStrategy extends StrategyBase {
       { minPivotDistance: this.config.minPivotDistance, maxPivotAge: this.config.maxPivotAge },
     );
 
-    this._resistanceLine = lines.resistance;
-    this._supportLine = lines.support;
+    s.resistanceLine = lines.resistance;
+    s.supportLine = lines.support;
 
     log.debug('Trendlines updated', {
-      symbol: this._symbol,
-      hasResistance: !!this._resistanceLine,
-      hasSupport: !!this._supportLine,
+      symbol,
+      hasResistance: !!s.resistanceLine,
+      hasSupport: !!s.supportLine,
       atr: currentAtr,
-      bars: this._aggBars.length,
+      bars: s.aggBars.length,
     });
   }
 
@@ -211,14 +202,16 @@ class TrendlineBreakoutStrategy extends StrategyBase {
    */
   onTick(ticker) {
     if (!this._active) return;
-    if (ticker && ticker.lastPrice !== undefined) this._latestPrice = String(ticker.lastPrice);
-    if (!this._latestPrice || !this._latestAtr) return;
+    const s = this._s();
+    if (ticker && ticker.lastPrice !== undefined) s.latestPrice = String(ticker.lastPrice);
+    if (!s.latestPrice || !s.latestAtr) return;
 
-    const price = this._latestPrice;
-    const currentAtr = this._latestAtr;
+    const price = s.latestPrice;
+    const currentAtr = s.latestAtr;
+    const symbol = this.getCurrentSymbol();
 
     // === Position open: manage exit ===
-    if (this._positionSide !== null && this._entryPrice !== null) {
+    if (s.positionSide !== null && s.entryPrice !== null) {
       this._manageExit(price, currentAtr);
       return;
     }
@@ -235,8 +228,8 @@ class TrendlineBreakoutStrategy extends StrategyBase {
     const slBuffer = multiply(this.config.slBufferAtr, currentAtr);
 
     // --- Descending resistance breakout → LONG ---
-    if (this._resistanceLine) {
-      const projected = this._resistanceLine.projected;
+    if (s.resistanceLine) {
+      const projected = s.resistanceLine.projected;
       const breakoutThreshold = add(projected, breakoutBuffer);
 
       if (isGreaterThan(price, breakoutThreshold)) {
@@ -246,7 +239,7 @@ class TrendlineBreakoutStrategy extends StrategyBase {
 
         const signal = {
           action: SIGNAL_ACTIONS.OPEN_LONG,
-          symbol: this._symbol,
+          symbol,
           category: this._category,
           suggestedQty: this.config.positionSizePercent,
           suggestedPrice: price,
@@ -257,9 +250,9 @@ class TrendlineBreakoutStrategy extends StrategyBase {
           reason: 'trendline_breakout_long',
           marketContext: {
             trendlineProjected: projected,
-            trendlineSlope: this._resistanceLine.slope,
-            pivot1: this._resistanceLine.pivot1,
-            pivot2: this._resistanceLine.pivot2,
+            trendlineSlope: s.resistanceLine.slope,
+            pivot1: s.resistanceLine.pivot1,
+            pivot2: s.resistanceLine.pivot2,
             slPrice,
             atr: currentAtr,
             riskPerUnit,
@@ -268,18 +261,18 @@ class TrendlineBreakoutStrategy extends StrategyBase {
         };
 
         this._enterPosition('long', price, slPrice);
-        this._lastSignal = signal;
+        s.lastSignal = signal;
         this.emitSignal(signal);
         log.info('Long entry: resistance trendline breakout', {
-          symbol: this._symbol, price, projected, sl: slPrice,
+          symbol, price, projected, sl: slPrice,
         });
         return;
       }
     }
 
     // --- Ascending support breakout → SHORT ---
-    if (this._supportLine) {
-      const projected = this._supportLine.projected;
+    if (s.supportLine) {
+      const projected = s.supportLine.projected;
       const breakoutThreshold = subtract(projected, breakoutBuffer);
 
       if (isLessThan(price, breakoutThreshold)) {
@@ -289,7 +282,7 @@ class TrendlineBreakoutStrategy extends StrategyBase {
 
         const signal = {
           action: SIGNAL_ACTIONS.OPEN_SHORT,
-          symbol: this._symbol,
+          symbol,
           category: this._category,
           suggestedQty: this.config.positionSizePercent,
           suggestedPrice: price,
@@ -300,9 +293,9 @@ class TrendlineBreakoutStrategy extends StrategyBase {
           reason: 'trendline_breakout_short',
           marketContext: {
             trendlineProjected: projected,
-            trendlineSlope: this._supportLine.slope,
-            pivot1: this._supportLine.pivot1,
-            pivot2: this._supportLine.pivot2,
+            trendlineSlope: s.supportLine.slope,
+            pivot1: s.supportLine.pivot1,
+            pivot2: s.supportLine.pivot2,
             slPrice,
             atr: currentAtr,
             riskPerUnit,
@@ -311,10 +304,10 @@ class TrendlineBreakoutStrategy extends StrategyBase {
         };
 
         this._enterPosition('short', price, slPrice);
-        this._lastSignal = signal;
+        s.lastSignal = signal;
         this.emitSignal(signal);
         log.info('Short entry: support trendline breakout', {
-          symbol: this._symbol, price, projected, sl: slPrice,
+          symbol, price, projected, sl: slPrice,
         });
         return;
       }
@@ -328,27 +321,29 @@ class TrendlineBreakoutStrategy extends StrategyBase {
   /** @param {object} fill */
   onFill(fill) {
     if (!fill) return;
+    const s = this._s();
     const action = fill.action || (fill.signal && fill.signal.action);
+    const symbol = this.getCurrentSymbol();
 
     if (action === SIGNAL_ACTIONS.OPEN_LONG) {
-      this._positionSide = 'long';
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      this._trendlineFrozen = true;
-      log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      s.positionSide = 'long';
+      if (fill.price !== undefined) s.entryPrice = String(fill.price);
+      s.trendlineFrozen = true;
+      log.trade('Long fill recorded', { entry: s.entryPrice, symbol });
     } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
-      this._positionSide = 'short';
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      this._trendlineFrozen = true;
-      log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      s.positionSide = 'short';
+      if (fill.price !== undefined) s.entryPrice = String(fill.price);
+      s.trendlineFrozen = true;
+      log.trade('Short fill recorded', { entry: s.entryPrice, symbol });
     } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
-      log.trade('Position closed via fill', { side: this._positionSide, symbol: this._symbol });
+      log.trade('Position closed via fill', { side: s.positionSide, symbol });
       this._resetPosition();
     }
   }
 
   /** @returns {object|null} */
   getSignal() {
-    return this._lastSignal;
+    return this._s().lastSignal;
   }
 
   // --------------------------------------------------------------------------
@@ -361,18 +356,21 @@ class TrendlineBreakoutStrategy extends StrategyBase {
    * @param {string} currentAtr
    */
   _manageExit(price, currentAtr) {
+    const s = this._s();
+    const symbol = this.getCurrentSymbol();
+
     // --- Hard stop loss ---
-    if (this._stopPrice !== null) {
-      if (this._positionSide === 'long' && isLessThan(price, this._stopPrice)) {
+    if (s.stopPrice !== null) {
+      if (s.positionSide === 'long' && isLessThan(price, s.stopPrice)) {
         this._emitCloseSignal('long', price, 'trendline_stop_loss', {
-          entryPrice: this._entryPrice, stopPrice: this._stopPrice,
+          entryPrice: s.entryPrice, stopPrice: s.stopPrice,
         });
         this._resetPosition();
         return;
       }
-      if (this._positionSide === 'short' && isGreaterThan(price, this._stopPrice)) {
+      if (s.positionSide === 'short' && isGreaterThan(price, s.stopPrice)) {
         this._emitCloseSignal('short', price, 'trendline_stop_loss', {
-          entryPrice: this._entryPrice, stopPrice: this._stopPrice,
+          entryPrice: s.entryPrice, stopPrice: s.stopPrice,
         });
         this._resetPosition();
         return;
@@ -382,63 +380,63 @@ class TrendlineBreakoutStrategy extends StrategyBase {
     // --- Trailing stop logic ---
     const { trailingActivationAtr, trailingDistanceAtr } = this.config;
 
-    if (this._positionSide === 'long') {
+    if (s.positionSide === 'long') {
       // Update highest price
-      if (!this._highestSinceEntry || isGreaterThan(price, this._highestSinceEntry)) {
-        this._highestSinceEntry = price;
-        if (this._trailingActive) this._updateTrailingStop();
+      if (!s.highestSinceEntry || isGreaterThan(price, s.highestSinceEntry)) {
+        s.highestSinceEntry = price;
+        if (s.trailingActive) this._updateTrailingStop();
       }
 
       // Check trailing activation
-      if (!this._trailingActive) {
+      if (!s.trailingActive) {
         const actDist = multiply(trailingActivationAtr, currentAtr);
-        const profit = subtract(price, this._entryPrice);
+        const profit = subtract(price, s.entryPrice);
         if (isGreaterThan(profit, actDist)) {
-          this._trailingActive = true;
-          this._highestSinceEntry = this._highestSinceEntry || price;
+          s.trailingActive = true;
+          s.highestSinceEntry = s.highestSinceEntry || price;
           this._updateTrailingStop();
           log.info('Trailing stop activated (long)', {
-            symbol: this._symbol, trailingStopPrice: this._trailingStopPrice,
+            symbol, trailingStopPrice: s.trailingStopPrice,
           });
         }
       }
 
       // Check trailing stop hit
-      if (this._trailingActive && this._trailingStopPrice !== null) {
-        if (isLessThan(price, this._trailingStopPrice)) {
+      if (s.trailingActive && s.trailingStopPrice !== null) {
+        if (isLessThan(price, s.trailingStopPrice)) {
           this._emitCloseSignal('long', price, 'trailing_stop', {
-            entryPrice: this._entryPrice, trailingStopPrice: this._trailingStopPrice,
+            entryPrice: s.entryPrice, trailingStopPrice: s.trailingStopPrice,
           });
           this._resetPosition();
           return;
         }
       }
-    } else if (this._positionSide === 'short') {
+    } else if (s.positionSide === 'short') {
       // Update lowest price
-      if (!this._lowestSinceEntry || isLessThan(price, this._lowestSinceEntry)) {
-        this._lowestSinceEntry = price;
-        if (this._trailingActive) this._updateTrailingStop();
+      if (!s.lowestSinceEntry || isLessThan(price, s.lowestSinceEntry)) {
+        s.lowestSinceEntry = price;
+        if (s.trailingActive) this._updateTrailingStop();
       }
 
       // Check trailing activation
-      if (!this._trailingActive) {
+      if (!s.trailingActive) {
         const actDist = multiply(trailingActivationAtr, currentAtr);
-        const profit = subtract(this._entryPrice, price);
+        const profit = subtract(s.entryPrice, price);
         if (isGreaterThan(profit, actDist)) {
-          this._trailingActive = true;
-          this._lowestSinceEntry = this._lowestSinceEntry || price;
+          s.trailingActive = true;
+          s.lowestSinceEntry = s.lowestSinceEntry || price;
           this._updateTrailingStop();
           log.info('Trailing stop activated (short)', {
-            symbol: this._symbol, trailingStopPrice: this._trailingStopPrice,
+            symbol, trailingStopPrice: s.trailingStopPrice,
           });
         }
       }
 
       // Check trailing stop hit
-      if (this._trailingActive && this._trailingStopPrice !== null) {
-        if (isGreaterThan(price, this._trailingStopPrice)) {
+      if (s.trailingActive && s.trailingStopPrice !== null) {
+        if (isGreaterThan(price, s.trailingStopPrice)) {
           this._emitCloseSignal('short', price, 'trailing_stop', {
-            entryPrice: this._entryPrice, trailingStopPrice: this._trailingStopPrice,
+            entryPrice: s.entryPrice, trailingStopPrice: s.trailingStopPrice,
           });
           this._resetPosition();
           return;
@@ -458,19 +456,20 @@ class TrendlineBreakoutStrategy extends StrategyBase {
    * @param {string} slPrice
    */
   _enterPosition(side, price, slPrice) {
-    this._entryPrice = price;
-    this._positionSide = side;
-    this._stopPrice = slPrice;
-    this._trailingActive = false;
-    this._trailingStopPrice = null;
-    this._trendlineFrozen = true;
+    const s = this._s();
+    s.entryPrice = price;
+    s.positionSide = side;
+    s.stopPrice = slPrice;
+    s.trailingActive = false;
+    s.trailingStopPrice = null;
+    s.trendlineFrozen = true;
 
     if (side === 'long') {
-      this._highestSinceEntry = price;
-      this._lowestSinceEntry = null;
+      s.highestSinceEntry = price;
+      s.lowestSinceEntry = null;
     } else {
-      this._highestSinceEntry = null;
-      this._lowestSinceEntry = price;
+      s.highestSinceEntry = null;
+      s.lowestSinceEntry = price;
     }
   }
 
@@ -482,18 +481,20 @@ class TrendlineBreakoutStrategy extends StrategyBase {
    * @param {object} context
    */
   _emitCloseSignal(side, price, reason, context) {
+    const s = this._s();
     const action = side === 'long' ? SIGNAL_ACTIONS.CLOSE_LONG : SIGNAL_ACTIONS.CLOSE_SHORT;
     const signal = {
       action,
-      symbol: this._symbol,
+      symbol: this.getCurrentSymbol(),
       category: this._category,
       suggestedQty: this.config.positionSizePercent,
       suggestedPrice: price,
       confidence: toFixed('0.9000', 4),
+      reduceOnly: true,
       reason,
-      marketContext: { ...context, currentPrice: price, atr: this._latestAtr },
+      marketContext: { ...context, currentPrice: price, atr: s.latestAtr },
     };
-    this._lastSignal = signal;
+    s.lastSignal = signal;
     this.emitSignal(signal);
   }
 
@@ -501,18 +502,19 @@ class TrendlineBreakoutStrategy extends StrategyBase {
    * Update trailing stop price (only ratchets in the favorable direction).
    */
   _updateTrailingStop() {
-    if (this._latestAtr === null) return;
-    const trailDist = multiply(this.config.trailingDistanceAtr, this._latestAtr);
+    const s = this._s();
+    if (s.latestAtr === null) return;
+    const trailDist = multiply(this.config.trailingDistanceAtr, s.latestAtr);
 
-    if (this._positionSide === 'long' && this._highestSinceEntry !== null) {
-      const ns = subtract(this._highestSinceEntry, trailDist);
-      if (this._trailingStopPrice === null || isGreaterThan(ns, this._trailingStopPrice)) {
-        this._trailingStopPrice = ns;
+    if (s.positionSide === 'long' && s.highestSinceEntry !== null) {
+      const ns = subtract(s.highestSinceEntry, trailDist);
+      if (s.trailingStopPrice === null || isGreaterThan(ns, s.trailingStopPrice)) {
+        s.trailingStopPrice = ns;
       }
-    } else if (this._positionSide === 'short' && this._lowestSinceEntry !== null) {
-      const ns = add(this._lowestSinceEntry, trailDist);
-      if (this._trailingStopPrice === null || isLessThan(ns, this._trailingStopPrice)) {
-        this._trailingStopPrice = ns;
+    } else if (s.positionSide === 'short' && s.lowestSinceEntry !== null) {
+      const ns = add(s.lowestSinceEntry, trailDist);
+      if (s.trailingStopPrice === null || isLessThan(ns, s.trailingStopPrice)) {
+        s.trailingStopPrice = ns;
       }
     }
   }
@@ -525,6 +527,7 @@ class TrendlineBreakoutStrategy extends StrategyBase {
    * @returns {number}
    */
   _calcConfidence(side, regime) {
+    const s = this._s();
     let conf = 0.60;
 
     // Regime alignment bonus
@@ -533,11 +536,11 @@ class TrendlineBreakoutStrategy extends StrategyBase {
     else if (regime === MARKET_REGIMES.VOLATILE) conf += 0.05;
 
     // Slope steepness bonus (steeper = stronger breakout signal)
-    const line = side === 'long' ? this._resistanceLine : this._supportLine;
-    if (line && this._latestAtr) {
+    const line = side === 'long' ? s.resistanceLine : s.supportLine;
+    if (line && s.latestAtr) {
       const slopeAbs = abs(line.slope);
       // Normalize slope by ATR: steeper relative to volatility = higher confidence
-      const normalizedSlope = parseFloat(divide(slopeAbs, this._latestAtr));
+      const normalizedSlope = parseFloat(divide(slopeAbs, s.latestAtr));
       if (normalizedSlope > 0.01) conf += Math.min(normalizedSlope * 5, 0.15);
     }
 
@@ -546,14 +549,15 @@ class TrendlineBreakoutStrategy extends StrategyBase {
 
   /** Reset all position-tracking state after exit. */
   _resetPosition() {
-    this._entryPrice = null;
-    this._positionSide = null;
-    this._stopPrice = null;
-    this._trailingActive = false;
-    this._trailingStopPrice = null;
-    this._highestSinceEntry = null;
-    this._lowestSinceEntry = null;
-    this._trendlineFrozen = false;
+    const s = this._s();
+    s.entryPrice = null;
+    s.positionSide = null;
+    s.stopPrice = null;
+    s.trailingActive = false;
+    s.trailingStopPrice = null;
+    s.highestSinceEntry = null;
+    s.lowestSinceEntry = null;
+    s.trendlineFrozen = false;
   }
 }
 

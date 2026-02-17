@@ -40,6 +40,7 @@ const RegimeEvaluator = require('./services/regimeEvaluator');
 const RegimeOptimizer = require('./services/regimeOptimizer');
 const SymbolRegimeManager = require('./services/symbolRegimeManager');
 const FundingDataService = require('./services/fundingDataService');
+const CoinGeckoClient = require('./services/coinGeckoClient');
 
 // --- Wrapper service imports ---
 const scannerService = require('./services/scannerService');
@@ -160,10 +161,12 @@ async function bootstrap() {
     regimeParamStore,
   });
 
+  const coinGeckoClient = new CoinGeckoClient();
   const coinSelector = new CoinSelector({
     exchangeClient,
     tickerAggregator,
     marketRegime,
+    coinGeckoClient,
   });
 
   const performanceTracker = new PerformanceTracker();

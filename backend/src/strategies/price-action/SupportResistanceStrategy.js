@@ -46,6 +46,7 @@ class SupportResistanceStrategy extends StrategyBase {
     gracePeriodMs: 600000,
     warmupCandles: 30,
     volatilityPreference: 'neutral',
+    maxSymbolsPerStrategy: 3,
     description: '지지저항 돌파 -- 수평 S/R 레벨 식별 + 리테스트 확인 후 돌파 진입',
     defaultConfig: {
       lookback: 3,                    // Swing detection lookback (each side)
@@ -68,34 +69,45 @@ class SupportResistanceStrategy extends StrategyBase {
     const merged = { ...SupportResistanceStrategy.metadata.defaultConfig, ...config };
     super('SupportResistanceStrategy', merged);
 
-    /** @type {Array<{high:string, low:string, close:string}>} */
-    this.klineHistory = [];
-    /** @type {string|null} latest ticker price */
-    this._latestPrice = null;
-    /** @type {object|null} most recently generated signal */
-    this._lastSignal = null;
-    /** @type {string|null} entry price */
-    this._entryPrice = null;
-    /** @type {'long'|'short'|null} current position direction */
-    this._positionSide = null;
-    /** @type {string|null} stop loss price */
-    this._stopPrice = null;
-    /** @type {string|null} take profit price */
-    this._tpPrice = null;
-    /** @type {boolean} trailing stop activated */
-    this._trailingActive = false;
-    /** @type {string|null} trailing stop price */
-    this._trailingStopPrice = null;
-    /** @type {string|null} highest price since entry (long) */
-    this._highestSinceEntry = null;
-    /** @type {string|null} lowest price since entry (short) */
-    this._lowestSinceEntry = null;
-    /** @type {string|null} latest ATR value */
-    this._latestAtr = null;
-    /** @type {Array<{price: string, type: 'support'|'resistance', touches: number}>} */
-    this._srLevels = [];
     /** @type {number} max kline data points to keep */
     this._maxHistory = 200;
+  }
+
+  /**
+   * Override: create per-symbol state with all position/indicator fields.
+   * @returns {object}
+   */
+  _createDefaultState() {
+    return {
+      ...super._createDefaultState(),
+
+      /** @type {Array<{high:string, low:string, close:string}>} */
+      klineHistory: [],
+
+      /** @type {string|null} stop loss price */
+      stopPrice: null,
+
+      /** @type {string|null} take profit price */
+      tpPrice: null,
+
+      /** @type {boolean} trailing stop activated */
+      trailingActive: false,
+
+      /** @type {string|null} trailing stop price */
+      trailingStopPrice: null,
+
+      /** @type {string|null} highest price since entry (long) */
+      highestSinceEntry: null,
+
+      /** @type {string|null} lowest price since entry (short) */
+      lowestSinceEntry: null,
+
+      /** @type {string|null} latest ATR value */
+      latestAtr: null,
+
+      /** @type {Array<{price: string, type: 'support'|'resistance', touches: number}>} */
+      srLevels: [],
+    };
   }
 
   // --------------------------------------------------------------------------
@@ -109,14 +121,15 @@ class SupportResistanceStrategy extends StrategyBase {
    * @returns {Array<{index: number, price: string}>}
    */
   _findSwingHighs(lookback) {
+    const s = this._s();
     const result = [];
-    const len = this.klineHistory.length;
+    const len = s.klineHistory.length;
     for (let i = lookback; i < len - lookback; i++) {
-      const h = this.klineHistory[i].high;
+      const h = s.klineHistory[i].high;
       let valid = true;
       for (let j = i - lookback; j <= i + lookback; j++) {
         if (j === i) continue;
-        if (!isGreaterThan(h, this.klineHistory[j].high)) { valid = false; break; }
+        if (!isGreaterThan(h, s.klineHistory[j].high)) { valid = false; break; }
       }
       if (valid) result.push({ index: i, price: h });
     }
@@ -130,14 +143,15 @@ class SupportResistanceStrategy extends StrategyBase {
    * @returns {Array<{index: number, price: string}>}
    */
   _findSwingLows(lookback) {
+    const s = this._s();
     const result = [];
-    const len = this.klineHistory.length;
+    const len = s.klineHistory.length;
     for (let i = lookback; i < len - lookback; i++) {
-      const l = this.klineHistory[i].low;
+      const l = s.klineHistory[i].low;
       let valid = true;
       for (let j = i - lookback; j <= i + lookback; j++) {
         if (j === i) continue;
-        if (!isLessThan(l, this.klineHistory[j].low)) { valid = false; break; }
+        if (!isLessThan(l, s.klineHistory[j].low)) { valid = false; break; }
       }
       if (valid) result.push({ index: i, price: l });
     }
@@ -215,8 +229,9 @@ class SupportResistanceStrategy extends StrategyBase {
    * @returns {{price: string, touches: number}|null}
    */
   _findNextLevel(direction, currentPrice) {
+    const s = this._s();
     let best = null, bestDist = null;
-    for (const lv of this._srLevels) {
+    for (const lv of s.srLevels) {
       if (direction === 'long' && isGreaterThan(lv.price, currentPrice)) {
         const d = subtract(lv.price, currentPrice);
         if (bestDist === null || isLessThan(d, bestDist)) { bestDist = d; best = lv; }
@@ -239,10 +254,11 @@ class SupportResistanceStrategy extends StrategyBase {
    * @returns {boolean}
    */
   _hasRetestConfirmation(levelPrice, side, toleranceDist, lookbackCandles = 3) {
-    const len = this.klineHistory.length;
+    const s = this._s();
+    const len = s.klineHistory.length;
     const start = Math.max(0, len - 1 - lookbackCandles);
     for (let i = start; i < len; i++) {
-      const c = this.klineHistory[i];
+      const c = s.klineHistory[i];
       const ref = side === 'long' ? c.low : c.high;
       const dist = abs(subtract(ref, levelPrice));
       if (isLessThanOrEqual(dist, toleranceDist)) return true;
@@ -277,50 +293,52 @@ class SupportResistanceStrategy extends StrategyBase {
    */
   onTick(ticker) {
     if (!this._active) return;
-    if (ticker && ticker.lastPrice !== undefined) this._latestPrice = String(ticker.lastPrice);
-    if (!this._entryPrice || !this._positionSide || !this._latestPrice) return;
-    const price = this._latestPrice;
+    const s = this._s();
+
+    if (ticker && ticker.lastPrice !== undefined) s.latestPrice = String(ticker.lastPrice);
+    if (!s.entryPrice || !s.positionSide || !s.latestPrice) return;
+    const price = s.latestPrice;
 
     // --- Hard stop loss ---
-    if (this._stopPrice !== null) {
-      if (this._positionSide === 'long' && isLessThan(price, this._stopPrice)) {
-        this._emitCloseSignal('long', price, 'sr_stop_loss', { entryPrice: this._entryPrice, stopPrice: this._stopPrice });
+    if (s.stopPrice !== null) {
+      if (s.positionSide === 'long' && isLessThan(price, s.stopPrice)) {
+        this._emitCloseSignal('long', price, 'sr_stop_loss', { entryPrice: s.entryPrice, stopPrice: s.stopPrice });
         this._resetPosition(); return;
       }
-      if (this._positionSide === 'short' && isGreaterThan(price, this._stopPrice)) {
-        this._emitCloseSignal('short', price, 'sr_stop_loss', { entryPrice: this._entryPrice, stopPrice: this._stopPrice });
+      if (s.positionSide === 'short' && isGreaterThan(price, s.stopPrice)) {
+        this._emitCloseSignal('short', price, 'sr_stop_loss', { entryPrice: s.entryPrice, stopPrice: s.stopPrice });
         this._resetPosition(); return;
       }
     }
 
     // --- Take profit ---
-    if (this._tpPrice !== null) {
-      if (this._positionSide === 'long' && isGreaterThan(price, this._tpPrice)) {
-        this._emitCloseSignal('long', price, 'sr_take_profit', { entryPrice: this._entryPrice, tpPrice: this._tpPrice });
+    if (s.tpPrice !== null) {
+      if (s.positionSide === 'long' && isGreaterThan(price, s.tpPrice)) {
+        this._emitCloseSignal('long', price, 'sr_take_profit', { entryPrice: s.entryPrice, tpPrice: s.tpPrice });
         this._resetPosition(); return;
       }
-      if (this._positionSide === 'short' && isLessThan(price, this._tpPrice)) {
-        this._emitCloseSignal('short', price, 'sr_take_profit', { entryPrice: this._entryPrice, tpPrice: this._tpPrice });
+      if (s.positionSide === 'short' && isLessThan(price, s.tpPrice)) {
+        this._emitCloseSignal('short', price, 'sr_take_profit', { entryPrice: s.entryPrice, tpPrice: s.tpPrice });
         this._resetPosition(); return;
       }
     }
 
     // --- Trailing stop ---
-    if (this._trailingActive && this._trailingStopPrice !== null) {
-      if (this._positionSide === 'long') {
-        if (!this._highestSinceEntry || isGreaterThan(price, this._highestSinceEntry)) {
-          this._highestSinceEntry = price; this._updateTrailingStop();
+    if (s.trailingActive && s.trailingStopPrice !== null) {
+      if (s.positionSide === 'long') {
+        if (!s.highestSinceEntry || isGreaterThan(price, s.highestSinceEntry)) {
+          s.highestSinceEntry = price; this._updateTrailingStop();
         }
-        if (isLessThan(price, this._trailingStopPrice)) {
-          this._emitCloseSignal('long', price, 'trailing_stop', { entryPrice: this._entryPrice, trailingStopPrice: this._trailingStopPrice });
+        if (isLessThan(price, s.trailingStopPrice)) {
+          this._emitCloseSignal('long', price, 'trailing_stop', { entryPrice: s.entryPrice, trailingStopPrice: s.trailingStopPrice });
           this._resetPosition(); return;
         }
-      } else if (this._positionSide === 'short') {
-        if (!this._lowestSinceEntry || isLessThan(price, this._lowestSinceEntry)) {
-          this._lowestSinceEntry = price; this._updateTrailingStop();
+      } else if (s.positionSide === 'short') {
+        if (!s.lowestSinceEntry || isLessThan(price, s.lowestSinceEntry)) {
+          s.lowestSinceEntry = price; this._updateTrailingStop();
         }
-        if (isGreaterThan(price, this._trailingStopPrice)) {
-          this._emitCloseSignal('short', price, 'trailing_stop', { entryPrice: this._entryPrice, trailingStopPrice: this._trailingStopPrice });
+        if (isGreaterThan(price, s.trailingStopPrice)) {
+          this._emitCloseSignal('short', price, 'trailing_stop', { entryPrice: s.entryPrice, trailingStopPrice: s.trailingStopPrice });
           this._resetPosition(); return;
         }
       }
@@ -342,24 +360,27 @@ class SupportResistanceStrategy extends StrategyBase {
     const high = kline && kline.high !== undefined ? String(kline.high) : close;
     const low = kline && kline.low !== undefined ? String(kline.low) : close;
 
+    const s = this._s();
+    const sym = this.getCurrentSymbol();
+
     // 1. Push data and trim
-    this.klineHistory.push({ high, low, close });
-    if (this.klineHistory.length > this._maxHistory) {
-      this.klineHistory = this.klineHistory.slice(-this._maxHistory);
+    s.klineHistory.push({ high, low, close });
+    if (s.klineHistory.length > this._maxHistory) {
+      s.klineHistory = s.klineHistory.slice(-this._maxHistory);
     }
 
     // 2. Minimum data check
     const { lookback, atrPeriod } = this.config;
     const minRequired = Math.max(lookback * 2 + 1, atrPeriod + 1);
-    if (this.klineHistory.length < minRequired) {
-      log.debug('Not enough data yet', { have: this.klineHistory.length, need: minRequired });
+    if (s.klineHistory.length < minRequired) {
+      log.debug('Not enough data yet', { have: s.klineHistory.length, need: minRequired });
       return;
     }
 
     // 3. Compute ATR
-    const currentAtr = atr(this.klineHistory, atrPeriod);
+    const currentAtr = atr(s.klineHistory, atrPeriod);
     if (currentAtr === null) return;
-    this._latestAtr = currentAtr;
+    s.latestAtr = currentAtr;
     const price = close;
     const { clusterTolerance, retestTolerance, minTouches, slMultiplier,
             defaultTpMultiplier, trailingActivationAtr, trailingDistanceAtr,
@@ -370,44 +391,44 @@ class SupportResistanceStrategy extends StrategyBase {
     //    the current candle can be detected.
     const allSwings = [...this._findSwingHighs(lookback), ...this._findSwingLows(lookback)];
     const tolerance = multiply(clusterTolerance, currentAtr);
-    const prevClose = this.klineHistory.length >= 2
-      ? this.klineHistory[this.klineHistory.length - 2].close
+    const prevClose = s.klineHistory.length >= 2
+      ? s.klineHistory[s.klineHistory.length - 2].close
       : price;
-    this._srLevels = this._classifyLevels(this._clusterLevels(allSwings, tolerance), prevClose);
+    s.srLevels = this._classifyLevels(this._clusterLevels(allSwings, tolerance), prevClose);
 
     log.debug('S/R levels updated', {
-      symbol: this._symbol,
-      totalLevels: this._srLevels.length,
-      supports: this._srLevels.filter(l => l.type === 'support').length,
-      resistances: this._srLevels.filter(l => l.type === 'resistance').length,
+      symbol: sym,
+      totalLevels: s.srLevels.length,
+      supports: s.srLevels.filter(l => l.type === 'support').length,
+      resistances: s.srLevels.filter(l => l.type === 'resistance').length,
     });
 
     // 5. Position open: update extremes, check trailing activation
-    if (this._positionSide !== null && this._entryPrice !== null) {
-      if (this._positionSide === 'long') {
-        if (!this._highestSinceEntry || isGreaterThan(high, this._highestSinceEntry)) {
-          this._highestSinceEntry = high;
-          if (this._trailingActive) this._updateTrailingStop();
+    if (s.positionSide !== null && s.entryPrice !== null) {
+      if (s.positionSide === 'long') {
+        if (!s.highestSinceEntry || isGreaterThan(high, s.highestSinceEntry)) {
+          s.highestSinceEntry = high;
+          if (s.trailingActive) this._updateTrailingStop();
         }
       } else {
-        if (!this._lowestSinceEntry || isLessThan(low, this._lowestSinceEntry)) {
-          this._lowestSinceEntry = low;
-          if (this._trailingActive) this._updateTrailingStop();
+        if (!s.lowestSinceEntry || isLessThan(low, s.lowestSinceEntry)) {
+          s.lowestSinceEntry = low;
+          if (s.trailingActive) this._updateTrailingStop();
         }
       }
       // Trailing activation check
-      if (!this._trailingActive) {
+      if (!s.trailingActive) {
         const actDist = multiply(trailingActivationAtr, currentAtr);
-        const profit = this._positionSide === 'long'
-          ? subtract(price, this._entryPrice)
-          : subtract(this._entryPrice, price);
+        const profit = s.positionSide === 'long'
+          ? subtract(price, s.entryPrice)
+          : subtract(s.entryPrice, price);
         if (isGreaterThan(profit, actDist)) {
-          this._trailingActive = true;
-          if (this._positionSide === 'long') this._highestSinceEntry = this._highestSinceEntry || price;
-          else this._lowestSinceEntry = this._lowestSinceEntry || price;
+          s.trailingActive = true;
+          if (s.positionSide === 'long') s.highestSinceEntry = s.highestSinceEntry || price;
+          else s.lowestSinceEntry = s.lowestSinceEntry || price;
           this._updateTrailingStop();
-          log.info(`Trailing stop activated (${this._positionSide})`, {
-            symbol: this._symbol, trailingStopPrice: this._trailingStopPrice,
+          log.info(`Trailing stop activated (${s.positionSide})`, {
+            symbol: sym, trailingStopPrice: s.trailingStopPrice,
           });
         }
       }
@@ -425,7 +446,7 @@ class SupportResistanceStrategy extends StrategyBase {
     const retestDist = multiply(retestTolerance, currentAtr);
 
     // --- Resistance breakout -> Long entry ---
-    for (const level of this._srLevels.filter(l => l.type === 'resistance')) {
+    for (const level of s.srLevels.filter(l => l.type === 'resistance')) {
       if (level.touches < minTouches) continue;
       if (!isGreaterThan(price, level.price)) continue;
       if (!this._hasRetestConfirmation(level.price, 'long', retestDist)) continue;
@@ -435,27 +456,27 @@ class SupportResistanceStrategy extends StrategyBase {
       const tpPrice = nextLv ? nextLv.price : add(price, multiply(defaultTpMultiplier, currentAtr));
       const conf = this._calcConfidence(level);
       const signal = {
-        action: SIGNAL_ACTIONS.OPEN_LONG, symbol: this._symbol, category: this._category,
+        action: SIGNAL_ACTIONS.OPEN_LONG, symbol: sym, category: this._category,
         suggestedQty: positionSizePercent, suggestedPrice: price, stopLossPrice: slPrice, riskPerUnit,
         confidence: toFixed(String(conf), 4), leverage: this.config.leverage,
         reason: 'sr_breakout_long',
         marketContext: { brokenLevel: level.price, levelTouches: level.touches,
           tpPrice, slPrice, nextSrLevel: nextLv ? nextLv.price : null,
-          atr: currentAtr, riskPerUnit, regime, totalLevels: this._srLevels.length },
+          atr: currentAtr, riskPerUnit, regime, totalLevels: s.srLevels.length },
       };
-      this._entryPrice = price; this._positionSide = 'long';
-      this._stopPrice = slPrice; this._tpPrice = tpPrice;
-      this._highestSinceEntry = high; this._lowestSinceEntry = null;
-      this._trailingActive = false; this._trailingStopPrice = null;
-      this._lastSignal = signal; this.emitSignal(signal);
+      s.entryPrice = price; s.positionSide = 'long';
+      s.stopPrice = slPrice; s.tpPrice = tpPrice;
+      s.highestSinceEntry = high; s.lowestSinceEntry = null;
+      s.trailingActive = false; s.trailingStopPrice = null;
+      s.lastSignal = signal; this.emitSignal(signal);
       log.info('Long entry: resistance breakout', {
-        symbol: this._symbol, price, brokenLevel: level.price, touches: level.touches, sl: slPrice, tp: tpPrice,
+        symbol: sym, price, brokenLevel: level.price, touches: level.touches, sl: slPrice, tp: tpPrice,
       });
       return;
     }
 
     // --- Support breakout -> Short entry ---
-    for (const level of this._srLevels.filter(l => l.type === 'support')) {
+    for (const level of s.srLevels.filter(l => l.type === 'support')) {
       if (level.touches < minTouches) continue;
       if (!isLessThan(price, level.price)) continue;
       if (!this._hasRetestConfirmation(level.price, 'short', retestDist)) continue;
@@ -465,21 +486,21 @@ class SupportResistanceStrategy extends StrategyBase {
       const tpPrice = nextLv ? nextLv.price : subtract(price, multiply(defaultTpMultiplier, currentAtr));
       const conf = this._calcConfidence(level);
       const signal = {
-        action: SIGNAL_ACTIONS.OPEN_SHORT, symbol: this._symbol, category: this._category,
+        action: SIGNAL_ACTIONS.OPEN_SHORT, symbol: sym, category: this._category,
         suggestedQty: positionSizePercent, suggestedPrice: price, stopLossPrice: slPrice, riskPerUnit,
         confidence: toFixed(String(conf), 4), leverage: this.config.leverage,
         reason: 'sr_breakout_short',
         marketContext: { brokenLevel: level.price, levelTouches: level.touches,
           tpPrice, slPrice, nextSrLevel: nextLv ? nextLv.price : null,
-          atr: currentAtr, riskPerUnit, regime, totalLevels: this._srLevels.length },
+          atr: currentAtr, riskPerUnit, regime, totalLevels: s.srLevels.length },
       };
-      this._entryPrice = price; this._positionSide = 'short';
-      this._stopPrice = slPrice; this._tpPrice = tpPrice;
-      this._highestSinceEntry = null; this._lowestSinceEntry = low;
-      this._trailingActive = false; this._trailingStopPrice = null;
-      this._lastSignal = signal; this.emitSignal(signal);
+      s.entryPrice = price; s.positionSide = 'short';
+      s.stopPrice = slPrice; s.tpPrice = tpPrice;
+      s.highestSinceEntry = null; s.lowestSinceEntry = low;
+      s.trailingActive = false; s.trailingStopPrice = null;
+      s.lastSignal = signal; this.emitSignal(signal);
       log.info('Short entry: support breakout', {
-        symbol: this._symbol, price, brokenLevel: level.price, touches: level.touches, sl: slPrice, tp: tpPrice,
+        symbol: sym, price, brokenLevel: level.price, touches: level.touches, sl: slPrice, tp: tpPrice,
       });
       return;
     }
@@ -494,22 +515,25 @@ class SupportResistanceStrategy extends StrategyBase {
     if (!fill) return;
     const action = fill.action || (fill.signal && fill.signal.action);
 
+    const s = this._s();
+    const sym = this.getCurrentSymbol();
+
     if (action === SIGNAL_ACTIONS.OPEN_LONG) {
-      this._positionSide = 'long';
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      log.trade('Long fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      s.positionSide = 'long';
+      if (fill.price !== undefined) s.entryPrice = String(fill.price);
+      log.trade('Long fill recorded', { entry: s.entryPrice, symbol: sym });
     } else if (action === SIGNAL_ACTIONS.OPEN_SHORT) {
-      this._positionSide = 'short';
-      if (fill.price !== undefined) this._entryPrice = String(fill.price);
-      log.trade('Short fill recorded', { entry: this._entryPrice, symbol: this._symbol });
+      s.positionSide = 'short';
+      if (fill.price !== undefined) s.entryPrice = String(fill.price);
+      log.trade('Short fill recorded', { entry: s.entryPrice, symbol: sym });
     } else if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
-      log.trade('Position closed via fill', { side: this._positionSide, symbol: this._symbol });
+      log.trade('Position closed via fill', { side: s.positionSide, symbol: sym });
       this._resetPosition();
     }
   }
 
   /** @returns {object|null} most recent signal */
-  getSignal() { return this._lastSignal; }
+  getSignal() { return this._s().lastSignal; }
 
   // --------------------------------------------------------------------------
   // Private helpers
@@ -523,15 +547,17 @@ class SupportResistanceStrategy extends StrategyBase {
    * @param {object} context
    */
   _emitCloseSignal(side, price, reason, context) {
+    const s = this._s();
+    const sym = this.getCurrentSymbol();
     const action = side === 'long' ? SIGNAL_ACTIONS.CLOSE_LONG : SIGNAL_ACTIONS.CLOSE_SHORT;
     const signal = {
-      action, symbol: this._symbol, category: this._category,
+      action, symbol: sym, category: this._category,
       suggestedQty: this.config.positionSizePercent, suggestedPrice: price,
       reduceOnly: true,
       confidence: toFixed('0.9000', 4), reason,
-      marketContext: { ...context, currentPrice: price, atr: this._latestAtr, srLevelCount: this._srLevels.length },
+      marketContext: { ...context, currentPrice: price, atr: s.latestAtr, srLevelCount: s.srLevels.length },
     };
-    this._lastSignal = signal;
+    s.lastSignal = signal;
     this.emitSignal(signal);
   }
 
@@ -540,23 +566,25 @@ class SupportResistanceStrategy extends StrategyBase {
    * Long: highest - trailDist (only moves up). Short: lowest + trailDist (only moves down).
    */
   _updateTrailingStop() {
-    if (this._latestAtr === null) return;
-    const trailDist = multiply(this.config.trailingDistanceAtr, this._latestAtr);
-    if (this._positionSide === 'long' && this._highestSinceEntry !== null) {
-      const ns = subtract(this._highestSinceEntry, trailDist);
-      if (this._trailingStopPrice === null || isGreaterThan(ns, this._trailingStopPrice)) this._trailingStopPrice = ns;
-    } else if (this._positionSide === 'short' && this._lowestSinceEntry !== null) {
-      const ns = add(this._lowestSinceEntry, trailDist);
-      if (this._trailingStopPrice === null || isLessThan(ns, this._trailingStopPrice)) this._trailingStopPrice = ns;
+    const s = this._s();
+    if (s.latestAtr === null) return;
+    const trailDist = multiply(this.config.trailingDistanceAtr, s.latestAtr);
+    if (s.positionSide === 'long' && s.highestSinceEntry !== null) {
+      const ns = subtract(s.highestSinceEntry, trailDist);
+      if (s.trailingStopPrice === null || isGreaterThan(ns, s.trailingStopPrice)) s.trailingStopPrice = ns;
+    } else if (s.positionSide === 'short' && s.lowestSinceEntry !== null) {
+      const ns = add(s.lowestSinceEntry, trailDist);
+      if (s.trailingStopPrice === null || isLessThan(ns, s.trailingStopPrice)) s.trailingStopPrice = ns;
     }
   }
 
   /** Reset all position-tracking state after a full exit. */
   _resetPosition() {
-    this._entryPrice = null; this._positionSide = null;
-    this._stopPrice = null; this._tpPrice = null;
-    this._trailingActive = false; this._trailingStopPrice = null;
-    this._highestSinceEntry = null; this._lowestSinceEntry = null;
+    const s = this._s();
+    s.entryPrice = null; s.positionSide = null;
+    s.stopPrice = null; s.tpPrice = null;
+    s.trailingActive = false; s.trailingStopPrice = null;
+    s.highestSinceEntry = null; s.lowestSinceEntry = null;
   }
 }
 

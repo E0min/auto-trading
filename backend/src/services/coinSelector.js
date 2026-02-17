@@ -1,24 +1,27 @@
 'use strict';
 
 /**
- * CoinSelector — Multi-factor scoring system for dynamic symbol selection.
+ * CoinSelector — Market-cap-based symbol selection via CoinGecko.
  *
- * Evaluates 7 factors per candidate symbol, normalises each via percentile
- * ranking, then applies regime-specific weights to compute a composite score.
+ * Pipeline:
+ *   1. Fetch top 100 coins by market cap from CoinGecko
+ *   2. Cross-match with Bitget tickers (baseToSymbol mapping)
+ *   3. Pre-filter: volume, spread, effective cost
+ *   4. Select top 15 by market cap rank
+ *   5. Emit COIN_SELECTED event
  *
+ * Fallback: if CoinGecko fails, select top 15 by 24h volume.
  * All monetary / numeric values are represented as String.
  */
 
 const { EventEmitter } = require('events');
 const { createLogger } = require('../utils/logger');
-const { MARKET_EVENTS, MARKET_REGIMES, CATEGORIES } = require('../utils/constants');
-const MarketDataCache = require('../utils/marketDataCache');
+const { MARKET_EVENTS, CATEGORIES } = require('../utils/constants');
 const {
   add,
   subtract,
   divide,
   multiply,
-  abs,
   isGreaterThan,
   isLessThan,
   toFixed,
@@ -32,111 +35,12 @@ const log = createLogger('CoinSelector');
 
 const DEFAULT_CONFIG = Object.freeze({
   /** Minimum 24h volume (quote currency) to pass pre-filter */
-  minVolume24h: '500000',
+  minVolume24h: '200000',
   /** Maximum spread percent to pass pre-filter */
-  maxSpreadPercent: '0.8',
-  /** Maximum absolute 24h change percent (avoid blow-up) */
-  maxChangePercent: '30',
+  maxSpreadPercent: '1.0',
   /** Maximum number of symbols to return */
-  maxSymbols: 10,
-  /** Max concurrent API calls for enrichment */
-  concurrency: 5,
-  /** Cache TTL for OI/funding data in milliseconds */
-  cacheTtlMs: 60_000,
+  maxSymbols: 15,
 });
-
-// ---------------------------------------------------------------------------
-// Regime-specific weight profiles
-// ---------------------------------------------------------------------------
-
-/**
- * Weights per factor for each market regime.
- * All rows sum to 100 for easy interpretation as percentages.
- */
-const WEIGHT_PROFILES = Object.freeze({
-  [MARKET_REGIMES.TRENDING_UP]: {
-    volume: 15, spreadInv: 10, openInterest: 20, fundingInv: 10,
-    momentum: 25, volatility: 10, volMomentum: 10,
-  },
-  [MARKET_REGIMES.TRENDING_DOWN]: {
-    volume: 15, spreadInv: 10, openInterest: 20, fundingInv: 10,
-    momentum: 25, volatility: 10, volMomentum: 10,
-  },
-  [MARKET_REGIMES.RANGING]: {
-    volume: 20, spreadInv: 20, openInterest: 10, fundingInv: 10,
-    momentum: 5, volatility: 15, volMomentum: 20,
-  },
-  [MARKET_REGIMES.VOLATILE]: {
-    volume: 25, spreadInv: 25, openInterest: 10, fundingInv: 5,
-    momentum: 10, volatility: 15, volMomentum: 10,
-  },
-  [MARKET_REGIMES.QUIET]: {
-    volume: 20, spreadInv: 25, openInterest: 10, fundingInv: 10,
-    momentum: 5, volatility: 10, volMomentum: 20,
-  },
-  default: {
-    volume: 20, spreadInv: 15, openInterest: 15, fundingInv: 10,
-    momentum: 15, volatility: 10, volMomentum: 15,
-  },
-});
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Compute percentile ranks for an array of numeric-string values.
- * Returns an array of strings in [0, 100].
- *
- * @param {string[]} values
- * @returns {string[]}
- */
-function percentileRanks(values) {
-  const n = values.length;
-  if (n === 0) return [];
-  if (n === 1) return ['50'];
-
-  // Build sorted indices
-  const indexed = values.map((v, i) => ({ val: parseFloat(v) || 0, idx: i }));
-  indexed.sort((a, b) => a.val - b.val);
-
-  const ranks = new Array(n);
-  for (let rank = 0; rank < n; rank++) {
-    const pct = (rank / (n - 1)) * 100;
-    ranks[indexed[rank].idx] = toFixed(String(pct), 2);
-  }
-  return ranks;
-}
-
-/**
- * Run async tasks with a concurrency limit.
- *
- * @param {Array<() => Promise<*>>} tasks
- * @param {number} limit
- * @returns {Promise<Array<{ ok: boolean, value?: *, error?: Error }>>}
- */
-async function runWithConcurrency(tasks, limit) {
-  const results = new Array(tasks.length);
-  let nextIdx = 0;
-
-  async function worker() {
-    while (nextIdx < tasks.length) {
-      const idx = nextIdx++;
-      try {
-        results[idx] = { ok: true, value: await tasks[idx]() };
-      } catch (error) {
-        results[idx] = { ok: false, error };
-      }
-    }
-  }
-
-  const workers = [];
-  for (let i = 0; i < Math.min(limit, tasks.length); i++) {
-    workers.push(worker());
-  }
-  await Promise.all(workers);
-  return results;
-}
 
 // ---------------------------------------------------------------------------
 // CoinSelector class
@@ -148,8 +52,9 @@ class CoinSelector extends EventEmitter {
    * @param {import('./exchangeClient')} deps.exchangeClient
    * @param {import('./tickerAggregator')} deps.tickerAggregator
    * @param {import('./marketRegime')}     deps.marketRegime
+   * @param {import('./coinGeckoClient')}  [deps.coinGeckoClient]
    */
-  constructor({ exchangeClient, tickerAggregator, marketRegime, maxEffectiveCost = '0.15' }) {
+  constructor({ exchangeClient, tickerAggregator, marketRegime, coinGeckoClient, maxEffectiveCost = '0.15' }) {
     super();
 
     if (!exchangeClient) {
@@ -169,7 +74,7 @@ class CoinSelector extends EventEmitter {
     /** @private */
     this._regime = marketRegime;
     /** @private */
-    this._cache = new MarketDataCache();
+    this._coinGecko = coinGeckoClient || null;
     /** @type {Object} mutable selection criteria */
     this._config = { ...DEFAULT_CONFIG };
     /** @private — max effective cost threshold in % (P12-9) */
@@ -178,8 +83,8 @@ class CoinSelector extends EventEmitter {
     this._lastScoringDetails = null;
     /** @private — last active weight profile */
     this._lastWeightProfile = null;
-    /** @private — previous vol24h per symbol for volume momentum (R11-T8) */
-    this._prevVol24h = new Map();
+    /** @private — last selection method used */
+    this._lastSelectionMethod = null;
     /** @private — re-entrancy guard for selectCoins() */
     this._selecting = false;
   }
@@ -189,16 +94,8 @@ class CoinSelector extends EventEmitter {
   // =========================================================================
 
   /**
-   * Select the most tradable symbols using the multi-factor scoring pipeline.
-   *
-   * Pipeline:
-   *   1. Pre-filter: volume, spread, change thresholds
-   *   2. Enrichment: fetch OI/funding for candidates (cached)
-   *   3. Factor compute: 7 raw factor values
-   *   4. Normalize: percentile rank [0~100]
-   *   5. Score: regime-weighted composite score
-   *   6. Sort & trim: top N by score
-   *   7. Emit: COIN_SELECTED event
+   * Select the most tradable symbols by market cap (CoinGecko).
+   * Falls back to volume-based selection if CoinGecko is unavailable.
    *
    * @param {string} [category='USDT-FUTURES']
    * @returns {Promise<Object[]>}
@@ -247,221 +144,107 @@ class CoinSelector extends EventEmitter {
       return [];
     }
 
-    const { minVolume24h, maxSpreadPercent, maxChangePercent, maxSymbols, concurrency, cacheTtlMs } = this._config;
+    const { minVolume24h, maxSpreadPercent, maxSymbols } = this._config;
 
-    // ---- Step 1: Pre-filter ----
-    const candidates = [];
+    // ---- Step 1: Build baseToSymbol map from Bitget tickers ----
+    const baseToSymbol = new Map();
+    for (const ticker of tickers) {
+      if (!ticker.symbol || !ticker.symbol.endsWith('USDT')) continue;
+      const raw = ticker.symbol.slice(0, -4); // strip "USDT"
+      // Handle 1000x symbols: 1000PEPE → pepe, 1000SHIB → shib
+      const base = raw.startsWith('1000')
+        ? raw.slice(4).toLowerCase()
+        : raw.toLowerCase();
+      baseToSymbol.set(base, ticker.symbol);
+    }
 
+    // ---- Step 2: Pre-filter tickers ----
+    const tickerMap = new Map();
     for (const ticker of tickers) {
       if (!ticker.symbol) continue;
+      tickerMap.set(ticker.symbol, ticker);
+    }
 
+    /**
+     * Check if a ticker passes pre-filter (volume, spread, effective cost).
+     * @returns {{ pass: boolean, spread?: string }}
+     */
+    const passesFilter = (ticker) => {
       const vol = ticker.vol24h || '0';
-      const change = ticker.change24h || '0';
       const bid = ticker.bid || '0';
       const ask = ticker.ask || '0';
 
-      // Volume filter
-      if (isLessThan(vol, minVolume24h)) continue;
+      if (isLessThan(vol, minVolume24h)) return { pass: false };
 
-      // Spread filter
       let spreadPercent = '0';
       try {
         if (isGreaterThan(bid, '0')) {
           const spreadAbs = subtract(ask, bid);
           spreadPercent = multiply(divide(spreadAbs, bid, 8), '100');
         } else {
-          continue;
+          return { pass: false };
         }
       } catch (_) {
-        continue;
+        return { pass: false };
       }
 
-      if (isGreaterThan(spreadPercent, maxSpreadPercent)) continue;
+      if (isGreaterThan(spreadPercent, maxSpreadPercent)) return { pass: false };
 
-      // Change filter — absolute value must be under max
-      const absChange = abs(change);
-      if (isGreaterThan(absChange, maxChangePercent)) continue;
+      // Effective cost filter
+      const TAKER_COMMISSION = '0.06';
+      const effectiveCost = add(spreadPercent, TAKER_COMMISSION);
+      if (isGreaterThan(effectiveCost, this._maxEffectiveCost)) return { pass: false };
 
-      candidates.push({
-        symbol: ticker.symbol,
-        vol24h: vol,
-        change24h: change,
-        spread: toFixed(spreadPercent, 4),
-        lastPrice: ticker.lastPrice || '0',
-        bid,
-        ask,
-        high24h: ticker.high24h || '0',
-        low24h: ticker.low24h || '0',
-      });
-    }
-
-    if (candidates.length === 0) {
-      log.info('No candidates passed pre-filter');
-      return [];
-    }
-
-    // ---- Step 1b: Effective cost filter (P12-9) ----
-    const TAKER_COMMISSION = '0.06';
-    const preFilterCount = candidates.length;
-    for (let i = candidates.length - 1; i >= 0; i--) {
-      const effectiveCost = add(candidates[i].spread, TAKER_COMMISSION);
-      if (isGreaterThan(effectiveCost, this._maxEffectiveCost)) {
-        candidates.splice(i, 1);
-      }
-    }
-    if (candidates.length < preFilterCount) {
-      log.info('Effective cost filter applied', {
-        removed: preFilterCount - candidates.length,
-        remaining: candidates.length,
-        threshold: this._maxEffectiveCost,
-      });
-    }
-
-    if (candidates.length === 0) {
-      log.info('No candidates passed effective cost filter');
-      return [];
-    }
-
-    // ---- Step 2: Enrichment — fetch OI & funding rate ----
-    const enrichmentTasks = candidates.map((c) => () => this._enrichSymbol(c.symbol, category, cacheTtlMs));
-    const enrichResults = await runWithConcurrency(enrichmentTasks, concurrency);
-
-    const enrichMap = {};
-    for (let i = 0; i < candidates.length; i++) {
-      if (enrichResults[i].ok) {
-        enrichMap[candidates[i].symbol] = enrichResults[i].value;
-      } else {
-        enrichMap[candidates[i].symbol] = { openInterest: '0', fundingRate: '0' };
-      }
-    }
-
-    // ---- Step 3: Factor compute ----
-    const currentRegime = this._regime.getCurrentRegime();
-    const factorArrays = {
-      volume: [],
-      spreadInv: [],
-      openInterest: [],
-      fundingInv: [],
-      momentum: [],
-      volatility: [],
-      volMomentum: [],
+      return { pass: true, spread: toFixed(spreadPercent, 4) };
     };
 
-    for (const c of candidates) {
-      const enrich = enrichMap[c.symbol];
+    // ---- Step 3: Try CoinGecko market cap selection ----
+    let selected = [];
+    const currentRegime = this._regime.getCurrentRegime();
 
-      // F1: Volume (raw)
-      factorArrays.volume.push(c.vol24h);
-
-      // F2: Spread inverse (lower spread = better → invert)
-      const spreadVal = parseFloat(c.spread) || 0;
-      const spreadInv = spreadVal > 0 ? toFixed(String(1 / spreadVal), 8) : '0';
-      factorArrays.spreadInv.push(spreadInv);
-
-      // F3: Open Interest
-      factorArrays.openInterest.push(enrich.openInterest);
-
-      // F4: Funding Rate inverse (closer to 0 = better → invert absolute)
-      const fundingAbs = parseFloat(abs(enrich.fundingRate)) || 0;
-      const fundingInv = fundingAbs > 0 ? toFixed(String(1 / fundingAbs), 8) : '0';
-      factorArrays.fundingInv.push(fundingInv);
-
-      // F5: Momentum (direction-adjusted by regime)
-      const momentumVal = this._adjustMomentum(c.change24h, currentRegime);
-      factorArrays.momentum.push(momentumVal);
-
-      // F6: Volatility (intraday range / price)
-      let volatility = '0';
+    if (this._coinGecko) {
       try {
-        if (isGreaterThan(c.lastPrice, '0') && isGreaterThan(c.high24h, '0')) {
-          const range = subtract(c.high24h, c.low24h);
-          volatility = multiply(divide(range, c.lastPrice, 8), '100');
+        const topCoins = await this._coinGecko.fetchTopCoins(100);
+
+        if (topCoins.length > 0) {
+          selected = this._selectByMarketCap(topCoins, baseToSymbol, tickerMap, passesFilter, currentRegime, maxSymbols);
         }
-      } catch (_) { /* keep 0 */ }
-      factorArrays.volatility.push(volatility);
-
-      // F7: Volume Momentum — ratio of current vol24h to previous vol24h (R11-T8)
-      const prevVol = this._prevVol24h.get(c.symbol);
-      let volMomentum = '1'; // default: no change
-      if (prevVol && isGreaterThan(prevVol, '0')) {
-        try {
-          volMomentum = divide(c.vol24h, prevVol, 8);
-        } catch (_) { /* keep default */ }
+      } catch (err) {
+        log.warn('CoinGecko selection failed, falling back to volume', { error: err.message });
       }
-      factorArrays.volMomentum.push(volMomentum);
     }
 
-    // ---- Step 4: Normalize — percentile ranks ----
-    const normalized = {};
-    for (const key of Object.keys(factorArrays)) {
-      normalized[key] = percentileRanks(factorArrays[key]);
+    // ---- Step 4: Fallback — volume-based selection ----
+    if (selected.length === 0) {
+      selected = this._selectByVolume(tickers, passesFilter, currentRegime, maxSymbols);
+      this._lastSelectionMethod = 'volume_fallback';
+    } else {
+      this._lastSelectionMethod = 'market_cap';
     }
 
-    // ---- Step 5: Score — regime-weighted composite ----
-    const weights = WEIGHT_PROFILES[currentRegime] || WEIGHT_PROFILES.default;
-    this._lastWeightProfile = { regime: currentRegime, weights };
+    if (selected.length === 0) {
+      log.info('No coins selected after all pipelines');
+      return [];
+    }
 
-    const scored = candidates.map((c, i) => {
-      let compositeScore = 0;
-      const factorScores = {};
-
-      for (const factor of Object.keys(weights)) {
-        const rank = parseFloat(normalized[factor][i]) || 0;
-        const w = weights[factor];
-        const contribution = (rank * w) / 100;
-        compositeScore += contribution;
-        factorScores[factor] = toFixed(String(rank), 2);
-      }
-
-      return {
-        symbol: c.symbol,
-        score: toFixed(String(compositeScore), 2),
-        vol24h: c.vol24h,
-        change24h: c.change24h,
-        spread: c.spread,
-        lastPrice: c.lastPrice,
-        openInterest: enrichMap[c.symbol].openInterest,
-        fundingRate: enrichMap[c.symbol].fundingRate,
-        volatility: factorArrays.volatility[candidates.indexOf(c)],
-        regime: currentRegime,
-        _factorScores: factorScores,
-      };
-    });
-
-    // ---- Step 6: Sort by score descending & trim ----
-    scored.sort((a, b) => {
-      if (isGreaterThan(a.score, b.score)) return -1;
-      if (isLessThan(a.score, b.score)) return 1;
-      return 0;
-    });
-
-    const selected = scored.slice(0, maxSymbols);
     const selectedSymbols = selected.map((s) => s.symbol);
 
-    // R11-T8: Update _prevVol24h for next polling cycle's volume momentum
-    const candidateSymbols = new Set(candidates.map((c) => c.symbol));
-    for (const c of candidates) {
-      this._prevVol24h.set(c.symbol, c.vol24h);
-    }
-    // E12-16: Remove stale entries not in current candidates
-    for (const key of this._prevVol24h.keys()) {
-      if (!candidateSymbols.has(key)) {
-        this._prevVol24h.delete(key);
-      }
-    }
-
     // Store diagnostics
-    this._lastScoringDetails = scored;
+    this._lastScoringDetails = selected;
+    this._lastWeightProfile = {
+      regime: currentRegime,
+      method: this._lastSelectionMethod,
+      weights: { marketCapRank: 100 },
+    };
 
     log.info('Coin selection complete', {
+      method: this._lastSelectionMethod,
       regime: currentRegime,
-      candidateCount: candidates.length,
       selectedCount: selected.length,
-      topScore: selected[0]?.score,
       symbols: selectedSymbols,
     });
 
-    // ---- Step 7: Emit event (backward compatible shape) ----
+    // Emit event (backward compatible shape)
     this.emit(MARKET_EVENTS.COIN_SELECTED, {
       symbols: selectedSymbols,
       details: selected,
@@ -472,68 +255,89 @@ class CoinSelector extends EventEmitter {
   }
 
   // =========================================================================
-  // Enrichment helpers
+  // Selection strategies
   // =========================================================================
 
   /**
-   * Fetch OI and funding rate for a symbol (cache-first).
-   *
-   * @param {string} symbol
-   * @param {string} category
-   * @param {number} ttlMs
-   * @returns {Promise<{ openInterest: string, fundingRate: string }>}
+   * Select coins by market cap rank from CoinGecko data.
    * @private
    */
-  async _enrichSymbol(symbol, category, ttlMs) {
-    const cacheKey = `enrich:${symbol}`;
-    const cached = this._cache.get(cacheKey);
-    if (cached) return cached;
+  _selectByMarketCap(topCoins, baseToSymbol, tickerMap, passesFilter, regime, maxSymbols) {
+    const results = [];
 
-    let openInterest = '0';
-    let fundingRate = '0';
+    for (const coin of topCoins) {
+      if (results.length >= maxSymbols) break;
 
-    try {
-      const oiRes = await this._exchange.getOpenInterest({ symbol, category });
-      openInterest = String(oiRes?.data?.openInterest ?? oiRes?.data?.amount ?? '0');
-    } catch (err) {
-      log.debug('Failed to fetch OI', { symbol, error: err.message });
+      const bitgetSymbol = baseToSymbol.get(coin.symbol);
+      if (!bitgetSymbol) continue;
+
+      const ticker = tickerMap.get(bitgetSymbol);
+      if (!ticker) continue;
+
+      const filterResult = passesFilter(ticker);
+      if (!filterResult.pass) continue;
+
+      const rank = parseInt(coin.marketCapRank, 10) || 100;
+      const score = toFixed(String(Math.max(0, 100 - rank + 1)), 2);
+
+      results.push({
+        symbol: bitgetSymbol,
+        score,
+        vol24h: ticker.vol24h || '0',
+        change24h: ticker.change24h || '0',
+        spread: filterResult.spread || '0',
+        lastPrice: ticker.lastPrice || '0',
+        marketCap: coin.marketCap,
+        marketCapRank: coin.marketCapRank,
+        regime,
+        _factorScores: { marketCapRank: coin.marketCapRank },
+      });
     }
 
-    try {
-      const frRes = await this._exchange.getFundingRate({ symbol, category });
-      fundingRate = String(frRes?.data?.fundingRate ?? '0');
-    } catch (err) {
-      log.debug('Failed to fetch funding rate', { symbol, error: err.message });
-    }
-
-    const result = { openInterest, fundingRate };
-    this._cache.set(cacheKey, result, ttlMs);
-    return result;
+    return results;
   }
 
   /**
-   * Adjust momentum value based on current market regime.
-   *
-   * - trending_up:   raw change (positive = good)
-   * - trending_down:  inverted change (negative change = good)
-   * - ranging/volatile/quiet: absolute change (movement = opportunity)
-   *
-   * @param {string} change24h
-   * @param {string} regime
-   * @returns {string}
+   * Fallback: select coins by 24h volume descending.
    * @private
    */
-  _adjustMomentum(change24h, regime) {
-    switch (regime) {
-      case MARKET_REGIMES.TRENDING_UP:
-        return change24h;
-      case MARKET_REGIMES.TRENDING_DOWN: {
-        const neg = parseFloat(change24h) || 0;
-        return toFixed(String(-neg), 4);
-      }
-      default:
-        return abs(change24h);
+  _selectByVolume(tickers, passesFilter, regime, maxSymbols) {
+    const candidates = [];
+
+    for (const ticker of tickers) {
+      if (!ticker.symbol) continue;
+
+      const filterResult = passesFilter(ticker);
+      if (!filterResult.pass) continue;
+
+      candidates.push({
+        symbol: ticker.symbol,
+        vol24h: ticker.vol24h || '0',
+        change24h: ticker.change24h || '0',
+        spread: filterResult.spread || '0',
+        lastPrice: ticker.lastPrice || '0',
+      });
     }
+
+    // Sort by volume descending
+    candidates.sort((a, b) => {
+      if (isGreaterThan(a.vol24h, b.vol24h)) return -1;
+      if (isLessThan(a.vol24h, b.vol24h)) return 1;
+      return 0;
+    });
+
+    return candidates.slice(0, maxSymbols).map((c, i) => ({
+      symbol: c.symbol,
+      score: toFixed(String(Math.max(0, 100 - i)), 2),
+      vol24h: c.vol24h,
+      change24h: c.change24h,
+      spread: c.spread,
+      lastPrice: c.lastPrice,
+      marketCap: '0',
+      marketCapRank: '0',
+      regime,
+      _factorScores: { marketCapRank: '0' },
+    }));
   }
 
   // =========================================================================
@@ -549,8 +353,8 @@ class CoinSelector extends EventEmitter {
   }
 
   /**
-   * Return the current regime and the weight profile being used.
-   * @returns {{ regime: string, weights: Object }|null}
+   * Return the current method and the weight profile being used.
+   * @returns {{ regime: string, method?: string, weights: Object }|null}
    */
   getActiveWeightProfile() {
     return this._lastWeightProfile;

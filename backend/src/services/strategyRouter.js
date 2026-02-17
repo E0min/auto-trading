@@ -62,7 +62,7 @@ class StrategyRouter extends EventEmitter {
     /** @type {Map<string, string>} Per-symbol scores from CoinSelector (AD-55) */
     this._symbolScores = new Map();
 
-    /** @type {Map<string, string>} Strategy name → assigned symbol (AD-55) */
+    /** @type {Map<string, string[]>} Strategy name → assigned symbols (multi-symbol) */
     this._strategySymbolMap = new Map();
 
     /** @type {boolean} Guard flag — blocks signal emission during symbol reassignment (AD-55) */
@@ -165,20 +165,24 @@ class StrategyRouter extends EventEmitter {
         }
 
         if (!strategy.isActive()) {
-          // Activate — strategy fits current regime
-          // AD-55: Use per-strategy symbol assignment, fallback to first symbol
-          const symbol = this._strategySymbolMap.get(strategy.name) || this._symbols[0];
-          if (symbol) {
-            strategy.activate(symbol, this._category);
+          // Activate — strategy fits current regime (multi-symbol)
+          const symbols = this._strategySymbolMap.get(strategy.name) || [this._symbols[0]].filter(Boolean);
+          if (symbols.length > 0) {
+            // Activate with first symbol, then addSymbol for the rest
+            strategy.activate(symbols[0], this._category);
+            for (let i = 1; i < symbols.length; i++) {
+              strategy.addSymbol(symbols[i]);
+            }
           }
           strategy.setMarketRegime(regime);
           activated.push(strategy.name);
 
-          this.emit('strategy:activated', { name: strategy.name, regime });
+          this.emit('strategy:activated', { name: strategy.name, regime, symbols });
 
           log.info('Strategy activated', {
             name: strategy.name,
             regime,
+            symbols,
             targetRegimes,
           });
         } else {
@@ -255,7 +259,8 @@ class StrategyRouter extends EventEmitter {
       // Sort symbols by score ascending (for 'low' preference)
       const sortedAsc = [...sortedDesc].reverse();
 
-      const maxPerSymbol = Math.max(3, Math.ceil(this._strategies.length / symbols.length));
+      // maxStrategiesPerSymbol: how many strategies can share one symbol
+      const maxPerSymbol = Math.max(3, Math.ceil((this._strategies.length * 3) / symbols.length));
 
       // Track assignments per symbol
       const assignmentCounts = new Map();
@@ -263,97 +268,110 @@ class StrategyRouter extends EventEmitter {
         assignmentCounts.set(sym, 0);
       }
 
+      // newMap: strategy name → string[] (multiple symbols)
       const newMap = new Map();
 
-      // Phase 1: Preserve mappings for strategies with open positions
+      // Phase 1: Preserve existing symbols for strategies with open positions
       for (const strategy of this._strategies) {
-        const currentSymbol = this._strategySymbolMap.get(strategy.name);
-        if (currentSymbol && hasOpenPosition && hasOpenPosition(strategy.name)) {
-          // Keep existing assignment if symbol is still in the selected list
-          if (symbols.includes(currentSymbol)) {
-            newMap.set(strategy.name, currentSymbol);
-            assignmentCounts.set(currentSymbol, (assignmentCounts.get(currentSymbol) || 0) + 1);
+        const currentSymbols = this._strategySymbolMap.get(strategy.name) || [];
+        if (currentSymbols.length > 0 && hasOpenPosition && hasOpenPosition(strategy.name)) {
+          const preserved = currentSymbols.filter(s => symbols.includes(s));
+          if (preserved.length > 0) {
+            newMap.set(strategy.name, [...preserved]);
+            for (const sym of preserved) {
+              assignmentCounts.set(sym, (assignmentCounts.get(sym) || 0) + 1);
+            }
             log.debug('assignSymbols — preserved mapping (open position)', {
-              strategy: strategy.name, symbol: currentSymbol,
+              strategy: strategy.name, symbols: preserved,
             });
           }
         }
       }
 
-      // Phase 2: Assign remaining strategies by volatilityPreference
+      // Phase 2: Assign multiple symbols per strategy by volatilityPreference
       let neutralIdx = 0;
 
       for (const strategy of this._strategies) {
-        if (newMap.has(strategy.name)) continue; // Already assigned in Phase 1
-
         const meta = strategy.getMetadata();
+        const maxSymbols = meta.maxSymbolsPerStrategy || 3;
         const pref = meta.volatilityPreference || 'neutral';
 
-        let assigned = false;
+        // Get already-preserved symbols for this strategy
+        const existing = newMap.get(strategy.name) || [];
+        const needed = maxSymbols - existing.length;
+        if (needed <= 0) continue;
 
+        const assigned = [...existing];
+        const assignedSet = new Set(assigned);
+
+        // Pick symbol list based on preference
+        let candidateList;
         if (pref === 'high') {
-          // Pick highest-scored symbol that hasn't hit maxPerSymbol
-          for (const sym of sortedDesc) {
-            if ((assignmentCounts.get(sym) || 0) < maxPerSymbol) {
-              newMap.set(strategy.name, sym);
-              assignmentCounts.set(sym, (assignmentCounts.get(sym) || 0) + 1);
-              assigned = true;
-              break;
-            }
-          }
+          candidateList = sortedDesc;
         } else if (pref === 'low') {
-          // Pick lowest-scored symbol that hasn't hit maxPerSymbol
-          for (const sym of sortedAsc) {
-            if ((assignmentCounts.get(sym) || 0) < maxPerSymbol) {
-              newMap.set(strategy.name, sym);
-              assignmentCounts.set(sym, (assignmentCounts.get(sym) || 0) + 1);
-              assigned = true;
-              break;
-            }
-          }
+          candidateList = sortedAsc;
         } else {
-          // Round-robin
-          for (let attempt = 0; attempt < symbols.length; attempt++) {
-            const idx = (neutralIdx + attempt) % symbols.length;
-            const sym = symbols[idx];
-            if ((assignmentCounts.get(sym) || 0) < maxPerSymbol) {
-              newMap.set(strategy.name, sym);
-              assignmentCounts.set(sym, (assignmentCounts.get(sym) || 0) + 1);
-              neutralIdx = (idx + 1) % symbols.length;
-              assigned = true;
-              break;
-            }
+          // Round-robin: build a rotated list
+          candidateList = [];
+          for (let i = 0; i < symbols.length; i++) {
+            candidateList.push(symbols[(neutralIdx + i) % symbols.length]);
           }
         }
 
-        // Fallback: if all symbols are at maxPerSymbol, assign to first symbol anyway
-        if (!assigned) {
+        for (const sym of candidateList) {
+          if (assigned.length >= maxSymbols) break;
+          if (assignedSet.has(sym)) continue;
+          if ((assignmentCounts.get(sym) || 0) >= maxPerSymbol) continue;
+
+          assigned.push(sym);
+          assignedSet.add(sym);
+          assignmentCounts.set(sym, (assignmentCounts.get(sym) || 0) + 1);
+        }
+
+        // Fallback: if no symbols were assigned, force-assign the first one
+        if (assigned.length === 0) {
           const fallback = symbols[0];
-          newMap.set(strategy.name, fallback);
+          assigned.push(fallback);
           assignmentCounts.set(fallback, (assignmentCounts.get(fallback) || 0) + 1);
-          log.warn('assignSymbols — all symbols at maxPerSymbol, forced fallback', {
-            strategy: strategy.name, symbol: fallback,
-          });
+          log.warn('assignSymbols — forced fallback', { strategy: strategy.name, symbol: fallback });
+        }
+
+        newMap.set(strategy.name, assigned);
+
+        // Advance round-robin pointer for neutral strategies
+        if (pref === 'neutral') {
+          neutralIdx = (neutralIdx + assigned.length) % symbols.length;
         }
       }
 
       this._strategySymbolMap = newMap;
 
-      log.info('assignSymbols — symbol assignment complete', {
+      log.info('assignSymbols — multi-symbol assignment complete', {
         maxPerSymbol,
-        assignments: Object.fromEntries(newMap),
+        assignments: Object.fromEntries(
+          Array.from(newMap.entries()).map(([k, v]) => [k, v.join(',')])
+        ),
         counts: Object.fromEntries(assignmentCounts),
       });
 
-      // Re-activate already-active strategies on their new assigned symbol
+      // Re-activate already-active strategies on their new assigned symbols
       for (const strategy of this.getActiveStrategies()) {
-        const assignedSymbol = this._strategySymbolMap.get(strategy.name);
-        if (assignedSymbol && strategy._symbol !== assignedSymbol) {
+        const assignedSymbols = this._strategySymbolMap.get(strategy.name) || [];
+        const currentSymbols = strategy.getSymbols();
+        const currentSet = new Set(currentSymbols);
+        const newSet = new Set(assignedSymbols);
+
+        // Check if symbol sets differ
+        const sameSet = currentSet.size === newSet.size && [...currentSet].every(s => newSet.has(s));
+        if (!sameSet && assignedSymbols.length > 0) {
           strategy.deactivate();
-          strategy.activate(assignedSymbol, this._category);
+          strategy.activate(assignedSymbols[0], this._category);
+          for (let i = 1; i < assignedSymbols.length; i++) {
+            strategy.addSymbol(assignedSymbols[i]);
+          }
           strategy.setMarketRegime(this._currentRegime);
-          log.info('assignSymbols — strategy re-activated on new symbol', {
-            name: strategy.name, symbol: assignedSymbol,
+          log.info('assignSymbols — strategy re-activated on new symbols', {
+            name: strategy.name, symbols: assignedSymbols,
           });
         }
       }
@@ -371,17 +389,27 @@ class StrategyRouter extends EventEmitter {
   }
 
   /**
-   * Get the assigned symbol for a strategy.
+   * Get the primary assigned symbol for a strategy (backward compat).
    * @param {string} strategyName
    * @returns {string|null}
    */
   getAssignedSymbol(strategyName) {
-    return this._strategySymbolMap.get(strategyName) || null;
+    const syms = this._strategySymbolMap.get(strategyName);
+    return syms && syms.length > 0 ? syms[0] : null;
+  }
+
+  /**
+   * Get all assigned symbols for a strategy.
+   * @param {string} strategyName
+   * @returns {string[]}
+   */
+  getAssignedSymbols(strategyName) {
+    return this._strategySymbolMap.get(strategyName) || [];
   }
 
   /**
    * Get all symbol assignments.
-   * @returns {Object<string, string>}
+   * @returns {Object<string, string[]>}
    */
   getSymbolAssignments() {
     return Object.fromEntries(this._strategySymbolMap);
@@ -525,18 +553,19 @@ class StrategyRouter extends EventEmitter {
         return {
           name: s.name,
           active: s.isActive(),
-          assignedSymbol: this._strategySymbolMap.get(s.name) || null,
+          assignedSymbols: this._strategySymbolMap.get(s.name) || [],
           volatilityPreference: (s.getMetadata().volatilityPreference) || 'neutral',
           targetRegimes: s.getTargetRegimes(),
           matchesCurrentRegime: s.getTargetRegimes().includes(this._currentRegime),
           graceState: graceEntry ? 'grace_period' : (s.isActive() ? 'active' : 'inactive'),
           graceExpiresAt: graceEntry ? graceEntry.expiresAt : null,
-          // R9-T2: Warm-up state
+          // R9-T2: Warm-up state (per-symbol)
           warmupState: typeof s.isWarmedUp === 'function'
             ? (s.isWarmedUp() ? 'ready' : 'warming_up')
             : 'unknown',
-          klineCount: s._receivedCandles || 0,
-          warmupRequired: s._warmupCandles || 0,
+          warmupProgress: typeof s.getWarmupProgress === 'function'
+            ? s.getWarmupProgress()
+            : { warmedUp: true, received: 0, required: 0 },
         };
       }),
       activeCount: this.getActiveStrategies().length,
@@ -593,12 +622,15 @@ class StrategyRouter extends EventEmitter {
   updateSymbols(symbols) {
     this._symbols = symbols;
 
-    // Re-activate active strategies on their assigned (or fallback) symbol
+    // Re-activate active strategies on their assigned (or fallback) symbols
     for (const strategy of this.getActiveStrategies()) {
-      const assignedSymbol = this._strategySymbolMap.get(strategy.name) || symbols[0];
+      const assignedSymbols = this._strategySymbolMap.get(strategy.name) || [symbols[0]].filter(Boolean);
       strategy.deactivate();
-      if (assignedSymbol) {
-        strategy.activate(assignedSymbol, this._category);
+      if (assignedSymbols.length > 0) {
+        strategy.activate(assignedSymbols[0], this._category);
+        for (let i = 1; i < assignedSymbols.length; i++) {
+          strategy.addSymbol(assignedSymbols[i]);
+        }
       }
       strategy.setMarketRegime(this._currentRegime);
     }

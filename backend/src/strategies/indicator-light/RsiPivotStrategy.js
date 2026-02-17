@@ -9,6 +9,8 @@
  * Leverage: 3x, max position 5 % of equity.
  *
  * All price values are Strings; arithmetic via mathUtils.
+ *
+ * Per-symbol state via StrategyBase SymbolState pattern.
  */
 
 const StrategyBase = require('../../services/strategyBase');
@@ -43,6 +45,7 @@ class RsiPivotStrategy extends StrategyBase {
     gracePeriodMs: 300000,
     warmupCandles: 15,
     volatilityPreference: 'neutral',
+    maxSymbolsPerStrategy: 3,
     trailingStop: { enabled: false, activationPercent: '1.0', callbackPercent: '0.8' },
     description: 'RSI + Pivot 역추세 (양방향)',
     defaultConfig: {
@@ -75,39 +78,20 @@ class RsiPivotStrategy extends StrategyBase {
     super('RsiPivotStrategy', merged);
 
     this._log = createLogger('RsiPivotStrategy');
+  }
 
-    // Internal state --------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // SymbolState — per-symbol state defaults
+  // -------------------------------------------------------------------------
 
-    /** @type {object|null} most recently generated signal */
-    this._lastSignal = null;
-
-    /** @type {string|null} latest ticker price */
-    this._latestPrice = null;
-
-    /** @type {string|null} entry price of current position (null = no position) */
-    this._entryPrice = null;
-
-    /** @type {'long'|'short'|null} current position side */
-    this._positionSide = null;
-
-    /**
-     * Pivot levels derived from the previous daily candle.
-     * @type {{ pp: string, s1: string, s2: string, r1: string, r2: string }|null}
-     */
-    this._pivotData = null;
-
-    /**
-     * Array of daily candle objects used for pivot calculation.
-     * Each entry: { high: string, low: string, close: string, date: string }
-     * @type {Array<{ high: string, low: string, close: string, date: string }>}
-     */
-    this._dailyCandles = [];
-
-    /**
-     * Accumulator for aggregating intraday klines into a daily candle.
-     * @type {{ high: string, low: string, open: string, close: string, date: string }|null}
-     */
-    this._currentDayCandle = null;
+  /** @override */
+  _createDefaultState() {
+    return {
+      ...super._createDefaultState(),
+      pivotData: null,
+      dailyCandles: [],
+      currentDayCandle: null,
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -125,11 +109,12 @@ class RsiPivotStrategy extends StrategyBase {
 
     if (!ticker || ticker.lastPrice === undefined) return;
 
-    this._latestPrice = String(ticker.lastPrice);
+    const s = this._s();
+    s.latestPrice = String(ticker.lastPrice);
 
     // If we have an open position, evaluate TP / SL on every tick
-    if (this._entryPrice !== null && this._positionSide !== null) {
-      this._checkExitOnTick(this._latestPrice);
+    if (s.entryPrice !== null && s.positionSide !== null) {
+      this._checkExitOnTick(s.latestPrice);
     }
   }
 
@@ -146,6 +131,9 @@ class RsiPivotStrategy extends StrategyBase {
     const close = kline && kline.close !== undefined ? String(kline.close) : null;
     if (close === null) return;
 
+    const s = this._s();
+    const symbol = this.getCurrentSymbol();
+
     // 1. Track daily candles for pivot calculation ----------------------------
     this._aggregateDailyCandle(kline);
 
@@ -160,7 +148,7 @@ class RsiPivotStrategy extends StrategyBase {
 
     // 2. Check IndicatorCache for sufficient history -------------------------
     const c = this._indicatorCache;
-    const hist = c.getHistory(this._symbol);
+    const hist = c.getHistory(symbol);
     if (!hist || hist.closes.length < rsiPeriod + 1) {
       this._log.debug('Not enough data yet', {
         have: hist ? hist.closes.length : 0,
@@ -170,17 +158,17 @@ class RsiPivotStrategy extends StrategyBase {
     }
 
     // 3. Calculate RSI via IndicatorCache ------------------------------------
-    const rsi = c.get(this._symbol, 'rsi', { period: rsiPeriod });
+    const rsi = c.get(symbol, 'rsi', { period: rsiPeriod });
 
     // 4. Evaluate exit signals first (position is open) -----------------------
-    if (this._entryPrice !== null && this._positionSide !== null) {
-      if (this._positionSide === 'long') {
+    if (s.entryPrice !== null && s.positionSide !== null) {
+      if (s.positionSide === 'long') {
         // RSI overbought exit (long)
         if (isGreaterThanOrEqual(rsi, String(rsiOverbought))) {
           const confidence = this._rsiConfidence(parseFloat(rsi), rsiOverbought, 'overbought');
           const signal = {
             action: SIGNAL_ACTIONS.CLOSE_LONG,
-            symbol: this._symbol,
+            symbol,
             category: this._category,
             suggestedQty: positionSizePercent,
             suggestedPrice: close,
@@ -188,36 +176,36 @@ class RsiPivotStrategy extends StrategyBase {
             confidence,
             marketContext: { rsi, price: close, regime: this.getEffectiveRegime(), reason: 'rsi_overbought' },
           };
-          this._lastSignal = signal;
+          s.lastSignal = signal;
           this.emitSignal(signal);
           return;
         }
 
         // Pivot R1 exit (long)
-        if (this._pivotData !== null && isGreaterThan(close, this._pivotData.r1)) {
+        if (s.pivotData !== null && isGreaterThan(close, s.pivotData.r1)) {
           const signal = {
             action: SIGNAL_ACTIONS.CLOSE_LONG,
-            symbol: this._symbol,
+            symbol,
             category: this._category,
             suggestedQty: positionSizePercent,
             suggestedPrice: close,
             reduceOnly: true,
             confidence: '0.7500',
-            marketContext: { rsi, price: close, pivotR1: this._pivotData.r1, regime: this.getEffectiveRegime(), reason: 'pivot_r1_reached' },
+            marketContext: { rsi, price: close, pivotR1: s.pivotData.r1, regime: this.getEffectiveRegime(), reason: 'pivot_r1_reached' },
           };
-          this._lastSignal = signal;
+          s.lastSignal = signal;
           this.emitSignal(signal);
           return;
         }
       }
 
-      if (this._positionSide === 'short') {
+      if (s.positionSide === 'short') {
         // RSI oversold exit (short)
         if (isLessThanOrEqual(rsi, String(rsiOversold))) {
           const confidence = this._rsiConfidence(parseFloat(rsi), rsiOversold, 'oversold');
           const signal = {
             action: SIGNAL_ACTIONS.CLOSE_SHORT,
-            symbol: this._symbol,
+            symbol,
             category: this._category,
             suggestedQty: positionSizePercent,
             suggestedPrice: close,
@@ -225,24 +213,24 @@ class RsiPivotStrategy extends StrategyBase {
             confidence,
             marketContext: { rsi, price: close, regime: this.getEffectiveRegime(), reason: 'rsi_oversold' },
           };
-          this._lastSignal = signal;
+          s.lastSignal = signal;
           this.emitSignal(signal);
           return;
         }
 
         // Pivot S1 exit (short)
-        if (this._pivotData !== null && isLessThan(close, this._pivotData.s1)) {
+        if (s.pivotData !== null && isLessThan(close, s.pivotData.s1)) {
           const signal = {
             action: SIGNAL_ACTIONS.CLOSE_SHORT,
-            symbol: this._symbol,
+            symbol,
             category: this._category,
             suggestedQty: positionSizePercent,
             suggestedPrice: close,
             reduceOnly: true,
             confidence: '0.7500',
-            marketContext: { rsi, price: close, pivotS1: this._pivotData.s1, regime: this.getEffectiveRegime(), reason: 'pivot_s1_reached' },
+            marketContext: { rsi, price: close, pivotS1: s.pivotData.s1, regime: this.getEffectiveRegime(), reason: 'pivot_s1_reached' },
           };
-          this._lastSignal = signal;
+          s.lastSignal = signal;
           this.emitSignal(signal);
           return;
         }
@@ -259,14 +247,14 @@ class RsiPivotStrategy extends StrategyBase {
     const regime = this.getEffectiveRegime();
 
     // Need pivot data
-    if (this._pivotData === null) {
+    if (s.pivotData === null) {
       this._log.debug('Skipping entry — pivot data not available yet');
       return;
     }
 
     // --- Long entry: TRENDING_DOWN or VOLATILE + below S1 + RSI oversold ---
     if (regime === null || regime === MARKET_REGIMES.TRENDING_DOWN || regime === MARKET_REGIMES.VOLATILE || regime === MARKET_REGIMES.RANGING) {
-      const belowS1 = isLessThanOrEqual(close, this._pivotData.s1);
+      const belowS1 = isLessThanOrEqual(close, s.pivotData.s1);
       const rsiOversoldMet = isLessThanOrEqual(rsi, String(rsiOversold));
 
       if (belowS1 && rsiOversoldMet) {
@@ -274,7 +262,7 @@ class RsiPivotStrategy extends StrategyBase {
         const slPercent = this.config.slPercent || '2';
         const signal = {
           action: SIGNAL_ACTIONS.OPEN_LONG,
-          symbol: this._symbol,
+          symbol,
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: close,
@@ -283,13 +271,13 @@ class RsiPivotStrategy extends StrategyBase {
           marketContext: {
             rsi,
             price: close,
-            pivotS1: this._pivotData.s1,
-            pivotPP: this._pivotData.pp,
+            pivotS1: s.pivotData.s1,
+            pivotPP: s.pivotData.pp,
             regime,
           },
         };
-        // AD-37: Do NOT set _positionSide/_entryPrice here — defer to onFill()
-        this._lastSignal = signal;
+        // AD-37: Do NOT set positionSide/entryPrice here — defer to onFill()
+        s.lastSignal = signal;
         this.emitSignal(signal);
         return;
       }
@@ -297,7 +285,7 @@ class RsiPivotStrategy extends StrategyBase {
 
     // --- Short entry: TRENDING_UP or VOLATILE + above R1 + RSI overbought ---
     if (regime === null || regime === MARKET_REGIMES.TRENDING_UP || regime === MARKET_REGIMES.VOLATILE || regime === MARKET_REGIMES.RANGING) {
-      const aboveR1 = isGreaterThanOrEqual(close, this._pivotData.r1);
+      const aboveR1 = isGreaterThanOrEqual(close, s.pivotData.r1);
       const rsiOverboughtMet = isGreaterThanOrEqual(rsi, String(rsiOverbought));
 
       if (aboveR1 && rsiOverboughtMet) {
@@ -305,7 +293,7 @@ class RsiPivotStrategy extends StrategyBase {
         const slPercent = this.config.slPercent || '2';
         const signal = {
           action: SIGNAL_ACTIONS.OPEN_SHORT,
-          symbol: this._symbol,
+          symbol,
           category: this._category,
           suggestedQty: positionSizePercent,
           suggestedPrice: close,
@@ -314,13 +302,13 @@ class RsiPivotStrategy extends StrategyBase {
           marketContext: {
             rsi,
             price: close,
-            pivotR1: this._pivotData.r1,
-            pivotPP: this._pivotData.pp,
+            pivotR1: s.pivotData.r1,
+            pivotPP: s.pivotData.pp,
             regime,
           },
         };
-        // AD-37: Do NOT set _positionSide/_entryPrice here — defer to onFill()
-        this._lastSignal = signal;
+        // AD-37: Do NOT set positionSide/entryPrice here — defer to onFill()
+        s.lastSignal = signal;
         this.emitSignal(signal);
       }
     }
@@ -337,30 +325,31 @@ class RsiPivotStrategy extends StrategyBase {
     super.onFill(fill); // R10: update StrategyBase trailing stop state
     if (!fill) return;
 
+    const s = this._s();
     const price = fill.price !== undefined ? String(fill.price) : null;
     if (price === null) return;
 
     const action = fill.action || '';
 
     // AD-37: Open fills — set position state ONLY on confirmed fill
-    if (action === SIGNAL_ACTIONS.OPEN_LONG || (fill.side === 'buy' && !this._positionSide)) {
-      this._entryPrice = price;
-      this._positionSide = 'long';
-      this._log.trade('Long entry recorded', { entryPrice: this._entryPrice });
+    if (action === SIGNAL_ACTIONS.OPEN_LONG || (fill.side === 'buy' && !s.positionSide)) {
+      s.entryPrice = price;
+      s.positionSide = 'long';
+      this._log.trade('Long entry recorded', { entryPrice: s.entryPrice });
       return;
     }
-    if (action === SIGNAL_ACTIONS.OPEN_SHORT || (fill.side === 'sell' && !this._positionSide)) {
-      this._entryPrice = price;
-      this._positionSide = 'short';
-      this._log.trade('Short entry recorded', { entryPrice: this._entryPrice });
+    if (action === SIGNAL_ACTIONS.OPEN_SHORT || (fill.side === 'sell' && !s.positionSide)) {
+      s.entryPrice = price;
+      s.positionSide = 'short';
+      this._log.trade('Short entry recorded', { entryPrice: s.entryPrice });
       return;
     }
 
     // Close fills
     if (action === SIGNAL_ACTIONS.CLOSE_LONG || action === SIGNAL_ACTIONS.CLOSE_SHORT) {
-      this._log.trade('Position closed', { side: this._positionSide, entryPrice: this._entryPrice, exitPrice: price });
-      this._entryPrice = null;
-      this._positionSide = null;
+      this._log.trade('Position closed', { side: s.positionSide, entryPrice: s.entryPrice, exitPrice: price });
+      s.entryPrice = null;
+      s.positionSide = null;
     }
   }
 
@@ -372,7 +361,7 @@ class RsiPivotStrategy extends StrategyBase {
    * @returns {object|null}
    */
   getSignal() {
-    return this._lastSignal;
+    return this._s().lastSignal;
   }
 
   // -------------------------------------------------------------------------
@@ -386,61 +375,63 @@ class RsiPivotStrategy extends StrategyBase {
    * @param {string} currentPrice
    */
   _checkExitOnTick(currentPrice) {
-    if (this._entryPrice === null || this._positionSide === null) return;
+    const s = this._s();
+    if (s.entryPrice === null || s.positionSide === null) return;
 
     const { positionSizePercent, tpPercent, slPercent } = this.config;
+    const symbol = this.getCurrentSymbol();
     let signal = null;
 
-    if (this._positionSide === 'long') {
-      const tpPrice = multiply(this._entryPrice, add('1', divide(tpPercent, '100')));
-      const slPrice = multiply(this._entryPrice, subtract('1', divide(slPercent, '100')));
+    if (s.positionSide === 'long') {
+      const tpPrice = multiply(s.entryPrice, add('1', divide(tpPercent, '100')));
+      const slPrice = multiply(s.entryPrice, subtract('1', divide(slPercent, '100')));
 
       if (isGreaterThanOrEqual(currentPrice, tpPrice)) {
         signal = {
           action: SIGNAL_ACTIONS.CLOSE_LONG,
-          symbol: this._symbol, category: this._category,
+          symbol, category: this._category,
           suggestedQty: positionSizePercent, suggestedPrice: currentPrice,
           reduceOnly: true,
           confidence: '0.9500',
-          marketContext: { price: currentPrice, entryPrice: this._entryPrice, tpPrice, regime: this.getEffectiveRegime(), reason: 'take_profit' },
+          marketContext: { price: currentPrice, entryPrice: s.entryPrice, tpPrice, regime: this.getEffectiveRegime(), reason: 'take_profit' },
         };
       } else if (isLessThanOrEqual(currentPrice, slPrice)) {
         signal = {
           action: SIGNAL_ACTIONS.CLOSE_LONG,
-          symbol: this._symbol, category: this._category,
+          symbol, category: this._category,
           suggestedQty: positionSizePercent, suggestedPrice: currentPrice,
           reduceOnly: true,
           confidence: '0.9500',
-          marketContext: { price: currentPrice, entryPrice: this._entryPrice, slPrice, regime: this.getEffectiveRegime(), reason: 'stop_loss' },
+          marketContext: { price: currentPrice, entryPrice: s.entryPrice, slPrice, regime: this.getEffectiveRegime(), reason: 'stop_loss' },
         };
       }
-    } else if (this._positionSide === 'short') {
-      const tpPrice = multiply(this._entryPrice, subtract('1', divide(tpPercent, '100')));
-      const slPrice = multiply(this._entryPrice, add('1', divide(slPercent, '100')));
+    } else if (s.positionSide === 'short') {
+      const tpPrice = multiply(s.entryPrice, subtract('1', divide(tpPercent, '100')));
+      const slPrice = multiply(s.entryPrice, add('1', divide(slPercent, '100')));
 
       if (isLessThanOrEqual(currentPrice, tpPrice)) {
         signal = {
           action: SIGNAL_ACTIONS.CLOSE_SHORT,
-          symbol: this._symbol, category: this._category,
+          symbol, category: this._category,
           suggestedQty: positionSizePercent, suggestedPrice: currentPrice,
           reduceOnly: true,
           confidence: '0.9500',
-          marketContext: { price: currentPrice, entryPrice: this._entryPrice, tpPrice, regime: this.getEffectiveRegime(), reason: 'take_profit' },
+          marketContext: { price: currentPrice, entryPrice: s.entryPrice, tpPrice, regime: this.getEffectiveRegime(), reason: 'take_profit' },
         };
       } else if (isGreaterThanOrEqual(currentPrice, slPrice)) {
         signal = {
           action: SIGNAL_ACTIONS.CLOSE_SHORT,
-          symbol: this._symbol, category: this._category,
+          symbol, category: this._category,
           suggestedQty: positionSizePercent, suggestedPrice: currentPrice,
           reduceOnly: true,
           confidence: '0.9500',
-          marketContext: { price: currentPrice, entryPrice: this._entryPrice, slPrice, regime: this.getEffectiveRegime(), reason: 'stop_loss' },
+          marketContext: { price: currentPrice, entryPrice: s.entryPrice, slPrice, regime: this.getEffectiveRegime(), reason: 'stop_loss' },
         };
       }
     }
 
     if (signal) {
-      this._lastSignal = signal;
+      s.lastSignal = signal;
       this.emitSignal(signal);
     }
   }
@@ -454,6 +445,8 @@ class RsiPivotStrategy extends StrategyBase {
    * @param {object} kline — { high, low, close, open, timestamp }
    */
   _aggregateDailyCandle(kline) {
+    const s = this._s();
+
     // Derive the date string from the kline timestamp (or fall back to now)
     const ts = (kline.ts || kline.timestamp) ? new Date(Number(kline.ts || kline.timestamp)) : new Date();
     const dateStr = ts.toISOString().slice(0, 10); // 'YYYY-MM-DD'
@@ -463,9 +456,9 @@ class RsiPivotStrategy extends StrategyBase {
     const close = String(kline.close);
     const open = kline.open !== undefined ? String(kline.open) : null;
 
-    if (this._currentDayCandle === null) {
+    if (s.currentDayCandle === null) {
       // First kline ever — start accumulating
-      this._currentDayCandle = {
+      s.currentDayCandle = {
         date: dateStr,
         high: high || close,
         low: low || close,
@@ -475,40 +468,40 @@ class RsiPivotStrategy extends StrategyBase {
       return;
     }
 
-    if (this._currentDayCandle.date === dateStr) {
+    if (s.currentDayCandle.date === dateStr) {
       // Same day — update running high / low / close
-      if (high !== null && isGreaterThan(high, this._currentDayCandle.high)) {
-        this._currentDayCandle.high = high;
+      if (high !== null && isGreaterThan(high, s.currentDayCandle.high)) {
+        s.currentDayCandle.high = high;
       }
-      if (low !== null && isLessThan(low, this._currentDayCandle.low)) {
-        this._currentDayCandle.low = low;
+      if (low !== null && isLessThan(low, s.currentDayCandle.low)) {
+        s.currentDayCandle.low = low;
       }
-      this._currentDayCandle.close = close;
+      s.currentDayCandle.close = close;
     } else {
       // New day — finalise the previous daily candle
-      this._dailyCandles.push({
-        high: this._currentDayCandle.high,
-        low: this._currentDayCandle.low,
-        close: this._currentDayCandle.close,
-        date: this._currentDayCandle.date,
+      s.dailyCandles.push({
+        high: s.currentDayCandle.high,
+        low: s.currentDayCandle.low,
+        close: s.currentDayCandle.close,
+        date: s.currentDayCandle.date,
       });
 
       // Keep only the last 5 daily candles (we only need 1, but keep a buffer)
-      if (this._dailyCandles.length > 5) {
-        this._dailyCandles = this._dailyCandles.slice(-5);
+      if (s.dailyCandles.length > 5) {
+        s.dailyCandles = s.dailyCandles.slice(-5);
       }
 
       // Recalculate pivot from the completed daily candle
-      const prevDay = this._dailyCandles[this._dailyCandles.length - 1];
-      this._pivotData = this._calculatePivot(prevDay.high, prevDay.low, prevDay.close);
+      const prevDay = s.dailyCandles[s.dailyCandles.length - 1];
+      s.pivotData = this._calculatePivot(prevDay.high, prevDay.low, prevDay.close);
 
       this._log.info('Daily pivot recalculated', {
         date: prevDay.date,
-        ...this._pivotData,
+        ...s.pivotData,
       });
 
       // Start new day accumulator
-      this._currentDayCandle = {
+      s.currentDayCandle = {
         date: dateStr,
         high: high || close,
         low: low || close,
